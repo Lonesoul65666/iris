@@ -1,0 +1,84 @@
+{
+  "templates": [
+    {
+      "id": "rotate-holdings",
+      "version": 1,
+      "aliases": ["rotate-smh"],
+      "category": "investment",
+      "trigger": {
+        "type": "manual"
+      },
+      "text": "Rotate out of one holding and into another within the same brokerage account.",
+      "detail": "Use this after a sell + buy trade to keep the portfolio synced. Typical uses: concentrated position trimming, sector rotation, ticker consolidation (e.g. SMH → SOXQ).",
+      "priority": "medium",
+      "inputs": [
+        {
+          "key": "account",
+          "label": "Brokerage account",
+          "type": "account-picker",
+          "required": true,
+          "accountFilter": { "type": "brokerage" }
+        },
+        { "key": "sold_ticker", "label": "Ticker sold", "type": "ticker", "required": true },
+        { "key": "sold_amount", "label": "Dollar amount sold", "type": "currency", "required": true },
+        { "key": "bought_ticker", "label": "Ticker bought", "type": "ticker", "required": true },
+        { "key": "bought_amount", "label": "Dollar amount bought", "type": "currency", "required": true },
+        { "key": "bought_name", "label": "New holding full name", "type": "string" }
+      ],
+      "effects": [
+        {
+          "op": "remove-holdings",
+          "account": { "by": "input", "inputKey": "account" },
+          "filter": { "tickers": "input:sold_ticker" }
+        },
+        {
+          "op": "add-holding",
+          "account": { "by": "input", "inputKey": "account" },
+          "holding": {
+            "ticker": "input:bought_ticker",
+            "name": "input:bought_name",
+            "assetClass": "etf",
+            "currentValue": "input:bought_amount",
+            "notes": "Rotated from {{input:sold_ticker}}"
+          }
+        }
+      ],
+      "successTemplate": "Rotated {{input:sold_amount | currency}} from {{input:sold_ticker}} into {{input:bought_ticker}}. Portfolio updated."
+    },
+    {
+      "id": "sell-specific-crypto",
+      "version": 1,
+      "aliases": ["sell-memecoins"],
+      "category": "investment",
+      "trigger": {
+        "type": "manual"
+      },
+      "text": "Remove speculative crypto positions to simplify the portfolio.",
+      "detail": "Holdings with low conviction (meme coins, tiny allocations) add complexity without meaningful upside. Selling simplifies tracking and reduces behavioral drag.",
+      "priority": "low",
+      "inputs": [
+        {
+          "key": "account",
+          "label": "Crypto account",
+          "type": "account-picker",
+          "required": true,
+          "accountFilter": { "type": "crypto" }
+        },
+        {
+          "key": "tickers",
+          "label": "Tickers to remove (comma-separated)",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "effects": [
+        {
+          "op": "remove-holdings",
+          "account": { "by": "input", "inputKey": "account" },
+          "filter": { "tickers": "input:tickers" }
+        }
+      ],
+      "successTemplate": "Removed {{input:tickers | list}} from crypto portfolio. Simplified."
+    }
+  ]
+}

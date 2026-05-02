@@ -1,0 +1,1643 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
+import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown } from '../../types/budget';
+import type { Expense } from '../../types/budget';
+import { defaultBudgetBuckets, defaultSinkingFunds, defaultFunMoney, defaultPaycheck, calculateBudgetSummary } from '../../stores/budgetDefaults';
+import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, getCustomCategories } from '../../stores/budgetStore';
+import { getMonthlyInvestments } from '../../stores/portfolioStore';
+import { isGeminiInitialized } from '../../services/gemini';
+import ExpenseManager from './ExpenseManager';
+import RecurringBills from './RecurringBills';
+import IncomeSources from './IncomeSources';
+import InflowQuestions from './InflowQuestions';
+import TriggerCenter from './TriggerCenter';
+import BudgetPulse from './BudgetPulse';
+import BudgetEditOverlay from './BudgetEditOverlay';
+import WorkReimbursementsCard from './WorkReimbursementsCard';
+import VariableSurplusCard from './VariableSurplusCard';
+import { auditBudgetEdit, type BudgetDiff } from '../../stores/auditLogStore';
+import BucketGroupsManager from './BucketGroupsManager';
+import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
+import { getActionItems, saveAllActionItems } from '../../stores/actionStore';
+import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
+import { formatCurrency } from '../../utils/format';
+import ScoreRing from '../ui/ScoreRing';
+import EmptyState from '../ui/EmptyState';
+import { useHasRealData } from '../../hooks/useHasRealData';
+
+function computeBudgetDiffs(
+  before: { buckets: BudgetBucket[]; sinkingFunds: SinkingFund[]; funMoney: FunMoney[] },
+  after: { buckets: BudgetBucket[]; sinkingFunds: SinkingFund[]; funMoney: FunMoney[] },
+): BudgetDiff[] {
+  const diffs: BudgetDiff[] = [];
+
+  // Buckets — keyed by category
+  const beforeBuckets = new Map(before.buckets.map(b => [b.category, b]));
+  const afterBuckets = new Map(after.buckets.map(b => [b.category, b]));
+  for (const [cat, b] of afterBuckets) {
+    const old = beforeBuckets.get(cat);
+    if (!old) {
+      diffs.push({ scope: 'bucket', entityId: cat, entityName: b.label, field: '*', oldVal: null, newVal: b, kind: 'added' });
+      continue;
+    }
+    if (old.monthlyBudget !== b.monthlyBudget) {
+      diffs.push({ scope: 'bucket', entityId: cat, entityName: b.label, field: 'monthlyBudget', oldVal: old.monthlyBudget, newVal: b.monthlyBudget, kind: 'edited' });
+    }
+    if (old.label !== b.label) {
+      diffs.push({ scope: 'bucket', entityId: cat, entityName: b.label, field: 'label', oldVal: old.label, newVal: b.label, kind: 'edited' });
+    }
+  }
+  for (const [cat, old] of beforeBuckets) {
+    if (!afterBuckets.has(cat)) {
+      diffs.push({ scope: 'bucket', entityId: cat, entityName: old.label, field: '*', oldVal: old, newVal: null, kind: 'removed' });
+    }
+  }
+
+  // Stashes (sinkingFunds) — keyed by id
+  const beforeStashes = new Map(before.sinkingFunds.map(s => [s.id, s]));
+  const afterStashes = new Map(after.sinkingFunds.map(s => [s.id, s]));
+  for (const [id, s] of afterStashes) {
+    const old = beforeStashes.get(id);
+    if (!old) {
+      diffs.push({ scope: 'stash', entityId: id, entityName: s.name, field: '*', oldVal: null, newVal: s, kind: 'added' });
+      continue;
+    }
+    if (old.monthlyContribution !== s.monthlyContribution) {
+      diffs.push({ scope: 'stash', entityId: id, entityName: s.name, field: 'monthlyContribution', oldVal: old.monthlyContribution, newVal: s.monthlyContribution, kind: 'edited' });
+    }
+    if (old.targetAmount !== s.targetAmount) {
+      diffs.push({ scope: 'stash', entityId: id, entityName: s.name, field: 'targetAmount', oldVal: old.targetAmount, newVal: s.targetAmount, kind: 'edited' });
+    }
+    if (old.name !== s.name) {
+      diffs.push({ scope: 'stash', entityId: id, entityName: s.name, field: 'name', oldVal: old.name, newVal: s.name, kind: 'edited' });
+    }
+  }
+  for (const [id, old] of beforeStashes) {
+    if (!afterStashes.has(id)) {
+      diffs.push({ scope: 'stash', entityId: id, entityName: old.name, field: '*', oldVal: old, newVal: null, kind: 'removed' });
+    }
+  }
+
+  // Fun money — keyed by person
+  const beforeFm = new Map(before.funMoney.map(f => [f.person, f]));
+  const afterFm = new Map(after.funMoney.map(f => [f.person, f]));
+  for (const [person, f] of afterFm) {
+    const old = beforeFm.get(person);
+    if (!old) {
+      diffs.push({ scope: 'funmoney', entityId: person, entityName: f.person, field: '*', oldVal: null, newVal: f, kind: 'added' });
+      continue;
+    }
+    if (old.monthlyBudget !== f.monthlyBudget) {
+      diffs.push({ scope: 'funmoney', entityId: person, entityName: f.person, field: 'monthlyBudget', oldVal: old.monthlyBudget, newVal: f.monthlyBudget, kind: 'edited' });
+    }
+  }
+  for (const [person, old] of beforeFm) {
+    if (!afterFm.has(person)) {
+      diffs.push({ scope: 'funmoney', entityId: person, entityName: old.person, field: '*', oldVal: old, newVal: null, kind: 'removed' });
+    }
+  }
+
+  return diffs;
+}
+
+export default function BudgetView() {
+  const { hasIncome, hasExpenses } = useHasRealData();
+  const hasBudgetData = hasIncome || hasExpenses;
+  const [section, setSection] = useState<'overview' | 'monthly' | 'expenses' | 'actions'>('overview');
+  const [selectedMonthIdx, setSelectedMonthIdx] = useState<number>(-1); // -1 = latest full month
+  const [buckets, setBuckets] = useState<BudgetBucket[]>(defaultBudgetBuckets);
+  const [sinkingFunds, setSinkingFunds] = useState<SinkingFund[]>(defaultSinkingFunds);
+  const [funMoney, setFunMoney] = useState<FunMoney[]>(defaultFunMoney);
+  const [paycheck, setPaycheck] = useState<PaycheckBreakdown>(defaultPaycheck);
+  const [overviewMonth, setOverviewMonth] = useState<string>('latest'); // 'avg', 'latest', or 'YYYY-MM'
+  const [loaded, setLoaded] = useState(false);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [drilldownCategory, setDrilldownCategory] = useState<string | null>(null);
+  const [showCompare, setShowCompare] = useState(false);
+  const [actionItems, setActionItems] = useState<ActionItem[]>([]);
+  const [monthlyData, setMonthlyData] = useState<MonthlySpending[]>([]);
+  const [, setCategoryTrends] = useState<CategoryTrend[]>([]);
+
+  // ── Edit mode state ──
+  // Daily Budget tab is read-only. Editing happens in a dedicated mode that
+  // hides read sections and surfaces budget editors. Cancel restores from a
+  // snapshot taken at edit-start; Save logs a diff to the audit log.
+  const [editMode, setEditMode] = useState(false);
+  const [editDirty, setEditDirty] = useState(false);
+  const editSnapshot = useRef<{
+    buckets: BudgetBucket[];
+    sinkingFunds: SinkingFund[];
+    funMoney: FunMoney[];
+  } | null>(null);
+
+  const startEdit = useCallback(() => {
+    editSnapshot.current = {
+      buckets: structuredClone(buckets),
+      sinkingFunds: structuredClone(sinkingFunds),
+      funMoney: structuredClone(funMoney),
+    };
+    setEditDirty(false);
+    setEditMode(true);
+  }, [buckets, sinkingFunds, funMoney]);
+
+  const cancelEdit = useCallback(async () => {
+    const snap = editSnapshot.current;
+    if (snap) {
+      setBuckets(snap.buckets);
+      setSinkingFunds(snap.sinkingFunds);
+      setFunMoney(snap.funMoney);
+      await Promise.all([
+        saveBudgetBuckets(snap.buckets),
+        saveSinkingFunds(snap.sinkingFunds),
+        saveFunMoney(snap.funMoney),
+      ]);
+    }
+    editSnapshot.current = null;
+    setEditDirty(false);
+    setEditMode(false);
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    const snap = editSnapshot.current;
+    if (snap) {
+      const diffs = computeBudgetDiffs(snap, { buckets, sinkingFunds, funMoney });
+      if (diffs.length > 0) await auditBudgetEdit(diffs);
+    }
+    editSnapshot.current = null;
+    setEditDirty(false);
+    setEditMode(false);
+  }, [buckets, sinkingFunds, funMoney]);
+
+  // Inline "+ Add bucket" form state. null = collapsed (button visible);
+  // object = form open with these field values.
+  const [newBucket, setNewBucket] = useState<{ label: string; icon: string; monthlyBudget: string } | null>(null);
+
+  const addBucket = useCallback(async () => {
+    if (!newBucket) return;
+    const label = newBucket.label.trim();
+    const budget = Number(newBucket.monthlyBudget);
+    if (!label || !budget || budget <= 0) return;
+    const fresh: BudgetBucket = {
+      category: `custom_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+      label,
+      icon: newBucket.icon || '📦',
+      monthlyBudget: budget,
+      monthlyActual: 0,
+      color: '#8b5cf6',
+      guideline: '',
+      guidelinePercent: 0,
+    };
+    const updated = [...buckets, fresh];
+    setBuckets(updated);
+    await saveBudgetBuckets(updated);
+    setNewBucket(null);
+  }, [newBucket, buckets]);
+
+  // Track dirty state via shallow stringify-compare against snapshot.
+  useEffect(() => {
+    if (!editMode || !editSnapshot.current) return;
+    const snap = editSnapshot.current;
+    const dirty =
+      JSON.stringify(buckets) !== JSON.stringify(snap.buckets) ||
+      JSON.stringify(sinkingFunds) !== JSON.stringify(snap.sinkingFunds) ||
+      JSON.stringify(funMoney) !== JSON.stringify(snap.funMoney);
+    setEditDirty(dirty);
+  }, [editMode, buckets, sinkingFunds, funMoney]);
+
+  const loadExpenses = useCallback(async () => {
+    const e = await getExpenses();
+    setExpenses(e);
+    // Auto-calculate actuals from real transaction data
+    if (e.length > 0) {
+      const realExpenses = e.filter((ex: Expense) => (ex.flow || 'outflow') === 'outflow' && (ex.transactionType || 'expense') === 'expense');
+      const monthly = computeMonthlySpending(e);
+      setMonthlyData(monthly);
+      setCategoryTrends(computeCategoryTrends(realExpenses));
+      // Update budget buckets with real averages
+      const fullMonths = monthly.filter(m => m.transactionCount > 10).length || 1;
+      const invs = await getMonthlyInvestments();
+      const invAmt = invs[0]?.amount || 0;
+      setBuckets(prev => {
+        let updated = applyTransactionsToBuckets(prev, realExpenses, fullMonths);
+        // Keep investing bucket synced (no matching transactions for this)
+        updated = updated.map(bk => bk.category === 'investing' ? { ...bk, monthlyBudget: invAmt, monthlyActual: invAmt } : bk);
+        saveBudgetBuckets(updated);
+        return updated;
+      });
+    }
+  }, []);
+
+  const handleActionItemsChange = useCallback(async (items: ActionItem[]) => {
+    setActionItems(items);
+    await saveAllActionItems(items);
+  }, []);
+
+  useEffect(() => {
+    async function load() {
+      let b = await getBudgetBuckets();
+      if (b.length === 0) { await saveBudgetBuckets(defaultBudgetBuckets); b = defaultBudgetBuckets; }
+
+      // Ensure investing bucket exists and is synced to Settings amount
+      const invs = await getMonthlyInvestments();
+      const investAmt = invs[0]?.amount || 0;
+      const hasInvesting = b.some(bk => bk.category === 'investing');
+      if (!hasInvesting) {
+        // Inject investing bucket right after housing (position 1 in the array)
+        const housingIdx = b.findIndex(bk => bk.category === 'housing');
+        const investBucket: BudgetBucket = {
+          category: 'investing', label: 'Monthly Investing', icon: '📈',
+          monthlyBudget: investAmt, monthlyActual: investAmt,
+          color: '#818cf8', guideline: 'Pay yourself first. Synced from your investment settings.',
+          guidelinePercent: 15,
+        };
+        b.splice(housingIdx + 1, 0, investBucket);
+        await saveBudgetBuckets(b);
+      } else {
+        b = b.map(bk => bk.category === 'investing' ? { ...bk, monthlyBudget: investAmt, monthlyActual: investAmt } : bk);
+      }
+      setBuckets(b);
+
+      let sf = await getSinkingFunds();
+      if (sf.length === 0) { await saveSinkingFunds(defaultSinkingFunds); sf = defaultSinkingFunds; }
+      setSinkingFunds(sf);
+
+      let fm = await getFunMoney();
+      if (fm.length === 0) { await saveFunMoney(defaultFunMoney); fm = defaultFunMoney; }
+      setFunMoney(fm);
+
+      const p = await getPaycheck();
+      const loadedPaycheck = p ?? defaultPaycheck;
+      if (!p) await savePaycheck(defaultPaycheck);
+      setPaycheck(loadedPaycheck);
+      const actions = await getActionItems();
+      setActionItems(actions);
+
+      // Register custom categories for proper label display
+      const cc = await getCustomCategories();
+      if (cc.length > 0) registerCustomCategories(cc);
+
+      setLoaded(true);
+
+      // Now load expenses and auto-calculate budget actuals
+      const e = await getExpenses();
+      setExpenses(e);
+      if (e.length > 0) {
+        const realExpenses = e.filter((ex: Expense) => (ex.flow || 'outflow') === 'outflow' && (ex.transactionType || 'expense') === 'expense');
+        const monthly = computeMonthlySpending(e);
+        setMonthlyData(monthly);
+        setCategoryTrends(computeCategoryTrends(realExpenses));
+        const fullMonths = monthly.filter(m => m.transactionCount > 10).length || 1;
+        let updatedBuckets = applyTransactionsToBuckets(b, realExpenses, fullMonths);
+        // Keep investing synced (transaction analysis won't have investing transactions)
+        updatedBuckets = updatedBuckets.map(bk => bk.category === 'investing' ? { ...bk, monthlyBudget: investAmt, monthlyActual: investAmt } : bk);
+        setBuckets(updatedBuckets);
+        await saveBudgetBuckets(updatedBuckets);
+
+        // Auto-derive paycheck from detected monthly income when user hasn't
+        // set it yet. netTakeHome is the average of full-month inflows (which
+        // are already net for direct-deposit). grossMonthly is estimated at
+        // ~28% combined deductions (federal + state + FICA + benefits/401k);
+        // user can override in Settings.
+        if (loadedPaycheck.grossMonthly === 0 && loadedPaycheck.netTakeHome === 0) {
+          const fullMonthEntries = monthly.filter(m => m.transactionCount > 10);
+          if (fullMonthEntries.length > 0) {
+            const avgIncome = fullMonthEntries.reduce((s, m) => s + m.totalIncome, 0) / fullMonthEntries.length;
+            if (avgIncome > 0) {
+              const derived = {
+                ...loadedPaycheck,
+                netTakeHome: Math.round(avgIncome),
+                grossMonthly: Math.round(avgIncome / 0.72),
+              };
+              setPaycheck(derived);
+              await savePaycheck(derived);
+            }
+          }
+        }
+      }
+    }
+    load();
+  }, []);
+
+  // Available months for overview navigation
+  const fullMonths = monthlyData.filter(m => m.transactionCount >= 10);
+  const availMonths = fullMonths.map(m => m.month).sort();
+  const resolvedOverviewMonth = overviewMonth === 'latest' && availMonths.length > 0
+    ? availMonths[availMonths.length - 1]
+    : overviewMonth;
+
+  // Per-month buckets for overview
+  const overviewBuckets = (() => {
+    if (resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest' || fullMonths.length === 0) return buckets;
+    const monthData = fullMonths.find(m => m.month === resolvedOverviewMonth);
+    if (!monthData) return buckets;
+    return applyMonthToBuckets(buckets, monthData);
+  })();
+
+  const summary = calculateBudgetSummary(overviewBuckets, paycheck);
+  // Work expenses always excluded from the bucket views — they net out via
+  // reimbursements and surface only in the Avg Work Expenses tile in Monthly
+  // Spending. The "Include work expenses" toggle was removed (option A in the
+  // simplification pass) since the concept was duplicated across 5 surfaces.
+  const filteredBuckets = overviewBuckets.filter(b => b.category !== 'travel_work');
+  const overBudget = filteredBuckets.filter(b => b.monthlyActual > b.monthlyBudget && b.monthlyBudget > 0);
+  const totalOverage = overBudget.reduce((s, b) => s + (b.monthlyActual - b.monthlyBudget), 0);
+
+  // Budget allocation tracking
+  const totalAllocated = filteredBuckets.reduce((s, b) => s + b.monthlyBudget, 0);
+  const unallocated = paycheck.netTakeHome - totalAllocated;
+
+  // Essential vs discretionary category lists
+  const essentialCats = ['housing', 'investing', 'childcare', 'utilities', 'insurance', 'healthcare', 'kids', 'transportation', 'food_groceries'];
+  const isEssential = (cat: string) => essentialCats.includes(cat);
+
+  // Budget health score
+  const savingsScore = summary.savingsRate >= 20 ? 90 : summary.savingsRate >= 15 ? 70 : summary.savingsRate >= 10 ? 50 : 25;
+  const overageScore = totalOverage === 0 ? 95 : totalOverage < 500 ? 65 : totalOverage < 1000 ? 40 : 20;
+  const housingRatio = (buckets.find(b => b.category === 'housing')?.monthlyActual || 0) / paycheck.grossMonthly * 100;
+  const housingScore = housingRatio <= 28 ? 90 : housingRatio <= 33 ? 65 : 30;
+  const surplusScore = summary.surplus > 1000 ? 90 : summary.surplus > 0 ? 60 : 20;
+  const overallBudgetScore = Math.round((savingsScore + overageScore + housingScore + surplusScore) / 4);
+
+  // Priority waterfall — computed from actual budget data (uses per-month or avg depending on selector)
+  const getBucketActual = (...cats: string[]) => overviewBuckets.filter(b => cats.includes(b.category)).reduce((s, b) => s + (b.monthlyActual || b.monthlyBudget), 0);
+  const sfTotal = sinkingFunds.reduce((s, f) => s + f.monthlyContribution, 0);
+  const fmTotal = funMoney.reduce((s, f) => s + f.monthlyBudget, 0);
+  const priorityData = [
+    { name: 'Take Home', amount: paycheck.netTakeHome, status: 'income' as const },
+    { name: 'Housing', amount: getBucketActual('housing'), status: 'essential' as const },
+    { name: 'Childcare/School', amount: getBucketActual('childcare', 'kids'), status: 'essential' as const },
+    { name: 'Food (Total)', amount: getBucketActual('food_groceries', 'food_dining'), status: 'essential' as const },
+    { name: 'Utilities', amount: getBucketActual('utilities'), status: 'essential' as const },
+    { name: 'Insurance', amount: getBucketActual('insurance'), status: 'essential' as const },
+    { name: 'Transportation', amount: getBucketActual('transportation'), status: 'essential' as const },
+    { name: 'Healthcare', amount: getBucketActual('healthcare'), status: 'essential' as const },
+    { name: 'Investing', amount: getBucketActual('investing') || summary.investing, status: 'savings' as const },
+    { name: 'Stashes', amount: sfTotal, status: 'savings' as const },
+    { name: 'Fun Money (Both)', amount: fmTotal, status: 'fun' as const },
+    { name: 'Subscriptions', amount: getBucketActual('subscriptions'), status: 'discretionary' as const },
+    { name: 'Clothing', amount: getBucketActual('clothing'), status: 'discretionary' as const },
+    { name: 'Other', amount: getBucketActual('personal', 'entertainment', 'alcohol', 'electronics', 'gifts_holidays', 'charity', 'other'), status: 'discretionary' as const },
+  ].filter(p => p.status === 'income' || p.amount > 0);
+
+  let remaining = paycheck.netTakeHome;
+  const priorityWithRemaining = priorityData.map((p, i) => {
+    if (i === 0) return { ...p, remaining };
+    remaining -= p.amount;
+    return { ...p, remaining };
+  });
+
+  if (!loaded) return <div className="text-text-muted">Loading budget...</div>;
+
+  // Computed metrics for overview
+  const essentialSpend = overviewBuckets.filter(b => essentialCats.includes(b.category)).reduce((s, b) => s + b.monthlyActual, 0);
+  const discretionarySpend = overviewBuckets.filter(b => !essentialCats.includes(b.category) && b.category !== 'travel_work' && b.monthlyActual > 0).reduce((s, b) => s + b.monthlyActual, 0);
+  const investingAmt = overviewBuckets.find(b => b.category === 'investing')?.monthlyActual || 0;
+  // Intentional savings: investing + 401k + HSA (what you deliberately set aside)
+  const intentionalSavings = investingAmt + paycheck.retirement401k + paycheck.hsaContribution;
+  const intentionalSavingsRate = paycheck.grossMonthly > 0 ? (intentionalSavings / paycheck.grossMonthly) * 100 : 0;
+  // Unbudgeted = take home minus all budget allocations (money without a job)
+  const totalBudgeted = overviewBuckets.filter(b => b.category !== 'travel_work').reduce((s, b) => s + b.monthlyBudget, 0);
+  const unbudgeted = paycheck.netTakeHome - totalBudgeted;
+  // Actual spend for the Monthly Spend stat
+  const totalBucketSpend = overviewBuckets.filter(b => b.category !== 'travel_work').reduce((s, b) => s + b.monthlyActual, 0);
+
+  return (
+    <div className="space-y-6 animate-fadeIn">
+      {/* Header + Tab Bar */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Budget & Cash Flow</h1>
+          <p className="text-text-secondary text-sm mt-1">Where your money goes — and where it should go</p>
+        </div>
+        {section === 'overview' && !editMode && (
+          <button
+            onClick={startEdit}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent/15 hover:bg-accent/25 border border-accent/30 text-accent-light text-sm font-semibold transition-colors flex-shrink-0"
+          >
+            <span>✏️</span>
+            Edit Budget
+          </button>
+        )}
+      </div>
+
+      {/* Screen-switching Tabs */}
+      <div className="flex items-center gap-2">
+        {([
+          { id: 'overview' as const, label: 'Overview', icon: '📊' },
+          { id: 'monthly' as const, label: 'Monthly Detail', icon: '📅' },
+          { id: 'expenses' as const, label: 'Transactions', icon: '💳', badge: expenses.length > 0 ? `${expenses.length}` : undefined },
+          { id: 'actions' as const, label: 'Action Items', icon: '✅', badge: actionItems.filter(a => !a.completed).length > 0 ? `${actionItems.filter(a => !a.completed).length}` : undefined },
+        ]).map(t => (
+          <button key={t.id} onClick={() => setSection(t.id)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              section === t.id
+                ? 'bg-accent/15 text-accent-light border border-accent/30 shadow-sm shadow-accent/10'
+                : 'bg-surface-2 text-text-muted hover:bg-surface-3 hover:text-text-secondary border border-transparent'
+            }`}>
+            <span className="text-base">{t.icon}</span>
+            <span>{t.label}</span>
+            {'badge' in t && t.badge && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                section === t.id ? 'bg-accent/30 text-accent-light' : 'bg-white/10 text-text-muted'
+              }`}>{t.badge}</span>
+            )}
+          </button>
+        ))}
+        <div className="flex-1" />
+      </div>
+
+      {/* New Transactions banner — surfaces fresh imports + things needing review.
+          Visible on overview only; click jumps to the Transactions sub-tab. */}
+      {section === 'overview' && !editMode && (() => {
+        const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
+        const recent = expenses.filter(e => new Date(e.date) >= sevenDaysAgo);
+        const needsReview = recent.filter(e =>
+          (e.flow || 'outflow') === 'outflow' &&
+          (e.transactionType || 'expense') === 'expense' &&
+          (e.category === 'other' || !e.category)
+        );
+        if (recent.length === 0) return null;
+        const hasReview = needsReview.length > 0;
+        return (
+          <button
+            type="button"
+            onClick={() => setSection('expenses')}
+            className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg border text-sm transition-colors ${
+              hasReview
+                ? 'bg-warning/10 border-warning/30 text-warning hover:bg-warning/15'
+                : 'bg-accent/8 border-accent/20 text-text-secondary hover:bg-accent/15'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <span className="text-base">📥</span>
+              <span>
+                <strong>{recent.length}</strong> {recent.length === 1 ? 'transaction' : 'transactions'} in the last 7 days
+                {hasReview && (
+                  <>
+                    {' · '}
+                    <strong className="text-warning">{needsReview.length}</strong> need{needsReview.length === 1 ? 's' : ''} categorizing
+                  </>
+                )}
+              </span>
+            </span>
+            <span className="text-xs flex-shrink-0">{hasReview ? 'Review →' : 'View →'}</span>
+          </button>
+        );
+      })()}
+
+      {/* Transactions Section */}
+      {section === 'expenses' && (
+        <ExpenseManager expenses={expenses} onExpensesChanged={loadExpenses} geminiAvailable={isGeminiInitialized()} />
+      )}
+
+      {/* Action Items Section */}
+      {section === 'actions' && (
+        <ActionItemsView items={actionItems} onItemsChange={handleActionItemsChange} filter="all" />
+      )}
+
+      {/* Monthly Detail Section */}
+      {section === 'monthly' && monthlyData.length > 0 && (() => {
+        // Determine which months are "full" (10+ txns) for navigation
+        const fullMonths = monthlyData.filter(m => m.transactionCount >= 10);
+        if (fullMonths.length === 0) return (
+          <div className="glass-card p-8 text-center text-text-muted">
+            <p className="text-lg mb-2">No full months of data yet</p>
+            <p className="text-sm">Import at least one full month of transactions to see the monthly breakdown.</p>
+          </div>
+        );
+
+        // Selected month (default = latest full month)
+        const idx = selectedMonthIdx < 0 || selectedMonthIdx >= fullMonths.length
+          ? fullMonths.length - 1
+          : selectedMonthIdx;
+        const current = fullMonths[idx];
+        const prior = idx > 0 ? fullMonths[idx - 1] : null;
+
+        // Apply this month's data to budget buckets
+        const monthBuckets = applyMonthToBuckets(buckets, current);
+        const totalSpend = current.totalExpenses;
+        const totalIncome = current.totalIncome;
+        const surplus = totalIncome - totalSpend;
+
+        // Work vs personal
+        const workSplit = computeWorkExpenses(expenses, current.month);
+
+        // Category changes vs prior month
+        const allCats = new Set([...Object.keys(current.byCategory), ...(prior ? Object.keys(prior.byCategory) : [])]);
+        const catChanges: { cat: string; label: string; icon: string; current: number; prior: number; change: number }[] = [];
+        for (const cat of allCats) {
+          const cur = current.byCategory[cat] || 0;
+          const prev = prior?.byCategory[cat] || 0;
+          const bucket = monthBuckets.find(b => b.category === cat);
+          catChanges.push({
+            cat,
+            label: bucket?.label || cat,
+            icon: bucket?.icon || '📦',
+            current: Math.round(cur),
+            prior: Math.round(prev),
+            change: Math.round(cur - prev),
+          });
+        }
+        catChanges.sort((a, b) => b.current - a.current);
+
+        // Year-to-date averages (across all full months)
+        const ytdSpend = Math.round(fullMonths.reduce((s, m) => s + m.totalExpenses, 0) / fullMonths.length);
+        const ytdIncome = Math.round(fullMonths.reduce((s, m) => s + m.totalIncome, 0) / fullMonths.length);
+
+        return <>
+          {/* Month Navigator */}
+          <div className="flex items-center justify-between">
+            <button onClick={() => setSelectedMonthIdx(Math.max(idx - 1, 0))}
+              disabled={idx === 0}
+              className="px-3 py-1.5 rounded-lg bg-surface-2 border border-glass-border text-sm text-text-secondary hover:bg-surface-3 disabled:opacity-20 transition-colors">
+              ← {prior ? prior.monthLabel : 'Prev'}
+            </button>
+            <div className="text-center">
+              <h2 className="text-xl font-bold text-text-primary">{current.monthLabel}</h2>
+              <p className="text-xs text-text-muted">{current.transactionCount} transactions</p>
+            </div>
+            <button onClick={() => setSelectedMonthIdx(Math.min(idx + 1, fullMonths.length - 1))}
+              disabled={idx >= fullMonths.length - 1}
+              className="px-3 py-1.5 rounded-lg bg-surface-2 border border-glass-border text-sm text-text-secondary hover:bg-surface-3 disabled:opacity-20 transition-colors">
+              {idx < fullMonths.length - 2 ? fullMonths[idx + 1].monthLabel : 'Next'} →
+            </button>
+          </div>
+
+          {/* Month Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="glass-card p-4 cyber-grid cyber-corners cyber-scanlines">
+              <div className="term-label">Income</div>
+              <div className="text-3xl font-black text-positive mt-1 mono-num">{formatCurrency(totalIncome)}</div>
+              {prior && <div className="text-xs text-text-muted mt-0.5">Prior: {formatCurrency(prior.totalIncome)}</div>}
+            </div>
+            <div className="glass-card p-4">
+              <div className="term-label">Total Spend</div>
+              <div className="text-3xl font-black text-text-primary mt-1 mono-num">{formatCurrency(totalSpend)}</div>
+              {prior && (
+                <div className={`mt-0.5 ${totalSpend <= prior.totalExpenses ? 'text-positive' : 'text-negative'}`}>
+                  <div className="cyber-chip">
+                    {totalSpend <= prior.totalExpenses ? '▼' : '▲'} {formatCurrency(Math.abs(totalSpend - prior.totalExpenses))} vs {prior.monthLabel.split(' ')[0]}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="glass-card p-4">
+              <div className="term-label">Surplus / Deficit</div>
+              <div className={`text-3xl font-black mt-1 mono-num ${surplus >= 0 ? 'text-positive' : 'text-negative'}`}>{formatCurrency(surplus)}</div>
+              <div className="text-xs text-text-muted mt-0.5">{surplus >= 0 ? 'Under budget' : 'Over budget'}</div>
+            </div>
+            <div className="glass-card p-4">
+              <div className="term-label">Work Expenses</div>
+              <div className="text-3xl font-black text-warning mt-1 mono-num">{formatCurrency(workSplit.work)}</div>
+              <div className="text-xs text-text-muted mt-0.5">Personal: {formatCurrency(workSplit.personal)}</div>
+            </div>
+          </div>
+
+          {/* Context Banner */}
+          <div className="flex items-center gap-4 px-4 py-2 rounded-lg bg-white/[0.02] border border-glass-border text-xs text-text-muted">
+            <span>📊 Year-to-date avg: <strong className="text-text-secondary">{formatCurrency(ytdSpend)}</strong> spend / <strong className="text-positive">{formatCurrency(ytdIncome)}</strong> income across {fullMonths.length} months</span>
+            {totalSpend > ytdSpend && <span className="text-negative">This month is {formatCurrency(totalSpend - ytdSpend)} above your average</span>}
+            {totalSpend < ytdSpend && <span className="text-positive">This month is {formatCurrency(ytdSpend - totalSpend)} below your average</span>}
+          </div>
+
+          {/* Category Breakdown */}
+          <div className="glass-card p-6">
+            <h3 className="text-lg font-semibold text-text-primary mb-1">Where It Went — {current.monthLabel}</h3>
+            <p className="text-xs text-text-muted mb-4">Every category for this month{prior ? `, compared to ${prior.monthLabel}` : ''}</p>
+            <div className="space-y-2">
+              {catChanges.filter(c => c.current > 0 || c.prior > 0).map(c => {
+                const maxAmt = Math.max(...catChanges.map(cc => Math.max(cc.current, cc.prior)), 1);
+                const budget = monthBuckets.find(b => b.category === c.cat)?.monthlyBudget || 0;
+                const overBudget = budget > 0 && c.current > budget;
+                return (
+                  <div key={c.cat} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm w-6 text-center">{c.icon}</span>
+                      <span className="text-xs text-text-secondary w-36 truncate">{c.label}</span>
+                      <div className="flex-1 bg-white/10 rounded-full h-5 relative overflow-hidden">
+                        {prior && c.prior > 0 && (
+                          <div className="absolute h-5 rounded-full border border-white/20"
+                            style={{ width: `${(c.prior / maxAmt) * 100}%` }} />
+                        )}
+                        <div className={`h-5 rounded-full transition-all duration-500 ${overBudget ? 'bg-gradient-to-r from-red-500 to-rose-400' : 'bg-gradient-to-r from-indigo-500 to-blue-400'}`}
+                          style={{ width: `${(c.current / maxAmt) * 100}%` }} />
+                      </div>
+                      <span className="text-xs text-text-primary font-medium w-20 text-right">{formatCurrency(c.current)}</span>
+                      {prior && (
+                        <span className={`text-xs w-20 text-right font-medium ${c.change > 50 ? 'text-negative' : c.change < -50 ? 'text-positive' : 'text-text-muted'}`}>
+                          {c.change > 0 ? '+' : ''}{formatCurrency(c.change)}
+                        </span>
+                      )}
+                    </div>
+                    {overBudget && (
+                      <div className="ml-8 text-[10px] text-negative">
+                        Over budget by {formatCurrency(c.current - budget)} (budget: {formatCurrency(budget)})
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Work Expense vs Reimbursement Tracker */}
+          {(() => {
+            // Cumulative across all imported data
+            const allWorkExpenses = expenses.filter(e =>
+              e.isWorkExpense && (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense'
+            );
+            const allReimbursements = expenses.filter(e => e.transactionType === 'reimbursement');
+            const totalWorkSpent = allWorkExpenses.reduce((s, e) => s + e.amount, 0);
+            const totalReimbursed = allReimbursements.reduce((s, e) => s + e.amount, 0);
+            const outstanding = totalWorkSpent - totalReimbursed;
+
+            // This month only
+            const monthWorkExpenses = allWorkExpenses.filter(e => {
+              const key = e.date.includes('/') ? `${e.date.split('/')[2]}-${e.date.split('/')[0].padStart(2, '0')}` : e.date.slice(0, 7);
+              return key === current.month;
+            });
+            const monthReimbursements = allReimbursements.filter(e => {
+              const key = e.date.includes('/') ? `${e.date.split('/')[2]}-${e.date.split('/')[0].padStart(2, '0')}` : e.date.slice(0, 7);
+              return key === current.month;
+            });
+            const monthWork = monthWorkExpenses.reduce((s, e) => s + e.amount, 0);
+            const monthReimb = monthReimbursements.reduce((s, e) => s + e.amount, 0);
+
+            if (totalWorkSpent === 0 && totalReimbursed === 0) return null;
+
+            const reimbPct = totalWorkSpent > 0 ? Math.round((totalReimbursed / totalWorkSpent) * 100) : 0;
+            const pieData = [
+              { name: 'Reimbursed', value: Math.round(totalReimbursed), fill: '#22c55e' },
+              { name: 'Outstanding', value: Math.max(Math.round(outstanding), 0), fill: '#f59e0b' },
+            ].filter(d => d.value > 0);
+
+            return (
+              <div className="glass-card p-6">
+                <h3 className="text-lg font-semibold text-text-primary mb-1">Work Expense Tracker</h3>
+                <p className="text-xs text-text-muted mb-4">Money you spent for work vs what's been paid back</p>
+                <div className="flex items-center gap-6">
+                  {/* Ring Chart */}
+                  <div className="relative">
+                    <ResponsiveContainer width={130} height={130}>
+                      <PieChart>
+                        <Pie data={pieData} dataKey="value" cx="50%" cy="50%"
+                          outerRadius={58} innerRadius={38} paddingAngle={2} strokeWidth={0}>
+                          {pieData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-lg font-bold text-text-primary">{reimbPct}%</span>
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="flex-1 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-warning" />
+                        <span className="text-sm text-text-secondary">Total Work Expenses</span>
+                      </div>
+                      <span className="text-sm font-semibold text-text-primary">{formatCurrency(totalWorkSpent)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-positive" />
+                        <span className="text-sm text-text-secondary">Reimbursed</span>
+                      </div>
+                      <span className="text-sm font-semibold text-positive">{formatCurrency(totalReimbursed)}</span>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-glass-border pt-2">
+                      <span className="text-sm font-medium text-text-primary">Outstanding</span>
+                      <span className={`text-sm font-bold ${outstanding > 0 ? 'text-warning' : 'text-positive'}`}>
+                        {outstanding > 0 ? formatCurrency(outstanding) : 'All caught up!'}
+                      </span>
+                    </div>
+                    {monthWork > 0 && (
+                      <div className="text-xs text-text-muted pt-1 border-t border-glass-border">
+                        This month: {formatCurrency(monthWork)} spent for work
+                        {monthReimb > 0 && <>, {formatCurrency(monthReimb)} reimbursed</>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Month-over-Month Mini Chart */}
+          <div className="glass-card p-6">
+            <h3 className="text-lg font-semibold text-text-primary mb-4">Monthly Trajectory</h3>
+            <div className="space-y-2">
+              {fullMonths.map((m, i) => {
+                const maxExp = Math.max(...fullMonths.map(mm => mm.totalExpenses), 1);
+                const pct = (m.totalExpenses / maxExp) * 100;
+                const isSelected = i === idx;
+                return (
+                  <button key={m.month} onClick={() => setSelectedMonthIdx(i)}
+                    className={`w-full flex items-center gap-3 p-1 rounded transition-colors ${isSelected ? 'bg-accent/10' : 'hover:bg-white/[0.02]'}`}>
+                    <span className={`text-xs w-16 text-right font-mono ${isSelected ? 'text-accent-light font-bold' : 'text-text-secondary'}`}>{m.monthLabel.split(' ')[0]}</span>
+                    <div className="flex-1 bg-white/10 rounded-full h-5 relative overflow-hidden">
+                      <div className={`h-5 rounded-full transition-all duration-300 ${isSelected ? 'bg-gradient-to-r from-indigo-500 to-blue-400' : 'bg-white/20'}`}
+                        style={{ width: `${Math.min(pct, 100)}%` }}>
+                        <span className="text-[10px] font-medium text-white pl-2 leading-5">{formatCurrency(m.totalExpenses)}</span>
+                      </div>
+                    </div>
+                    <span className={`text-xs w-20 text-right ${m.totalIncome - m.totalExpenses >= 0 ? 'text-positive' : 'text-negative'}`}>
+                      {m.totalIncome - m.totalExpenses >= 0 ? '+' : ''}{formatCurrency(m.totalIncome - m.totalExpenses)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-4 mt-3 pt-3 border-t border-glass-border text-xs text-text-muted">
+              <span>Bar = total spending</span>
+              <span>Right column = surplus/deficit for that month</span>
+              <span>Click any month to drill in</span>
+            </div>
+          </div>
+        </>;
+      })()}
+      {section === 'monthly' && monthlyData.length === 0 && (
+        <div className="glass-card p-8 text-center text-text-muted">
+          <p className="text-lg mb-2">No transaction data yet</p>
+          <p className="text-sm">Import your bank and credit card statements in the Transactions tab to see monthly breakdowns.</p>
+        </div>
+      )}
+
+      {/* Overview Section */}
+      {section === 'overview' && <>
+
+      {/* Edit-mode chrome bar — sticky header w/ Save/Cancel. Renders only when editMode=true. */}
+      <BudgetEditOverlay
+        active={editMode}
+        isDirty={editDirty}
+        onSave={saveEdit}
+        onCancel={cancelEdit}
+      />
+
+      {/* ── Read-only daily view (hidden in edit mode) ── */}
+      {!editMode && (<>
+
+      {/* Month Navigator */}
+      {availMonths.length > 0 && (() => {
+        const resolved = resolvedOverviewMonth;
+        const idx = availMonths.indexOf(resolved);
+        const monthLabel = (m: string) => {
+          const [y, mo] = m.split('-');
+          return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        };
+        return (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1">
+              <button onClick={() => { if (idx > 0) setOverviewMonth(availMonths[idx - 1]); }}
+                disabled={idx <= 0 || resolved === 'avg'}
+                className="w-8 h-8 rounded-lg bg-surface-2 border border-glass-border hover:bg-surface-3 disabled:opacity-20 flex items-center justify-center text-text-muted text-sm transition-colors">
+                ←
+              </button>
+              <button onClick={() => setOverviewMonth(resolved === 'avg' ? 'latest' : 'avg')}
+                className="px-4 py-1.5 rounded-lg bg-surface-2 border border-glass-border hover:bg-surface-3 text-sm text-text-primary font-semibold transition-colors min-w-[160px]">
+                {resolved === 'avg' ? `Average (${fullMonths.length} months)` : monthLabel(resolved)}
+              </button>
+              <button onClick={() => { if (idx < availMonths.length - 1) setOverviewMonth(availMonths[idx + 1]); }}
+                disabled={idx >= availMonths.length - 1 || resolved === 'avg'}
+                className="w-8 h-8 rounded-lg bg-surface-2 border border-glass-border hover:bg-surface-3 disabled:opacity-20 flex items-center justify-center text-text-muted text-sm transition-colors">
+                →
+              </button>
+            </div>
+            <span className="text-xs text-text-muted">
+              {resolved === 'avg' ? 'Showing averaged data across all months' : 'Showing actual spending for this month'}
+            </span>
+          </div>
+        );
+      })()}
+
+      {/* Top Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="glass-card p-4 cyber-grid cyber-corners cyber-scanlines">
+          <div className="term-label">Gross Monthly</div>
+          <div className="text-3xl font-black mt-1 text-text-primary mono-num">{formatCurrency(summary.grossIncome)}</div>
+          <div className="text-text-secondary text-xs mt-0.5">OTE basis (70/30 split)</div>
+        </div>
+        <div className="glass-card p-4">
+          <div className="term-label">Net Take Home</div>
+          <div className="text-3xl font-black mt-1 text-text-primary mono-num">{formatCurrency(summary.netIncome)}</div>
+          <div className="text-text-secondary text-xs mt-0.5">After tax & deductions</div>
+        </div>
+        <div className="glass-card p-4">
+          <div className="term-label">Monthly Spend</div>
+          <div className={`text-3xl font-black mt-1 mono-num ${totalBucketSpend > summary.netIncome ? 'text-negative' : overBudget.length > 0 ? 'text-warning' : 'text-positive'}`}>
+            {formatCurrency(totalBucketSpend)}
+          </div>
+          <div className="text-text-secondary text-xs mt-0.5">
+            {formatCurrency(essentialSpend)} essential + {formatCurrency(discretionarySpend)} lifestyle
+          </div>
+        </div>
+        <div className="glass-card p-4">
+          <div className="term-label">Savings Rate</div>
+          <div className={`text-3xl font-black mt-1 mono-num ${intentionalSavingsRate >= 20 ? 'text-positive' : intentionalSavingsRate >= 15 ? 'text-warning' : 'text-negative'}`}>
+            {intentionalSavingsRate.toFixed(1)}%
+          </div>
+          <div className="text-text-secondary text-xs mt-0.5">
+            {formatCurrency(investingAmt)} investing + {formatCurrency(paycheck.retirement401k)} 401k + {formatCurrency(paycheck.hsaContribution)} HSA
+          </div>
+        </div>
+        <div className="glass-card p-4">
+          <div className="term-label">Unbudgeted</div>
+          <div className={`text-3xl font-black mt-1 mono-num ${unbudgeted < 0 ? 'text-negative' : unbudgeted < 500 ? 'text-warning' : 'text-text-primary'}`}>
+            {formatCurrency(unbudgeted)}
+          </div>
+          <div className="text-text-secondary text-xs mt-0.5">
+            {unbudgeted < 0 ? 'Over-allocated — budgets exceed take-home' : unbudgeted < 500 ? 'Tight — almost fully allocated' : 'Not yet assigned to a bucket'}
+          </div>
+        </div>
+      </div>
+
+      {/* Budget Health + Spending Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Budget Health — with visible sub-scores and realistic advice */}
+        <div className="glass-card p-6">
+          <h2 className="text-lg font-semibold text-text-primary mb-4">Budget Health</h2>
+          {!hasBudgetData ? (
+            <EmptyState
+              icon="🩺"
+              title="Budget Health needs data first"
+              description="Set your paycheck in Settings or import a bank statement, and Iris will score savings rate, adherence, housing ratio, and cash flow."
+              ctaLabel="Set income"
+              ctaTarget="settings"
+              compact
+            />
+          ) : (
+          <div className="flex items-start gap-6">
+            <div className="flex flex-col items-center gap-1">
+              <ScoreRing score={overallBudgetScore} size={130} />
+              <span className="text-[10px] text-text-muted">avg of 4 metrics</span>
+            </div>
+            <div className="flex-1 space-y-2.5">
+              {(() => {
+                const metrics = [
+                  {
+                    name: 'Savings Rate', score: savingsScore,
+                    msg: `${intentionalSavingsRate.toFixed(1)}%`,
+                    detail: `${formatCurrency(investingAmt)} brokerage + ${formatCurrency(paycheck.retirement401k)} 401k + ${formatCurrency(paycheck.hsaContribution)} HSA`,
+                    action: intentionalSavingsRate >= 20
+                      ? 'Target met'
+                      : intentionalSavingsRate >= 15
+                      ? 'Close — bump 401k or auto-invest to cross 20%'
+                      : 'Below 15% — focus on increasing 401k match first',
+                  },
+                  {
+                    name: 'Budget Adherence', score: overageScore,
+                    msg: overBudget.length === 0 ? 'Clean' : `${overBudget.length} over`,
+                    detail: overBudget.length > 0
+                      ? overBudget.slice(0, 3).map(b => `${b.label.split('(')[0].trim()} +${formatCurrency(b.monthlyActual - b.monthlyBudget)}`).join(', ')
+                      : 'All categories within budget',
+                    action: overBudget.length > 0
+                      ? `${formatCurrency(totalOverage)}/mo overage — ${formatCurrency(totalOverage * 12)}/yr if it continues`
+                      : 'No action needed',
+                  },
+                  {
+                    name: 'Housing Ratio', score: housingScore,
+                    msg: `${housingRatio.toFixed(1)}%`,
+                    detail: `${formatCurrency(buckets.find(b => b.category === 'housing')?.monthlyActual || 0)}/mo housing on ${formatCurrency(paycheck.grossMonthly)} gross`,
+                    action: housingRatio <= 28 ? 'Under 28% guideline' : housingRatio <= 33 ? 'Slightly high but manageable in TX' : 'Above 33% — stretching',
+                  },
+                  {
+                    name: 'Cash Flow', score: surplusScore,
+                    msg: summary.surplus >= 0 ? `+${formatCurrency(summary.surplus)}` : formatCurrency(summary.surplus),
+                    detail: `${formatCurrency(paycheck.netTakeHome)} take-home - ${formatCurrency(totalBucketSpend)} spent`,
+                    action: summary.surplus < 0 ? 'Spending exceeds income this month' : summary.surplus > 1000 ? 'Healthy buffer — deploy to savings' : 'Tight but positive',
+                  },
+                ];
+                return metrics.map((m, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                      m.score >= 70 ? 'bg-positive/15 text-positive' : m.score >= 40 ? 'bg-warning/15 text-warning' : 'bg-negative/15 text-negative'
+                    }`}>{m.score}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-text-primary">{m.name}</span>
+                        <span className={`text-xs font-bold ${m.score >= 70 ? 'text-positive' : m.score >= 40 ? 'text-warning' : 'text-negative'}`}>{m.msg}</span>
+                      </div>
+                      <div className="text-[10px] text-text-muted leading-tight">{m.detail}</div>
+                      <div className={`text-[10px] mt-0.5 ${m.score >= 70 ? 'text-positive/70' : m.score >= 40 ? 'text-warning/70' : 'text-negative/70'}`}>{m.action}</div>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+          )}
+        </div>
+
+        {/* Over Budget — focused view on what needs attention */}
+        <div className="glass-card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-text-primary">
+              {overBudget.length > 0 ? 'Over Budget' : 'Budget Status'}
+            </h2>
+            <span className="text-xs text-text-muted px-2 py-1 rounded-md bg-white/5">
+              {resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest'
+                ? `${fullMonths.length}-month average`
+                : (() => { const [y, mo] = resolvedOverviewMonth.split('-'); return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }); })()
+              }
+            </span>
+          </div>
+          {overBudget.length === 0 ? (
+            <div className="text-center py-6">
+              <div className="text-3xl mb-2">✅</div>
+              <div className="text-sm text-positive font-medium">All categories on budget</div>
+              <div className="text-xs text-text-muted mt-1">No categories exceed their allocated budget</div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-xs text-negative font-medium">
+                <span>{overBudget.length} {overBudget.length === 1 ? 'category' : 'categories'} over</span>
+                <span className="text-text-muted">·</span>
+                <span>{formatCurrency(totalOverage)}/mo overage</span>
+                <span className="text-text-muted">·</span>
+                <span>{formatCurrency(totalOverage * 12)}/yr if unchanged</span>
+              </div>
+              {overBudget.sort((a, b) => (b.monthlyActual - b.monthlyBudget) - (a.monthlyActual - a.monthlyBudget)).map(b => {
+                const overage = b.monthlyActual - b.monthlyBudget;
+                const overPct = Math.round((b.monthlyActual / b.monthlyBudget) * 100);
+                return (
+                  <div key={b.category} className="flex items-center gap-3 p-3 rounded-lg bg-negative/5 border border-negative/15 cursor-pointer hover:bg-negative/10 transition-colors"
+                    onClick={() => setDrilldownCategory(b.category)}>
+                    <span className="text-lg">{b.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-text-primary">{b.label.split('(')[0].trim()}</div>
+                      <div className="text-[10px] text-text-muted">{formatCurrency(b.monthlyActual)} spent vs {formatCurrency(b.monthlyBudget)} budget · {formatCurrency(b.monthlyActual * 12)}/yr at this pace</div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-sm font-bold text-negative">+{formatCurrency(overage)}</div>
+                      <div className="text-[10px] text-negative/70">{overPct}% of budget</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Empty-state nudge — first-run users haven't found Edit Budget yet. */}
+      {filteredBuckets.filter(b => b.monthlyActual > 0 || b.monthlyBudget > 0).length === 0 && (
+        <div className="glass-card p-6 border-2 border-accent/40 bg-accent/5">
+          <div className="flex items-center gap-4">
+            <span className="text-3xl flex-shrink-0">✏️</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-base font-semibold text-text-primary">Your budget isn't set up yet</div>
+              <div className="text-xs text-text-muted mt-0.5">Set monthly budgets per category, define stashes, and configure fun money. Takes a couple minutes.</div>
+            </div>
+            <button
+              onClick={startEdit}
+              className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-light text-white text-sm font-semibold whitespace-nowrap flex-shrink-0"
+            >
+              Edit Budget →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Budget Pulse — single immutable read of how the month is going. Sits high
+          on the page so the read of "where am I right now" is the first signal. */}
+      {filteredBuckets.filter(b => b.monthlyActual > 0 || b.monthlyBudget > 0).length > 0 && (
+        <BudgetPulse
+          buckets={filteredBuckets.filter(b => b.monthlyActual > 0 || b.monthlyBudget > 0)}
+          onCategoryClick={(cat) => setDrilldownCategory(cat)}
+        />
+      )}
+
+      {/* Variable Pay — surfaces "above base" overage so user can sweep it instead of spending it. */}
+      <VariableSurplusCard expenses={expenses} />
+
+      {/* Work Expenses & Reimbursements — totals only, no per-line itemization. */}
+      <WorkReimbursementsCard expenses={expenses} onViewTransactions={() => setSection('expenses')} />
+
+      </>)}
+      {/* ── End read-only daily view ── */}
+
+      {editMode && (<>
+      {/* Budget Allocation + Category Table */}
+      <div className="glass-card overflow-hidden">
+        {/* Header with allocation bar */}
+        <div className="p-4 border-b border-glass-border space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-text-primary">Monthly Budget</h2>
+              <p className="text-xs text-text-muted mt-0.5">
+                {resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest'
+                  ? 'Averaged across all imported months'
+                  : (() => { const [y, mo] = resolvedOverviewMonth.split('-'); return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); })()
+                }
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowCompare(!showCompare)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${showCompare ? 'bg-accent/20 text-accent' : 'bg-white/5 text-text-muted hover:bg-white/10'}`}>
+                {showCompare ? 'Annual ON' : 'See Annual'}
+              </button>
+              <button onClick={async () => {
+                const income = paycheck.netTakeHome;
+                const essLock = ['housing', 'childcare', 'utilities', 'insurance', 'healthcare', 'kids', 'transportation', 'food_groceries'];
+                let essTotal = 0;
+                const step1 = buckets.map(b => {
+                  if (b.category === 'travel_work') return { ...b, monthlyBudget: 0 };
+                  if (b.category === 'investing') return b; // investing budget synced from Settings
+                  if (essLock.includes(b.category)) {
+                    const locked = b.monthlyActual > 0 ? Math.ceil(b.monthlyActual / 25) * 25 : b.monthlyBudget;
+                    essTotal += locked;
+                    return { ...b, monthlyBudget: locked };
+                  }
+                  return b;
+                });
+                const invBucket = step1.find(bb => bb.category === 'investing');
+                essTotal += invBucket?.monthlyBudget || 0;
+                const discBudget = income - essTotal;
+                const discCats = step1.filter(b => !essLock.includes(b.category) && b.category !== 'travel_work' && b.category !== 'investing');
+                const discSpend = discCats.reduce((s, b) => s + Math.max(b.monthlyActual, 0), 0) || 1;
+                const allocatable = Math.max(discBudget * 0.90, 0);
+                const final = step1.map(b => {
+                  if (essLock.includes(b.category) || b.category === 'travel_work' || b.category === 'investing') return b;
+                  const share = Math.max(b.monthlyActual, 0) / discSpend;
+                  return { ...b, monthlyBudget: Math.max(Math.round((share * allocatable) / 25) * 25, 25) };
+                });
+                setBuckets(final);
+                await saveBudgetBuckets(final);
+              }}
+                className="px-3 py-1.5 rounded-lg bg-accent/10 hover:bg-accent/20 text-accent text-xs font-medium transition-colors">
+                Auto-suggest
+              </button>
+            </div>
+          </div>
+
+          {/* Allocation bar — essential vs discretionary split */}
+          {(() => {
+            const essentialBudgeted = filteredBuckets.filter(b => isEssential(b.category)).reduce((s, b) => s + b.monthlyBudget, 0);
+            const discretionaryBudgeted = filteredBuckets.filter(b => !isEssential(b.category)).reduce((s, b) => s + b.monthlyBudget, 0);
+            const essentialPct = paycheck.netTakeHome > 0 ? (essentialBudgeted / paycheck.netTakeHome) * 100 : 0;
+            const discretionaryPct = paycheck.netTakeHome > 0 ? (discretionaryBudgeted / paycheck.netTakeHome) * 100 : 0;
+            return (
+              <div>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="text-text-muted">Take-home: <strong className="text-text-primary">{formatCurrency(paycheck.netTakeHome)}</strong></span>
+                  <span className={unallocated >= 0 ? 'text-positive' : 'text-negative'}>
+                    {unallocated >= 0 ? `${formatCurrency(unallocated)} unallocated` : `${formatCurrency(Math.abs(unallocated))} over-allocated!`}
+                  </span>
+                </div>
+                <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden flex">
+                  <div className="h-3 bg-gradient-to-r from-blue-600 to-blue-500 transition-all duration-500"
+                    style={{ width: `${Math.min(essentialPct, 100)}%` }} />
+                  <div className={`h-3 transition-all duration-500 ${unallocated < 0 ? 'bg-gradient-to-r from-red-500 to-red-400' : 'bg-gradient-to-r from-violet-500 to-purple-400'}`}
+                    style={{ width: `${Math.min(discretionaryPct, 100 - Math.min(essentialPct, 100))}%` }} />
+                </div>
+                <div className="flex items-center gap-4 mt-1 text-[10px] text-text-muted">
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-blue-500 inline-block" /> Essential {formatCurrency(essentialBudgeted)}</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-violet-500 inline-block" /> Lifestyle {formatCurrency(discretionaryBudgeted)}</span>
+                  {unallocated > 0 && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-white/10 inline-block" /> Unallocated {formatCurrency(unallocated)}</span>}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Needs attention callout */}
+          {overBudget.length > 0 && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-negative/10 border border-negative/20 text-xs">
+              <span className="text-negative font-bold">{overBudget.length} over budget</span>
+              <span className="text-negative/70">— {overBudget.map(b => b.label.split('(')[0].trim()).join(', ')} totaling {formatCurrency(totalOverage)}/mo</span>
+            </div>
+          )}
+        </div>
+
+        {/* Category rows — Essentials */}
+        <div className="px-4 pt-3 pb-1">
+          <div className="term-label">Fixed / Essential</div>
+        </div>
+        {filteredBuckets.filter(b => isEssential(b.category)).map(b => {
+          const over = b.monthlyBudget > 0 && b.monthlyActual > b.monthlyBudget;
+          const pctUsed = b.monthlyBudget > 0 ? (b.monthlyActual / b.monthlyBudget) * 100 : 0;
+          const annualized = b.monthlyActual * 12;
+          const updateBucket = async (field: 'monthlyBudget' | 'monthlyActual', value: number) => {
+            const updated = buckets.map(bb => bb.category === b.category ? { ...bb, [field]: value } : bb);
+            setBuckets(updated);
+            await saveBudgetBuckets(updated);
+          };
+          return (
+            <div key={b.category}
+              className="px-4 py-2.5 flex items-center gap-3 hover:brightness-110 transition-colors cursor-pointer"
+              style={{
+                borderLeft: over ? '3px solid #ef4444' : pctUsed >= 80 ? '3px solid #f59e0b' : '3px solid transparent',
+                backgroundColor: over ? 'rgba(239,68,68,0.10)' : pctUsed >= 80 ? 'rgba(245,158,11,0.08)' : 'transparent',
+              }}
+              onClick={() => setDrilldownCategory(drilldownCategory === b.category ? null : b.category)}>
+              <span className="text-base w-6 text-center">{b.icon}</span>
+              <span className="text-sm text-text-primary flex-1 min-w-0 truncate">{b.label.split('(')[0].trim()}</span>
+              {showCompare && b.monthlyActual > 0 && (
+                <span className={`text-xs font-bold w-20 text-right ${annualized > 10000 ? 'text-warning' : 'text-text-secondary'}`}>
+                  {formatCurrency(annualized)}<span className="text-[9px] font-normal text-text-muted">/yr</span>
+                </span>
+              )}
+              <div className="flex items-center gap-1 w-32 justify-end">
+                <span className="text-xs text-text-muted">$</span>
+                <input type="number" step="0.01" value={b.monthlyActual} onClick={e => e.stopPropagation()}
+                  onChange={e => updateBucket('monthlyActual', Number(e.target.value))}
+                  className={`w-16 bg-transparent border border-transparent hover:border-glass-border rounded px-1 py-0.5 text-sm font-semibold text-right outline-none focus:border-accent/50 ${over ? 'text-negative' : 'text-text-primary'}`} />
+                <span className="text-xs text-text-muted">/</span>
+                <input type="number" step="0.01" value={b.monthlyBudget} onClick={e => e.stopPropagation()}
+                  onChange={e => updateBucket('monthlyBudget', Number(e.target.value))}
+                  className="w-16 bg-transparent border border-transparent hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50" />
+              </div>
+              <div className="w-28 flex-shrink-0">
+                {b.monthlyBudget > 0 ? (
+                  <div className="w-full rounded-full h-3 relative" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                    <div className={`h-3 rounded-full transition-all duration-500`}
+                      style={{
+                        width: `${Math.max(Math.min(pctUsed, 100), pctUsed > 0 ? 6 : 0)}%`,
+                        background: over ? 'linear-gradient(to right, #ef4444, #f87171)'
+                          : pctUsed > 80 ? 'linear-gradient(to right, #f59e0b, #fbbf24)'
+                          : 'linear-gradient(to right, #22c55e, #4ade80)',
+                        boxShadow: over ? '0 0 8px rgba(239,68,68,0.5)'
+                          : pctUsed > 80 ? '0 0 8px rgba(245,158,11,0.4)'
+                          : '0 0 8px rgba(34,197,94,0.4)',
+                      }} />
+                    {over && <div className="absolute top-[-2px] bottom-[-2px] w-0.5 bg-white/60 rounded" style={{ left: '100%', transform: 'translateX(-2px)' }} />}
+                  </div>
+                ) : (
+                  <div className="w-full rounded-full h-3" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+                )}
+                <div className="text-[10px] text-text-muted text-right mt-0.5 font-medium">
+                  {b.monthlyBudget > 0 ? `${Math.round(pctUsed)}%` : ''}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Separator */}
+        <div className="px-4 pt-4 pb-1">
+          <div className="term-label">Discretionary / Lifestyle</div>
+        </div>
+        {filteredBuckets.filter(b => !isEssential(b.category)).map(b => {
+          const over = b.monthlyBudget > 0 && b.monthlyActual > b.monthlyBudget;
+          const pctUsed = b.monthlyBudget > 0 ? (b.monthlyActual / b.monthlyBudget) * 100 : 0;
+          const annualized = b.monthlyActual * 12;
+          const updateBucket = async (field: 'monthlyBudget' | 'monthlyActual', value: number) => {
+            const updated = buckets.map(bb => bb.category === b.category ? { ...bb, [field]: value } : bb);
+            setBuckets(updated);
+            await saveBudgetBuckets(updated);
+          };
+          return (
+            <div key={b.category}
+              className="px-4 py-2.5 flex items-center gap-3 hover:brightness-110 transition-colors cursor-pointer"
+              style={{
+                borderLeft: over ? '3px solid #ef4444' : pctUsed >= 80 ? '3px solid #f59e0b' : '3px solid transparent',
+                backgroundColor: over ? 'rgba(239,68,68,0.10)' : pctUsed >= 80 ? 'rgba(245,158,11,0.08)' : 'transparent',
+              }}
+              onClick={() => setDrilldownCategory(drilldownCategory === b.category ? null : b.category)}>
+              <span className="text-base w-6 text-center">{b.icon}</span>
+              <span className="text-sm text-text-primary flex-1 min-w-0 truncate">{b.label.split('(')[0].trim()}</span>
+              {showCompare && b.monthlyActual > 0 && (
+                <span className={`text-xs font-bold w-20 text-right ${annualized > 5000 ? 'text-warning' : 'text-text-secondary'}`}>
+                  {formatCurrency(annualized)}<span className="text-[9px] font-normal text-text-muted">/yr</span>
+                </span>
+              )}
+              <div className="flex items-center gap-1 w-32 justify-end">
+                <span className="text-xs text-text-muted">$</span>
+                <input type="number" step="0.01" value={b.monthlyActual} onClick={e => e.stopPropagation()}
+                  onChange={e => updateBucket('monthlyActual', Number(e.target.value))}
+                  className={`w-16 bg-transparent border border-transparent hover:border-glass-border rounded px-1 py-0.5 text-sm font-semibold text-right outline-none focus:border-accent/50 ${over ? 'text-negative' : 'text-text-primary'}`} />
+                <span className="text-xs text-text-muted">/</span>
+                <input type="number" step="0.01" value={b.monthlyBudget} onClick={e => e.stopPropagation()}
+                  onChange={e => updateBucket('monthlyBudget', Number(e.target.value))}
+                  className="w-16 bg-transparent border border-transparent hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50" />
+              </div>
+              <div className="w-28 flex-shrink-0">
+                {b.monthlyBudget > 0 ? (
+                  <div className="w-full rounded-full h-3 relative" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                    <div className={`h-3 rounded-full transition-all duration-500`}
+                      style={{
+                        width: `${Math.max(Math.min(pctUsed, 100), pctUsed > 0 ? 6 : 0)}%`,
+                        background: over ? 'linear-gradient(to right, #ef4444, #f87171)'
+                          : pctUsed > 80 ? 'linear-gradient(to right, #f59e0b, #fbbf24)'
+                          : 'linear-gradient(to right, #22c55e, #4ade80)',
+                        boxShadow: over ? '0 0 8px rgba(239,68,68,0.5)'
+                          : pctUsed > 80 ? '0 0 8px rgba(245,158,11,0.4)'
+                          : '0 0 8px rgba(34,197,94,0.4)',
+                      }} />
+                    {over && <div className="absolute top-[-2px] bottom-[-2px] w-0.5 bg-white/60 rounded" style={{ left: '100%', transform: 'translateX(-2px)' }} />}
+                  </div>
+                ) : (
+                  <div className="w-full rounded-full h-3" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+                )}
+                <div className="text-[10px] text-text-muted text-right mt-0.5 font-medium">
+                  {b.monthlyBudget > 0 ? `${Math.round(pctUsed)}%` : ''}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Inline "+ Add bucket" — only visible in edit mode */}
+        {editMode && (newBucket === null ? (
+          <button
+            type="button"
+            onClick={() => setNewBucket({ label: '', icon: '📦', monthlyBudget: '' })}
+            className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent/10 transition-colors text-text-muted hover:text-accent-light text-sm border-t border-glass-border"
+          >
+            <span className="text-base w-6 text-center">+</span>
+            <span>Add a custom bucket</span>
+          </button>
+        ) : (
+          <div className="px-4 py-3 flex flex-wrap items-center gap-2 bg-accent/5 border-y border-accent/20">
+            <input
+              type="text"
+              placeholder="📦"
+              value={newBucket.icon}
+              onChange={e => setNewBucket({ ...newBucket, icon: e.target.value })}
+              maxLength={2}
+              className="w-10 text-center bg-surface-2 border border-glass-border rounded px-1 py-1 text-sm"
+            />
+            <input
+              type="text"
+              placeholder="Bucket name (e.g. Coffee)"
+              value={newBucket.label}
+              onChange={e => setNewBucket({ ...newBucket, label: e.target.value })}
+              onKeyDown={e => { if (e.key === 'Enter') addBucket(); if (e.key === 'Escape') setNewBucket(null); }}
+              autoFocus
+              className="flex-1 min-w-[160px] bg-surface-2 border border-glass-border rounded px-2 py-1 text-sm text-text-primary"
+            />
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-text-muted">$</span>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="0"
+                value={newBucket.monthlyBudget}
+                onChange={e => setNewBucket({ ...newBucket, monthlyBudget: e.target.value })}
+                onKeyDown={e => { if (e.key === 'Enter') addBucket(); if (e.key === 'Escape') setNewBucket(null); }}
+                className="w-20 bg-surface-2 border border-glass-border rounded px-1 py-1 text-sm text-right text-text-primary"
+              />
+              <span className="text-xs text-text-muted">/mo</span>
+            </div>
+            <button
+              onClick={addBucket}
+              disabled={!newBucket.label.trim() || !Number(newBucket.monthlyBudget)}
+              className="px-3 py-1 rounded bg-accent hover:bg-accent-light disabled:bg-surface-2 disabled:text-text-muted text-white text-xs font-semibold transition-colors"
+            >
+              Add
+            </button>
+            <button
+              onClick={() => setNewBucket(null)}
+              className="px-3 py-1 rounded bg-surface-2 hover:bg-surface-3 text-text-muted text-xs transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        ))}
+
+        {/* Allocation footer */}
+        <div className="p-4 border-t border-glass-border space-y-1.5">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-text-muted">Total budgeted</span>
+            <span className={`font-bold ${unallocated < 0 ? 'text-negative' : 'text-text-primary'}`}>
+              {formatCurrency(totalAllocated)} of {formatCurrency(paycheck.netTakeHome)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-text-muted">Total spent</span>
+            <span className={`font-bold ${totalBucketSpend > totalAllocated ? 'text-negative' : totalBucketSpend > totalAllocated * 0.9 ? 'text-warning' : 'text-positive'}`}>
+              {formatCurrency(totalBucketSpend)}
+              <span className="text-xs text-text-muted font-normal ml-1">
+                ({totalAllocated > 0 ? Math.round((totalBucketSpend / totalAllocated) * 100) : 0}% of budget)
+              </span>
+            </span>
+          </div>
+          {totalBucketSpend !== totalAllocated && (
+            <div className="flex items-center justify-between text-xs pt-1 border-t border-glass-border/50">
+              <span className="text-text-muted">{totalBucketSpend > totalAllocated ? 'Over budget by' : 'Under budget by'}</span>
+              <span className={`font-semibold ${totalBucketSpend > totalAllocated ? 'text-negative' : 'text-positive'}`}>
+                {formatCurrency(Math.abs(totalBucketSpend - totalAllocated))}
+              </span>
+            </div>
+          )}
+          {showCompare && (
+            <div className="flex items-center justify-between text-sm pt-2 border-t border-glass-border mt-1">
+              <span className="text-text-muted font-medium">Projected annual spend</span>
+              <span className={`font-bold text-lg ${totalBucketSpend * 12 > paycheck.netTakeHome * 12 ? 'text-negative' : 'text-warning'}`}>
+                {formatCurrency(totalBucketSpend * 12)}<span className="text-xs font-normal text-text-muted">/yr</span>
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+      </>)}
+
+      {/* Category drilldown modal moved to end of component for proper z-index */}
+
+      {!editMode && (<>
+      {/* Paycheck Waterfall — Demoted to collapsible advanced view per locked architecture
+          (see project_iris_budget_architecture.md). The Income Sources panel above is
+          the primary engine; this gross-down view is supplemental for users who want
+          to see where pre-tax dollars go. Collapsed by default. */}
+      <details className="glass-card p-0 group">
+        <summary className="cursor-pointer p-6 list-none flex items-start gap-3 hover:bg-surface-2 transition-colors rounded-2xl">
+          <div className="text-xl mt-0.5">📋</div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-text-primary">Paycheck Waterfall</h2>
+              <span className="text-[10px] text-text-muted uppercase tracking-wider">Advanced</span>
+            </div>
+            <p className="text-xs text-text-muted mt-1">
+              Optional gross-to-net view. Click to expand. The Income Sources panel above is the primary budget engine.
+            </p>
+          </div>
+          <div className="text-text-muted text-sm group-open:rotate-180 transition-transform">▾</div>
+        </summary>
+        <div className="px-6 pb-6">
+        <p className="text-xs text-text-muted mb-4">Where every dollar of your {formatCurrency(paycheck.netTakeHome)}/mo take-home should go, in priority order</p>
+        <div className="space-y-2">
+          {priorityWithRemaining.map((p, i) => {
+            const statusColors = {
+              income: 'bg-positive/15 text-positive border-positive/20',
+              essential: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+              needed: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+              savings: 'bg-accent/10 text-accent-light border-accent/20',
+              fun: 'bg-pink-500/10 text-pink-400 border-pink-500/20',
+              discretionary: 'bg-white/5 text-text-secondary border-glass-border',
+            };
+            const statusLabels = {
+              income: 'Income', essential: 'Essential', needed: 'Needed',
+              savings: 'Savings', fun: 'Fun Money', discretionary: 'Discretionary',
+            };
+            return (
+              <div key={i} className={`flex items-center justify-between p-3 rounded-lg border ${statusColors[p.status]}`}>
+                <div className="flex items-center gap-3">
+                  <span className={`text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded ${statusColors[p.status]}`}>
+                    {statusLabels[p.status]}
+                  </span>
+                  <span className="text-sm font-medium">{p.name}</span>
+                </div>
+                <div className="flex items-center gap-4">
+                  {i > 0 && <span className="text-sm font-medium">-{formatCurrency(p.amount)}</span>}
+                  <span className={`text-xs font-mono ${p.remaining < 0 ? 'text-negative' : 'text-text-muted'}`}>
+                    {i === 0 ? '' : `${formatCurrency(p.remaining)} left`}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+          <div className={`flex items-center justify-between p-3 rounded-lg border ${remaining >= 0 ? 'bg-positive/10 border-positive/20 text-positive' : 'bg-negative/10 border-negative/20 text-negative'}`}>
+            <span className="text-sm font-bold">Unallocated</span>
+            <span className="text-sm font-bold">{formatCurrency(remaining)}/mo</span>
+          </div>
+        </div>
+        </div>
+      </details>
+      </>)}
+
+      {editMode && (<>
+      {/* Fun Money */}
+      <div className="glass-card p-6">
+        <h2 className="text-lg font-semibold text-text-primary mb-2">Fun Money</h2>
+        <p className="text-xs text-text-muted mb-4">No-judgment spending. Each person gets their own budget. This is what stops the money fights.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {funMoney.map((fm, i) => {
+            const updateFM = async (field: string, value: number) => {
+              const updated = funMoney.map((f, idx) => idx === i ? { ...f, [field]: value } : f);
+              setFunMoney(updated);
+              await saveFunMoney(updated);
+            };
+            return (
+              <div key={i} className="p-4 rounded-xl bg-white/[0.03] border border-glass-border group">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="font-semibold text-text-primary">{fm.person === 'Scott' ? '🎮' : '💅'} {fm.person}</span>
+                  <div className="flex items-center gap-0.5">
+                    <span className="text-accent font-bold">$</span>
+                    <input type="number" step="0.01" value={fm.monthlyBudget}
+                      onChange={e => updateFM('monthlyBudget', Number(e.target.value))}
+                      className="w-16 bg-transparent border border-transparent group-hover:border-glass-border rounded px-1 py-0.5 text-sm text-accent font-bold text-right outline-none focus:border-accent/50"
+                    />
+                    <span className="text-accent font-bold">/mo</span>
+                  </div>
+                </div>
+                <div className="w-full bg-white/10 rounded-full h-2 mb-1">
+                  <div className="h-2 rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-all" style={{ width: `${fm.monthlyBudget > 0 ? (fm.monthlySpent / fm.monthlyBudget) * 100 : 0}%` }} />
+                </div>
+                <div className="flex justify-between text-xs text-text-muted items-center">
+                  <div className="flex items-center gap-0.5">
+                    <span>$</span>
+                    <input type="number" step="0.01" value={fm.monthlySpent}
+                      onChange={e => updateFM('monthlySpent', Number(e.target.value))}
+                      className="w-16 bg-transparent border border-transparent group-hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50"
+                    />
+                    <span> spent</span>
+                  </div>
+                  <span>{formatCurrency(fm.monthlyBudget - fm.monthlySpent)} remaining</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Stashes (formerly "Sinking Funds") */}
+      <div className="glass-card p-6">
+        <h2 className="text-lg font-semibold text-text-primary mb-2">Stashes</h2>
+        <p className="text-xs text-text-muted mb-4">Monthly set-asides for irregular expenses. When the bill hits, it's already funded.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {sinkingFunds.map((sf, i) => {
+            const pct = sf.targetAmount > 0 ? (sf.currentBalance / sf.targetAmount) * 100 : 0;
+            const updateFund = async (field: string, value: number) => {
+              const updated = sinkingFunds.map((f, idx) => idx === i ? { ...f, [field]: value } : f);
+              setSinkingFunds(updated);
+              await saveSinkingFunds(updated);
+            };
+            return (
+              <div key={i} className="p-4 rounded-xl bg-white/[0.03] border border-glass-border group">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-text-primary">{sf.name}</span>
+                  <div className="flex items-center gap-0.5">
+                    <span className="text-xs text-text-muted">$</span>
+                    <input type="number" step="0.01" value={sf.monthlyContribution}
+                      onChange={e => updateFund('monthlyContribution', Number(e.target.value))}
+                      className="w-16 bg-transparent border border-transparent group-hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50"
+                    />
+                    <span className="text-xs text-text-muted">/mo</span>
+                  </div>
+                </div>
+                <div className="w-full bg-white/10 rounded-full h-2 mb-1">
+                  <div className="h-2 rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%`, background: sf.color }} />
+                </div>
+                <div className="flex justify-between text-xs text-text-muted items-center">
+                  <div className="flex items-center gap-0.5">
+                    <span>$</span>
+                    <input type="number" step="0.01" value={sf.currentBalance}
+                      onChange={e => updateFund('currentBalance', Number(e.target.value))}
+                      className="w-16 bg-transparent border border-transparent group-hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50"
+                    />
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    <span>Goal: $</span>
+                    <input type="number" step="0.01" value={sf.targetAmount}
+                      onChange={e => updateFund('targetAmount', Number(e.target.value))}
+                      className="w-20 bg-transparent border border-transparent group-hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50"
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-3 text-xs text-text-muted">
+          Total monthly stash contributions: <strong className="text-text-primary">{formatCurrency(sinkingFunds.reduce((s, f) => s + f.monthlyContribution, 0))}</strong>
+        </div>
+      </div>
+
+      {/* Bucket Groups — opt-in flex budgeting. Configuration, lives in edit mode. */}
+      <BucketGroupsManager buckets={buckets} onChange={setBuckets} />
+      </>)}
+
+      {!editMode && (<>
+      {/* Monthly Spending — collapsible. Avg tiles visible always; per-month bars expand on click. */}
+      {monthlyData.length > 0 && (
+        <details className="glass-card p-0 group">
+          <summary className="cursor-pointer p-6 list-none hover:bg-surface-2 transition-colors rounded-2xl">
+            <div className="flex items-start justify-between mb-4 gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-text-primary">Monthly Spending</h2>
+                <p className="text-xs text-text-muted mt-1">Real numbers from your imported transactions — {expenses.length} total across {monthlyData.length} months</p>
+              </div>
+              <span className="text-[10px] text-text-muted whitespace-nowrap flex-shrink-0 mt-1">
+                <span className="group-open:hidden">Show monthly bars ▾</span>
+                <span className="hidden group-open:inline">Hide monthly bars ▴</span>
+              </span>
+            </div>
+            {/* Avg tiles — always visible. Work expenses live in their own card; not duplicated here. */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: 'Avg Monthly Spend', value: formatCurrency(monthlyData.reduce((s, m) => s + m.totalExpenses, 0) / Math.max(monthlyData.filter(m => m.transactionCount > 10).length, 1)), color: 'text-text-primary' },
+                { label: 'Avg Monthly Income', value: formatCurrency(monthlyData.reduce((s, m) => s + m.totalIncome, 0) / Math.max(monthlyData.filter(m => m.transactionCount > 10).length, 1)), color: 'text-positive' },
+                { label: 'Avg Investments', value: formatCurrency(monthlyData.reduce((s, m) => s + m.totalInvestments, 0) / Math.max(monthlyData.filter(m => m.transactionCount > 10).length, 1)), color: 'text-accent-light' },
+                { label: 'Total Transactions', value: expenses.length.toString(), color: 'text-text-primary' },
+              ].map((s, i) => (
+                <div key={i} className="p-3 rounded-lg bg-white/[0.03] border border-glass-border">
+                  <div className="text-text-muted text-[10px] uppercase tracking-wider">{s.label}</div>
+                  <div className={`text-lg font-bold mt-0.5 ${s.color}`}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+          </summary>
+          {/* Per-month bars — only on expand */}
+          <div className="px-6 pb-6 pt-4 border-t border-glass-border space-y-3">
+            {monthlyData.map(m => {
+              const maxExpense = Math.max(...monthlyData.map(mm => mm.totalExpenses), 1);
+              const pct = (m.totalExpenses / maxExpense) * 100;
+              return (
+                <div key={m.month} className="flex items-center gap-3">
+                  <span className="text-xs text-text-secondary w-16 text-right font-mono">{m.monthLabel.split(' ')[0]}</span>
+                  <div className="flex-1 bg-white/10 rounded-full h-6 relative overflow-hidden">
+                    <div className="h-6 rounded-full bg-gradient-to-r from-indigo-500 to-blue-400 flex items-center transition-all duration-500"
+                      style={{ width: `${Math.min(pct, 100)}%` }}>
+                      <span className="text-xs font-medium text-white pl-3 whitespace-nowrap">{formatCurrency(m.totalExpenses)}</span>
+                    </div>
+                  </div>
+                  <span className="text-xs text-text-muted w-16 text-right">{m.transactionCount} txns</span>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
+
+      {/* Trigger Center — pace warnings, surplus available, etc */}
+      <TriggerCenter expenses={expenses} buckets={buckets} />
+
+      {/* Inflow questions — one-tap classification for ambiguous deposits */}
+      <InflowQuestions expenses={expenses} />
+
+      {/* Income Sources — detected paychecks, variable, side, dividends, reimbursements */}
+      <IncomeSources expenses={expenses} />
+
+      {/* Recurring Bills — auto-detected subscriptions, utilities, paychecks */}
+      <RecurringBills expenses={expenses} />
+
+      {/* Action Items — shared with dashboard, uses the same data */}
+      <div className="glass-card p-6">
+        <h2 className="text-lg font-semibold text-text-primary mb-4">Budget-Related Action Items</h2>
+        <ActionItemsView items={actionItems} onItemsChange={handleActionItemsChange} filter="budget" />
+      </div>
+      </>)}
+      </>}
+
+      {/* Category Drilldown Modal — portal to body to escape backdrop-filter parents */}
+      {drilldownCategory && (() => {
+        const bucket = filteredBuckets.find(b => b.category === drilldownCategory);
+        if (!bucket) return null;
+        const monthFilter = (e: Expense) => {
+          if (resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest') return true;
+          if (!e.date) return false;
+          const d = e.date.includes('/') ? (() => { const [m,,y] = e.date.split('/'); return `${y}-${m.padStart(2,'0')}`; })() : e.date.slice(0,7);
+          return d === resolvedOverviewMonth;
+        };
+        const catTxns = expenses
+          .filter(e => e.category === drilldownCategory && (e.flow || 'outflow') === 'outflow')
+          .filter(monthFilter)
+          .sort((a, b) => b.amount - a.amount);
+        const total = catTxns.reduce((s, e) => s + e.amount, 0);
+
+        return createPortal(
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setDrilldownCategory(null)}>
+            <div className="bg-surface-1 border border-glass-border rounded-xl w-full max-w-lg max-h-[70vh] overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="p-4 border-b border-glass-border flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{bucket.icon}</span>
+                  <div>
+                    <h3 className="font-semibold text-text-primary">{bucket.label}</h3>
+                    <p className="text-xs text-text-muted">{catTxns.length} transactions · {formatCurrency(total)} total</p>
+                  </div>
+                </div>
+                <button onClick={() => setDrilldownCategory(null)} className="text-text-muted hover:text-text-primary text-xl font-bold">×</button>
+              </div>
+              <div className="overflow-y-auto max-h-[55vh] p-4 space-y-1">
+                {catTxns.length === 0 ? (
+                  <p className="text-text-muted text-sm text-center py-8">No transactions for this category in the selected period</p>
+                ) : catTxns.map((e, i) => (
+                  <div key={i} className="flex items-center justify-between py-2 text-sm border-b border-glass-border/50 last:border-0">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-text-primary truncate">{e.description}</div>
+                      <div className="text-[10px] text-text-muted">{e.date}</div>
+                    </div>
+                    <span className="text-text-primary font-medium ml-3">{formatCurrency(e.amount)}</span>
+                  </div>
+                ))}
+              </div>
+              {/* Budget comparison + annualized projection */}
+              <div className="border-t border-glass-border">
+                {bucket.monthlyBudget > 0 && (
+                  <div className={`px-4 py-2 text-xs font-medium ${total > bucket.monthlyBudget ? 'bg-negative/10 text-negative' : 'bg-positive/10 text-positive'}`}>
+                    {total > bucket.monthlyBudget
+                      ? `Over budget by ${formatCurrency(total - bucket.monthlyBudget)} (budget: ${formatCurrency(bucket.monthlyBudget)})`
+                      : `Under budget by ${formatCurrency(bucket.monthlyBudget - total)} (budget: ${formatCurrency(bucket.monthlyBudget)})`}
+                  </div>
+                )}
+                <div className="px-4 py-2 bg-white/[0.02] flex items-center justify-between text-xs">
+                  <span className="text-text-muted">Projected annual spend</span>
+                  <span className="font-bold text-text-primary">{formatCurrency(total * 12)}/yr</span>
+                </div>
+                {bucket.monthlyBudget > 0 && (
+                  <div className="px-4 py-2 bg-white/[0.02] flex items-center justify-between text-xs border-t border-glass-border/50">
+                    <span className="text-text-muted">Annual budget</span>
+                    <span className="text-text-secondary">{formatCurrency(bucket.monthlyBudget * 12)}/yr</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
+    </div>
+  );
+}

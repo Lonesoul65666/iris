@@ -1,0 +1,457 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --color-surface-0: #0a0a0f;
+  --color-surface-1: #111118;
+  --color-surface-2: #1a1a24;
+  --color-surface-3: #222230;
+  --color-surface-4: #2a2a3a;
+
+  --color-accent: #8b5cf6;
+  --color-accent-light: #a78bfa;
+  --color-accent-dim: #6d28d9;
+
+  --color-positive: #22c55e;
+  --color-negative: #ef4444;
+  --color-warning: #f59e0b;
+
+  --color-text-primary: #f0f0f5;
+  --color-text-secondary: #9ca3af;
+  --color-text-muted: #6b7280;
+
+  --color-glass-border: rgba(255, 255, 255, 0.08);
+  --color-glass-bg: rgba(17, 17, 24, 0.7);
+
+  /* Cyber accent — softer than full brutalist, used by dashboard overlays */
+  --color-cyber-cyan: #00e5ff;
+  --color-cyber-cyan-dim: #00bcd4;
+  --color-cyber-magenta: #ff2d92;
+}
+
+/* ─── Cyber overlay layer (Dashboard hero + cards) ─── */
+.cyber-grid {
+  background-image:
+    linear-gradient(rgba(0, 229, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.cyber-scanlines { position: relative; }
+.cyber-scanlines::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.45), transparent);
+  animation: scanline-sweep 6s linear infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+@keyframes scanline-sweep {
+  0%   { top: -2%; opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { top: 102%; opacity: 0; }
+}
+.cyber-corners::before, .cyber-corners::after {
+  content: '';
+  position: absolute;
+  width: 12px; height: 12px;
+  border-color: var(--color-cyber-cyan);
+  pointer-events: none;
+  opacity: 0.6;
+  z-index: 1;
+}
+.cyber-corners::before {
+  top: 8px; left: 8px;
+  border-top: 1.5px solid; border-left: 1.5px solid;
+}
+.cyber-corners::after {
+  bottom: 8px; right: 8px;
+  border-bottom: 1.5px solid; border-right: 1.5px solid;
+}
+.term-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-cyber-cyan);
+  opacity: 0.8;
+}
+.cyber-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+.mono-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-feature-settings: 'tnum' 1;
+}
+.cyber-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-cyber-cyan), transparent);
+  opacity: 0.4;
+}
+
+body { margin: 0; }
+
+#root {
+  min-height: 100svh;
+  display: flex;
+}
+
+/* Glassmorphism card */
+.glass-card {
+  background: var(--color-glass-bg);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--color-glass-border);
+  border-radius: 16px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+}
+.glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(139, 92, 246, 0.05);
+}
+
+.glass-card-sm {
+  background: var(--color-glass-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  border-radius: 12px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Premium stat card with gradient border on hover */
+.stat-card {
+  background: var(--color-glass-bg);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--color-glass-border);
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0), rgba(139, 92, 246, 0));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  transition: background 0.4s ease;
+  pointer-events: none;
+}
+.stat-card:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 0 0 20px rgba(139, 92, 246, 0.08);
+}
+.stat-card:hover::before {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0));
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #a78bfa, #818cf8, #6366f1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeIn { animation: fadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Staggered card entrances */
+.stagger-1 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both; }
+.stagger-2 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both; }
+.stagger-3 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both; }
+.stagger-4 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both; }
+.stagger-5 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.25s both; }
+.stagger-6 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.3s both; }
+.stagger-7 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both; }
+.stagger-8 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.4s both; }
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.1); }
+  50% { box-shadow: 0 0 40px rgba(139, 92, 246, 0.25); }
+}
+.glow-pulse { animation: pulse-glow 3s ease-in-out infinite; }
+
+/* Shimmer loading effect */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Gradient border glow on hover */
+@keyframes borderGlow {
+  0%, 100% { border-color: rgba(139, 92, 246, 0.15); }
+  50% { border-color: rgba(139, 92, 246, 0.35); }
+}
+
+/* Ambient background orbs */
+@keyframes float1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -20px) scale(1.05); }
+  66% { transform: translate(-15px, 15px) scale(0.95); }
+}
+@keyframes float2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-25px, 25px) scale(0.95); }
+  66% { transform: translate(20px, -15px) scale(1.05); }
+}
+
+/* Number tick-up effect */
+@keyframes countPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+.count-done { animation: countPulse 0.3s ease-out; }
+
+/* Smooth section expand/collapse */
+.section-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.section-content.open {
+  grid-template-rows: 1fr;
+}
+.section-content > div {
+  overflow: hidden;
+}
+
+/* Active nav indicator */
+@keyframes navGlow {
+  0%, 100% { box-shadow: 0 0 8px rgba(139, 92, 246, 0); }
+  50% { box-shadow: 0 0 12px rgba(139, 92, 246, 0.15); }
+}
+.nav-active {
+  animation: navGlow 2s ease-in-out infinite;
+}
+
+/* Chat markdown styling */
+.chat-content h1, .chat-content h2, .chat-content h3 { font-weight: 600; margin-top: 1em; margin-bottom: 0.5em; color: #e2e8f0; }
+.chat-content h1 { font-size: 1.25rem; }
+.chat-content h2 { font-size: 1.1rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.3em; }
+.chat-content h3 { font-size: 1rem; }
+.chat-content h1:first-child, .chat-content h2:first-child, .chat-content h3:first-child { margin-top: 0; }
+.chat-content p { margin-bottom: 0.75em; }
+.chat-content p:last-child { margin-bottom: 0; }
+.chat-content ul { list-style: disc; margin-left: 1.5em; margin-bottom: 0.75em; }
+.chat-content ol { list-style: decimal; margin-left: 1.5em; margin-bottom: 0.75em; }
+.chat-content li { margin-bottom: 0.35em; line-height: 1.5; }
+.chat-content code { background: rgba(139, 92, 246, 0.15); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; font-family: var(--font-mono); }
+.chat-content pre { background: rgba(0, 0, 0, 0.4); padding: 1em; border-radius: 8px; overflow-x: auto; margin-bottom: 0.75em; }
+.chat-content pre code { background: none; padding: 0; }
+.chat-content strong { color: #c4b5fd; font-weight: 700; }
+.chat-content table { border-collapse: collapse; width: 100%; margin-bottom: 0.75em; font-size: 0.85em; border-radius: 8px; overflow: hidden; }
+.chat-content th, .chat-content td { border: 1px solid rgba(255,255,255,0.08); padding: 0.5em 0.85em; text-align: left; }
+.chat-content th { background: rgba(139, 92, 246, 0.12); font-weight: 600; color: #c4b5fd; text-transform: uppercase; font-size: 0.8em; letter-spacing: 0.03em; }
+.chat-content td { background: rgba(255,255,255,0.02); }
+.chat-content tr:hover td { background: rgba(255,255,255,0.04); }
+.chat-content hr { border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 1em 0; }
+
+/* ────────────────────────────────────────────────────────────────────
+   TRON / CYBERPUNK / WALL STREET aesthetic layer
+   Used by the dashboard hero + data cards. Designed to feel like a
+   trading terminal had a baby with a Tron arcade cabinet.
+   ──────────────────────────────────────────────────────────────────── */
+
+/* Subtle circuit-grid backdrop — drop behind hero or page bg */
+.cyber-grid {
+  background-image:
+    linear-gradient(rgba(0, 229, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+
+/* Scanline overlay — places horizontal moving lines over a parent */
+.cyber-scanlines {
+  position: relative;
+}
+.cyber-scanlines::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 3px,
+    rgba(0, 229, 255, 0.018) 3px,
+    rgba(0, 229, 255, 0.018) 4px
+  );
+  pointer-events: none;
+  border-radius: inherit;
+}
+.cyber-scanlines::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.45), transparent);
+  animation: scanline-sweep 6s linear infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+@keyframes scanline-sweep {
+  0%   { top: -2%; opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { top: 102%; opacity: 0; }
+}
+
+/* HUD corner brackets — drop inside any positioned container */
+.cyber-corners::before,
+.cyber-corners::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: var(--color-cyber-cyan);
+  pointer-events: none;
+  opacity: 0.7;
+}
+.cyber-corners::before {
+  top: 8px; left: 8px;
+  border-top: 1.5px solid;
+  border-left: 1.5px solid;
+}
+.cyber-corners::after {
+  bottom: 8px; right: 8px;
+  border-bottom: 1.5px solid;
+  border-right: 1.5px solid;
+}
+/* Second pair of corners via box-shadow trick — top-right + bottom-left */
+.cyber-corners > .cyber-corners-tr,
+.cyber-corners > .cyber-corners-bl {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: var(--color-cyber-cyan);
+  pointer-events: none;
+  opacity: 0.7;
+}
+.cyber-corners > .cyber-corners-tr {
+  top: 8px; right: 8px;
+  border-top: 1.5px solid;
+  border-right: 1.5px solid;
+}
+.cyber-corners > .cyber-corners-bl {
+  bottom: 8px; left: 8px;
+  border-bottom: 1.5px solid;
+  border-left: 1.5px solid;
+}
+
+/* Neon edge glow — used on hero card */
+.cyber-glow {
+  box-shadow:
+    0 0 0 1px rgba(0, 229, 255, 0.18),
+    0 0 24px rgba(0, 229, 255, 0.06),
+    inset 0 0 60px rgba(0, 229, 255, 0.02);
+}
+.cyber-glow-magenta {
+  box-shadow:
+    0 0 0 1px rgba(255, 45, 146, 0.22),
+    0 0 24px rgba(255, 45, 146, 0.08);
+}
+
+/* Cyber chip — sharp-edged status pill */
+.cyber-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
+/* Terminal-style label */
+.term-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-cyber-cyan);
+  opacity: 0.75;
+}
+
+/* Glitch flicker on hover — only on cyber-pulse class */
+@keyframes cyber-flicker {
+  0%, 100% { opacity: 1; text-shadow: 0 0 8px rgba(0, 229, 255, 0.4); }
+  3%       { opacity: 0.92; text-shadow: 0 0 4px rgba(0, 229, 255, 0.3), 2px 0 rgba(255, 45, 146, 0.4); }
+  7%       { opacity: 1; text-shadow: 0 0 12px rgba(0, 229, 255, 0.5); }
+  20%      { opacity: 0.95; }
+  60%      { text-shadow: 0 0 14px rgba(167, 139, 250, 0.5); }
+}
+.cyber-pulse:hover {
+  animation: cyber-flicker 1.6s ease-in-out infinite;
+}
+
+/* Animated gradient stroke for divider lines */
+.cyber-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-cyber-cyan), transparent);
+  opacity: 0.4;
+}
+
+/* Tabular mono numbers — for stat hero */
+.mono-num {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum' 1, 'ss01' 1;
+  letter-spacing: -0.01em;
+}
+
+/* Mobile responsive utilities */
+@media (max-width: 767px) {
+  /* Prevent tables from overflowing on mobile */
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .chat-content table { font-size: 0.75em; }
+
+  /* Ensure the main grid layouts stack on mobile */
+  .grid-cols-2, .grid-cols-3, .grid-cols-4 { grid-template-columns: 1fr !important; }
+}
