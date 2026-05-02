@@ -1,0 +1,70 @@
+{
+  "templates": [
+    {
+      "id": "move-cash-to-hysa",
+      "version": 1,
+      "aliases": ["hysa-move"],
+      "category": "cash",
+      "trigger": {
+        "type": "portfolio-condition",
+        "condition": {
+          "all": [
+            { "metric": "low-yield-cash", "op": ">", "value": 50000 }
+          ]
+        },
+        "urgencyByAge": "static"
+      },
+      "text": "You have {{metrics.low-yield-cash | currency}} earning less than 1% APY. Move some to a HYSA earning 4%+.",
+      "detail": "High-yield savings accounts at online banks (Varo, Axos, Newtek) pay 4-5% APY vs. near-zero at traditional checking/savings. Transferring excess cash earns several thousand in interest per year with no risk.",
+      "priority": "high",
+      "inputs": [
+        {
+          "key": "source",
+          "label": "Source account",
+          "type": "account-picker",
+          "required": true,
+          "accountFilter": { "type": "bank" }
+        },
+        {
+          "key": "amount",
+          "label": "Amount moved",
+          "type": "currency",
+          "required": true
+        },
+        {
+          "key": "destination",
+          "label": "HYSA destination name",
+          "type": "string",
+          "default": "High-Yield Savings"
+        },
+        {
+          "key": "apy",
+          "label": "APY %",
+          "type": "number",
+          "default": 4.25
+        }
+      ],
+      "effects": [
+        {
+          "op": "transfer-cash",
+          "from": { "by": "input", "inputKey": "source" },
+          "to": "new-account",
+          "amount": "input:amount",
+          "newAccountTemplate": {
+            "name": "{{input:destination}}",
+            "type": "bank",
+            "institution": "{{input:destination}}"
+          }
+        }
+      ],
+      "successTemplate": "Moved {{input:amount | currency}} to {{input:destination}}. Earning ~{{calc:input.amount * input.apy / 100 | currency}}/year at {{input:apy}}% APY.",
+      "newActionsOnSuccess": [
+        {
+          "text": "Verify {{input:destination}} is set up and earning {{input:apy}}% APY. Consider setting up auto-transfer for future savings.",
+          "priority": "low",
+          "category": "general"
+        }
+      ]
+    }
+  ]
+}

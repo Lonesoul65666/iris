@@ -1,0 +1,64 @@
+{
+  "templates": [
+    {
+      "id": "increase-401k",
+      "version": 1,
+      "category": "budget",
+      "trigger": {
+        "type": "manual",
+        "urgencyByAge": "static"
+      },
+      "text": "Increase your 401(k) contribution to capture more pre-tax savings.",
+      "detail": "Every $100/month increase saves ~$32/month in taxes at a 32% marginal rate. 2026 IRS limit is $23,500 (under 50).",
+      "priority": "medium",
+      "inputs": [
+        {
+          "key": "amount",
+          "label": "New monthly contribution",
+          "type": "currency",
+          "required": true
+        }
+      ],
+      "effects": [
+        {
+          "op": "update-budget",
+          "target": "paycheck",
+          "patch": {
+            "retirement401k": "input:amount"
+          }
+        }
+      ],
+      "successTemplate": "401(k) contribution updated to {{input:amount | currency}}/month ({{calc:input.amount * 12 | currency}}/year). Estimated tax savings: {{calc:input.amount * 12 * 0.32 | currency}}/year."
+    },
+    {
+      "id": "update-fun-money",
+      "version": 1,
+      "aliases": ["fun-money"],
+      "category": "budget",
+      "trigger": {
+        "type": "manual"
+      },
+      "text": "Set guilt-free spending allowances for each household member.",
+      "detail": "Fun money is no-questions-asked discretionary budget. Each person gets their own monthly allowance to spend on whatever they want.",
+      "priority": "low",
+      "inputs": [
+        {
+          "key": "values",
+          "label": "Per-person monthly budgets",
+          "type": "household-budget",
+          "required": true
+        }
+      ],
+      "effects": [
+        {
+          "op": "update-budget",
+          "target": "fun-money",
+          "patch": {
+            "values": "input:values"
+          }
+        }
+      ],
+      "successTemplate": "Fun money budgets updated. This is guilt-free — no questions asked."
+    }
+  ]
+}

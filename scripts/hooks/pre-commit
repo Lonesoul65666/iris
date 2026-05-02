@@ -1,0 +1,25 @@
+#!/bin/sh
+# Iris pre-commit hook.
+# Runs TypeScript type-check via tsc -b --noEmit.
+# Blocks the commit if type errors are present.
+#
+# Lint is intentionally NOT in the hook today — see
+# docs/post-phase-1-backlog.md "Lint cleanup" item. Run manually:
+#   npm run lint
+#
+# Setup (one-time, per clone of the repo):
+#   git config core.hooksPath scripts/hooks
+#
+# Bypass (use sparingly, only for emergencies):
+#   git commit --no-verify
+
+set -e
+
+echo "→ pre-commit: tsc -b --noEmit"
+npx tsc -b --noEmit
+if [ $? -ne 0 ]; then
+  echo "✗ TypeScript check failed. Fix errors above before committing."
+  exit 1
+fi
+
+echo "✓ pre-commit checks passed."

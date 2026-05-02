@@ -1,0 +1,49 @@
+{
+  "templates": [
+    {
+      "id": "exercise-isos",
+      "version": 1,
+      "category": "tax",
+      "trigger": {
+        "type": "portfolio-condition",
+        "condition": {
+          "all": [
+            { "metric": "exercisable-iso-shares", "op": ">", "value": 0 }
+          ]
+        },
+        "urgencyByAge": "increasing"
+      },
+      "text": "You have exercisable ISO shares. Exercising starts the 1-year LTCG holding clock.",
+      "detail": "Incentive Stock Options (ISOs) can be exercised and held for 1 year after exercise + 2 years after grant to qualify for long-term capital gains treatment. AMT risk applies — consult a tax advisor for large exercises.",
+      "priority": "medium",
+      "inputs": [
+        {
+          "key": "shares",
+          "label": "Shares exercised",
+          "type": "number",
+          "required": true
+        },
+        {
+          "key": "date",
+          "label": "Exercise date",
+          "type": "date"
+        }
+      ],
+      "effects": [
+        {
+          "op": "exercise-equity",
+          "grantFilter": { "grantType": "iso", "hasExercisable": true },
+          "shares": "input:shares"
+        }
+      ],
+      "successTemplate": "Recorded exercise of {{input:shares}} ISO shares. LTCG holding period started — hold for 1 year + 2 years from grant for long-term treatment.",
+      "newActionsOnSuccess": [
+        {
+          "text": "ISO holding period tracker: {{input:shares}} shares exercised. Hold for 1 year (+ 2 years from grant) for LTCG treatment.",
+          "priority": "medium",
+          "category": "tax"
+        }
+      ]
+    }
+  ]
+}
