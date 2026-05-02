@@ -112,6 +112,35 @@ For Scott's personal use (single user, can wipe IndexedDB if anything goes sidew
 **When it returns:**
 Pre-distribution prep, beyond Phase 3.
 
+## Co-op mechanics ideas (Phase 2 Path B candidates)
+
+**Status:** Riff-captured 2026-05-02 evening session. None designed; none committed. North-star now treats Phase 2 as an open Path A (Investments) vs Path B (Co-op Mechanics) decision.
+
+Ideas worth not losing:
+
+- **Evolution / leveling arc.** Progress feels like the user / couple is becoming something better — not just tracking numbers. Level-ups tied to real behavior milestones (e.g. "you crossed your variable-pay floor sweep target three months in a row").
+- **Joint collection model.** Inspired by Scott's Pokémon-card-collecting with his son: a shared "good cards" book of joint achievements both partners contributed to, plus duplicates / leftovers each partner can do whatever they want with individually. Shared progression + individual agency.
+- **D&D-style dice-roll for ties.** When partners disagree on a non-destructive decision, the app offers a "let the machine decide" option as a fun fallback. Like "blame the budget" but for tie-breaking. Only for decisions that don't actually matter long-term.
+- **Dopamine of next-catch.** The actual hook that makes you want to open the app again tomorrow. Whatever it ends up being — streak, surprise win celebration, scheduled reveal — needs to be designed alongside the rest of Path B, not bolted on.
+- **Scheduled co-op moments.** Pokémon-Go-weekly-raids equivalent. A weekly or bi-weekly ritual where both partners come together and do something — review, decide, plan, celebrate — that the app structures as a fun activity, not a meeting.
+
+**When this returns:** When ADR-0002 opens after Phase 1 ships, both Path A and Path B candidates need design work before sequencing. These ideas seed Path B's mechanics design.
+
+## Phase 2 sequencing decision (open)
+
+**Status:** Open — to be decided via ADR-0002 after Phase 1 DoD is achieved.
+
+The original plan was Phase 1 (Budget) → Phase 2 (Investments) → Phase 3 (Intelligence). The 2026-05-02 mission widening introduced the Co-op Mechanics layer as a real candidate to slot before Investments. The decision affects v1.0 release composition and the early-user experience materially.
+
+**Path A — Investments first:** ships a more "complete" personal-finance tool earlier; co-op layer waits.
+
+**Path B — Co-op mechanics first:** ships the engagement hook earlier and tests the couples-fun thesis sooner with real users; investments wait.
+
+**Inputs needed before deciding:**
+- Real-use data from Phase 1 (does Scott + wife actually want investment tracking sooner, or do they want the engagement hook sooner?)
+- Mechanics design sketches for Path B (without these, Path A wins by default)
+- Market signal (any movement from Honeydue / Zeta / Monarch toward the co-op-fun lane)
+
 ## Lessons learned to encode
 
 After Phase 1 ships, write a `docs/lessons-learned.md` capturing:
