@@ -143,9 +143,10 @@ Established 2026-05-02 after a sprawl spiral broke trust, refined the same eveni
 ## Reading order for new contributors (or future Claude)
 
 1. This document (`docs/north-star.md`) — the why and the who
-2. `docs/adr/0001-phase-1-scope.md` — the what for Phase 1
-3. `docs/phase-1-definition-of-done.md` — the when of "done"
-4. `docs/post-phase-1-backlog.md` — what's deferred and why
-5. Project memory files for historical context (`project_iris_*.md`, `feedback_iris_*.md`)
+2. `docs/state.md` — the where-are-we-today snapshot, drift watch, and current-evaluation pass
+3. `docs/adr/0001-phase-1-scope.md` — the what for Phase 1
+4. `docs/phase-1-definition-of-done.md` — the when of "done"
+5. `docs/post-phase-1-backlog.md` — what's deferred and why
+6. Project memory files for historical context (`project_iris_*.md`, `feedback_iris_*.md`)
 
 These are the canonical ground truth. Code reflects them; if it doesn't, the code is the bug.
