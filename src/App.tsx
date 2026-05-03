@@ -16,6 +16,7 @@ import FirstReportView from './views/FirstReportView';
 import BudgetView from './components/Budget/BudgetView';
 import { getSetting, saveSetting } from './stores/portfolioStore';
 import { isDefaultPortfolio } from './components/Dashboard/SetupChecklist';
+import { useEnabledModules } from './hooks/useEnabledModules';
 import type { View } from './types/views';
 
 // DEV_MODE only suppresses the tutorial overlay during local dev.
@@ -55,10 +56,14 @@ function AppInner({ loading, activeUser, setActiveUser, sidebarCollapsed, setSid
   showTutorial: boolean;
 }) {
   const { view, setView, actionItems, budgetSummary, overallScore, accounts } = useAppData();
+  const modules = useEnabledModules();
+  const firstReportAllowed = modules.investments;
 
   // First-run detection: if onboarding hasn't been completed, route to wizard once loaded.
   // If onboarding IS complete but a real portfolio is loaded and the first report hasn't
-  // run, route to the first report instead.
+  // run, route to the first report instead — but only if first-report is allowed in
+  // the current module set. Phase 1 hides first-report (it's an investments-tier surface),
+  // so we don't auto-route into a view the sidebar can't navigate back to.
   useEffect(() => {
     if (loading) return;
     (async () => {
@@ -67,13 +72,14 @@ function AppInner({ loading, activeUser, setActiveUser, sidebarCollapsed, setSid
         if (view !== 'onboarding') setView('onboarding');
         return;
       }
+      if (!firstReportAllowed) return;
       const reportDone = await getSetting('first_report_complete');
       const hasRealPortfolio = accounts.length > 0 && !isDefaultPortfolio(accounts);
       if (!reportDone && hasRealPortfolio && view !== 'first-report' && view !== 'onboarding') {
         setView('first-report');
       }
     })();
-  }, [loading, setView, view, accounts]);
+  }, [loading, setView, view, accounts, firstReportAllowed]);
 
   if (loading) {
     return (
