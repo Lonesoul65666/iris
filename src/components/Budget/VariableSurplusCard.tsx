@@ -61,10 +61,17 @@ export default function VariableSurplusCard({ expenses, now = new Date() }: Prop
   // grouping consecutive paychecks that are within ~6% of each other.
   // The most recent band = current pay rate. A raise (or pay-band change)
   // breaks the chain and we treat post-change paychecks as the new normal.
+  //
+  // We require the proposed new band to contain at least MIN_BAND_SIZE
+  // paychecks before declaring a pay change. A 1–2 paycheck "band" is almost
+  // always a bonus, RSU vest, commission spike, or off-cycle true-up — not a
+  // sustained pay-rate change. If the new band is too small, we keep walking
+  // backward to look for an earlier real change.
   const currentBand = useMemo(() => {
     if (paychecks.length === 0) return { paychecks: [] as Expense[], startDate: null as string | null };
     if (paychecks.length < 3) return { paychecks, startDate: paychecks[0]?.date ?? null };
     const sorted = paychecks; // already asc
+    const MIN_BAND_SIZE = 3;
     let bandStartIdx = 0;
     for (let i = sorted.length - 1; i > 0; i--) {
       const cur = sorted[i].amount;
@@ -73,8 +80,12 @@ export default function VariableSurplusCard({ expenses, now = new Date() }: Prop
       // 6% threshold — wider than commission swings (~1-3%) but tight enough
       // to catch typical raises/role changes (5–20%).
       if (diff > 0.06) {
-        bandStartIdx = i;
-        break;
+        const newBandSize = sorted.length - i;
+        if (newBandSize >= MIN_BAND_SIZE) {
+          bandStartIdx = i;
+          break;
+        }
+        // Otherwise keep walking — this jump is too recent to confirm.
       }
     }
     return {
