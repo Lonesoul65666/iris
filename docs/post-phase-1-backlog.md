@@ -141,6 +141,37 @@ The original plan was Phase 1 (Budget) → Phase 2 (Investments) → Phase 3 (In
 - Mechanics design sketches for Path B (without these, Path A wins by default)
 - Market signal (any movement from Honeydue / Zeta / Monarch toward the co-op-fun lane)
 
+## Income-source auto-classifier hardening (Phase 1 — needed before DoD #6)
+
+**Status:** Surfaced 2026-05-03 by real-data diagnostic against Scott's IndexedDB. Documented for next session's fix.
+
+**Symptom:** Work Reimbursements card on real data showed YTD reimbursed $38,617 against $8,131 spent — wildly out of balance. Diagnostic via DevTools console snippet revealed multiple mis-classifications.
+
+**Root cause for the YTD-reimbursed inflation:** the "Abnormal Sec-osv" payer produces both base paychecks and variable-comp paychecks. The auto-classifier created a second IncomeSource for the variable stream and mis-tagged it `subtype: 'reimbursement'`. The Work Reimbursements card sums every paycheck linked to any `subtype='reimbursement'` source (status !== 'dismissed'), so the variable comp got counted as work-expense reimbursement. Scott reclassified the source manually 2026-05-03; structural fix is still needed.
+
+**Other classifier oddities observed in the same data:**
+- `inc-capital-one-mobile-base` — Cap One credit-card payment classified as base income (it's an outflow disguised as inflow because the CC payment lands on the destination account)
+- `inc-citibank-conditional-credit-*` — dispute resolution credits classified as base/sale (they're chargebacks, not income)
+- `inc-julep-base` — restaurant refunds classified as base (5 occurrences same day, $16-$18 — clearly a refund pattern)
+- `inc-zelle-payment-from-base` / `inc-zelle-payment-from-variable` — intra-family Zelle transfers (presumably from his wife / household members) classified as base/variable income
+- `inc-american0012301...` — multiple AA flight credits / refunds classified as `sale` income with TRN/ACT GUIDs in the IDs
+- Generally: any inflow gets considered for income classification, even when it's structurally an expense reversal or a transfer
+
+**Two structural fixes needed:**
+
+1. **Multi-stream payer disambiguation.** When a single payer (e.g. "Abnormal Sec-osv") generates multiple inflow streams with different shapes, the high-variance / large-amount stream should default to `subtype: 'variable'`, not `'reimbursement'`. Reimbursements are typically smaller and more irregular than commission/bonus payments. Heuristic: if the per-stream coefficient of variation is high (e.g. >0.5) AND the average is comparable to or larger than the base stream's average, lean variable.
+
+2. **Income detection filtering.** Stop creating IncomeSource records at all for transactions matching these patterns:
+   - Credit card payments (`CAPITAL ONE MOBILE PYMT`, `BANK OF AMERICA PYMT`, etc.)
+   - Dispute credits (`CONDITIONAL CREDIT FOR DISPUTE`, `CHARGEBACK`)
+   - Merchant refunds where the payer matches a known merchant the user has spent at recently (matching descriptor / merchant ID)
+   - Intra-family transfers (Zelle / Venmo from a contact also configured as a household member)
+   - Card rebates / cashback (`PEACOCK MASTERCARD OFFER`, `PREFERRED REWARDS-ATM OPER REBATE`)
+
+**When this returns:** Phase 1 — required to satisfy DoD #6 ("Work Expense card reconciles against Coupa within $50 over 90d") on real data without manual reclassification every session. The manual fix Scott did 2026-05-03 doesn't generalize and won't survive a re-detection sweep.
+
+**Next-session test data:** Scott's IndexedDB still has all the noisy classifications — easy real-world fixture for verifying the structural fix lands correctly. Don't wipe.
+
 ## Lessons learned to encode
 
 After Phase 1 ships, write a `docs/lessons-learned.md` capturing:

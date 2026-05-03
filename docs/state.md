@@ -21,14 +21,20 @@ This doc is the single "where are we today" snapshot. It is overwritten every su
 
 **In progress / open:**
 - Phase 2 sequencing decision — Path A (Investments) vs Path B (Co-op Mechanics). Default Path A → Path B → Phase 3 but no longer fixed. Will be decided via ADR-0002 after Phase 1 ships.
-- BudgetView refactor — 1,643-line file, deferred to next session, plan in `post-phase-1-backlog.md`.
+- BudgetView refactor — 1,643-line file, deferred, plan in `post-phase-1-backlog.md`.
 - Vitest data-layer test suite (~10 tests) — deferred, plan in backlog.
 - Coinbase / Teller / Fidelity OFX connectors — Coinbase next; Teller and Fidelity gated on Scott's pre-build verification (teller.io signup + NetBenefits OFX check).
-- Variable Pay card visibility bug — open since 2026-04-29; DoD #5 blocker.
+- Income-source auto-classifier hardening — surfaced 2026-05-03. Multiple mis-classifications on Scott's real data (Cap One CC payment as base, dispute credits / AA refunds / intra-family Zelle transfers as income, variable comp tagged as reimbursement). Needs a guard pass: when one payer produces multiple subtypes, prefer high-variance large-amount streams as `variable` not `reimbursement`; filter out CC payments, dispute credits, refunds, intra-family transfers from income detection entirely.
+- DoD #5 verification — Variable Pay card now lands on $7,918 floor (correct after band-detection fix). Pending Scott confirming surplus totals reconcile against his actual paychecks.
+- DoD #6 verification — Work Expense card was wildly off due to the classifier bug. Scott reclassified the variable source manually 2026-05-03. Needs verification next session that totals now reconcile against Coupa within $50 over 90d.
 - Lint debt (97 errors) — deferred to dedicated session.
 
 **Most recent commits:**
 ```
+4896476 fix(variable-pay): require 3+ paychecks before declaring a pay-band change
+80af74f feat(phase-1): trim sidebar to budget engine only via PHASE_1_LOCK
+a202e03 docs(north-star): add state.md to reading order
+41e04b6 docs: add state.md as the rolling current-state + drift-watch + evaluation snapshot
 32c914f docs(north-star): widen mission to couples-first; lock tone principles and engineering style
 0765cce chore: initial commit — Iris pre-Phase-1 baseline
 ```
@@ -55,6 +61,13 @@ These are the ideas we agreed are central. If a future session drifts from any o
 ## Recent shifts (drift detection log)
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
+
+### 2026-05-03 — First Phase 1 ships + income-source classifier diagnosed
+
+- **Changed:** Two code changes shipped: sidebar trimmed to Phase 1 visible views (PHASE_1_LOCK in `useEnabledModules`), and Variable Pay band-detection algorithm hardened with a 3-paycheck minimum-band-size guard (prevents single bonuses/RSU vests from being mistaken for new pay rates). Verified in preview against sample data; verified on Scott's real data — floor lands on his actual $7,918 base.
+- **Diagnosed (not yet fixed):** The Work Reimbursements card on Scott's real data shows YTD reimbursed = $38,617 against $8,131 spent — way out of balance. Root cause identified via DevTools query: `inc-abnormal-sec-osv-variable` was mis-classified as `subtype: 'reimbursement'` instead of `'variable'`. Scott reclassified manually. Other classifier oddities surfaced (Cap One credit card payment as 'base', dispute-credit refunds as income, intra-family Zelle transfers as base/variable, restaurant refunds as base) — all logged for a future auto-classifier hardening pass.
+- **Why:** First real-shipping moment after the foundation work. Real-use feedback against Scott's data exposed both that the Variable Pay fix worked and that the income-source auto-classifier needs tightening.
+- **Enhancement or drift?** **Enhancement.** Scope-clean: stayed within Phase 1 features. The classifier issues feed Phase 1's auto-sync hardening, not a new feature.
 
 ### 2026-05-02 evening — Mission widened to couples-first
 - **Changed:** target user from "financially literate with literacy floor" → couples-first / solo-mode-supported. Mission paragraph rewritten. Tone principles added. Phase 2 sequencing made open (Path A vs Path B).
