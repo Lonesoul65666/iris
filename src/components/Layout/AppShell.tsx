@@ -88,7 +88,7 @@ export default function AppShell({
         bg-surface-1 border-r border-glass-border flex flex-col transition-all duration-200
       `}>
         <div className={`p-4 border-b border-glass-border flex items-center cursor-pointer hover:bg-white/[0.03] transition-colors ${sidebarCollapsed ? 'md:justify-center' : 'gap-3'}`}
-          onClick={() => { setView('chat'); setMobileMenuOpen(false); }}>
+          onClick={() => { setView(allowed.has('chat') ? 'chat' : 'dashboard'); setMobileMenuOpen(false); }}>
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-indigo-500 flex items-center justify-center text-white font-bold text-sm">S</div>
           {!sidebarCollapsed && <span className="gradient-text font-bold text-lg tracking-tight">Iris</span>}
           {/* Close button for mobile sidebar */}
@@ -181,8 +181,9 @@ export default function AppShell({
         </div>
       </main>
 
-      {/* Floating Ask Iris FAB — hidden on mobile (bottom nav has it) */}
-      {view !== 'chat' && (
+      {/* Floating Ask Iris FAB — hidden on mobile (bottom nav has it). Also
+          hidden when chat is not in the allowed views (Phase 1 locks it off). */}
+      {view !== 'chat' && allowed.has('chat') && (
         <button onClick={() => setView('chat')}
           className="hidden md:flex fixed bottom-6 right-6 z-50 items-center gap-2 px-5 py-3 rounded-full bg-gradient-to-r from-accent to-indigo-500 text-white font-semibold shadow-lg shadow-accent/25 hover:shadow-accent/40 hover:scale-105 transition-all duration-200">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -190,14 +191,17 @@ export default function AppShell({
         </button>
       )}
 
-      {/* Mobile bottom navigation */}
+      {/* Mobile bottom navigation — filter by allowed views (Phase 1 hides
+          investments / chat). When everything is allowed, the order matches
+          the desktop sidebar's "main" + "ai" priority. */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 flex md:hidden items-center justify-around h-14 bg-surface-1 border-t border-glass-border">
         {([
           { id: 'dashboard' as View, label: 'Dashboard', icon: Icons.dashboard },
           { id: 'budget' as View, label: 'Budget', icon: Icons.budget },
           { id: 'portfolio' as View, label: 'Invest', icon: Icons.portfolio },
           { id: 'chat' as View, label: 'Ask Iris', icon: Icons.chat },
-        ]).map(item => (
+          { id: 'settings' as View, label: 'Settings', icon: Icons.settings },
+        ]).filter(item => !modules.loaded || allowed.has(item.id)).slice(0, 4).map(item => (
           <button key={item.id} onClick={() => setView(item.id)}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-0.5 text-[10px] font-medium transition-colors ${
               view === item.id ? 'text-accent' : 'text-text-muted'
