@@ -269,11 +269,11 @@ function formatPct(n: number): string {
 
 function sweepLabel(d: string): string {
   switch (d) {
-    case 'hysa': return 'HYSA';
-    case 'sinking_fund': return 'Sinking fund';
-    case 'investing': return 'Investing';
-    case 'extra_payment': return 'Extra debt payment';
-    case 'manual': return 'Manual';
+    case 'hysa': return 'Savings';
+    case 'sinking_fund': return 'Goal';
+    case 'investing': return 'Invest';
+    case 'extra_payment': return 'Pay down debt';
+    case 'manual': return 'Decide later';
     default: return 'no sweep';
   }
 }
