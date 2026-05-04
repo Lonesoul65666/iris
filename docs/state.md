@@ -284,3 +284,4 @@ If the next session does any of these without an explicit ADR conversation, push
 - Bypasses the pre-commit hook (`--no-verify`) without explicit permission
 - Skips the verification step for a "shipped" feature
 - Drops the partnership-as-equals frame (e.g., reverts to deferential mode or flips to bossy mode)
+- Adds finance jargon to user-facing copy (HYSA, sinking fund, reimbursable, etc.) without a plain-language alternative — the audience widening to non-financially-literate partners makes this a real failure mode
