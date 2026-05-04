@@ -153,6 +153,7 @@ Established 2026-05-02 after a sprawl spiral broke trust, refined the same eveni
 4. `docs/adr/0002-storage-architecture.md` — the storage layer decision (user-owned cloud DB)
 5. `docs/phase-1-definition-of-done.md` — the when of "done"
 6. `docs/post-phase-1-backlog.md` — what's deferred and why
-7. Project memory files for historical context (`project_iris_*.md`, `feedback_iris_*.md`)
+7. `docs/cadence-log.md` — partnership cadence dimensions, vocabulary, session modes, milestone-paced re-grades
+8. Project memory files for historical context (`project_iris_*.md`, `feedback_iris_*.md`)
 
 These are the canonical ground truth. Code reflects them; if it doesn't, the code is the bug.
