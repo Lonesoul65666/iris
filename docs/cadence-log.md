@@ -102,6 +102,31 @@ Between milestones: end-of-session cadence note (one bullet improved, one bullet
 
 Each entry: date, session mode, observations on each dimension, specific examples.
 
+### 2026-05-04 evening — Foundation Session 1 (Build-B) ship
+
+**Mode:** Build (declared at session start).
+
+**What landed:**
+- Vite middleware API at `/api/*` via `configureServer`. `pg.Pool` (max: 5) cached server-side. `POST /api/connect` opens the pool from a connection string POSTed by the client; `GET /api/health` round-trips `SELECT 1`.
+- Client bootstrap (`src/lib/db-client.ts`) hooked into `main.tsx` reads `localStorage.iris_db_connection_string` and POSTs it on app boot.
+- `tsconfig.node.json` extended to type-check `server/**/*.ts`. Type-check green.
+- Smoke verified end-to-end against Scott's real Supabase Session Pooler URI: client console `{status:'connected'}`, `curl /api/health` returns `{ok:true,db:'connected'}` 200.
+- Commit `6bb9843`. Pre-commit hook passed.
+
+**Cadence patterns observed:**
+- *Mode declaration* — opened with "Build mode declared. Sized to Build-B." Set the rules at the top.
+- *Stop-and-verify before action* — paused for credential audit (grep) before staging the commit. Found only abstract examples in cadence-log; no leak.
+- *Right-sized scope* — held the Build-B line under auto mode. No drift into schema or real endpoints despite tokens being available. Schema explicitly deferred to Session 2.
+- *Joint validation* — Scott's "do this in Chrome, not Island" challenge before pasting. Surfaced the right concern (his real data lives in Chrome; future migration script will run from there). Measure-twice instinct on the platform layer.
+- *Same-session ship-to-verify* — the validation-discipline gap. Build-B closed it: scaffold shipped *and* verified against real Postgres in the same session. Not a deferred-verify; a lived one. This is the pattern the dimension is asking for.
+
+**Cadence read for the dimension that matters most this session:**
+- *Validation discipline (~65% → directional improvement):* same-session ship-to-verify happened cleanly. Real-Postgres `SELECT 1` round-trip completed before commit. The previous lag pattern (ship now, verify later) did NOT recur. Worth re-grading at next milestone.
+- *Scope discipline (~75%):* held under auto mode. Build-B was three files + two endpoints; nothing more.
+- *Process discipline (~80%):* commit message references ADR-0002, scope explicitly states "Session 1 of 3," handoff prep started before context burn.
+
+**Net for the session:** The smallest possible end-to-end slice that proves Foundation works. Pool is server-side, client-agnostic, smoke-clean. Sessions 2 + 3 open with a foundation that's already breathing.
+
 ### 2026-05-04 late afternoon — Foundation pre-work + partnership-correction self-flag
 
 **Mode:** Audit / handoff prep.

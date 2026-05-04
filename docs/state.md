@@ -1,7 +1,7 @@
 # Iris — Where We Are
 
-**Last reviewed:** 2026-05-04 (post storage-architecture decision — ADR-0002)
-**Status:** Phase 0 foundation complete. Phase 1 mission widened (2026-05-02). Phase 1 storage architecture revised (2026-05-04, ADR-0002) — splits into Foundation → Features → DoD soak. Two Phase-1 ships landed; Foundation work has not yet started.
+**Last reviewed:** 2026-05-04 (Foundation Session 1 / Build-B shipped)
+**Status:** Phase 0 foundation complete. Phase 1 mission widened (2026-05-02). Phase 1 storage architecture revised (2026-05-04, ADR-0002) — splits into Foundation → Features → DoD soak. Foundation Session 1 shipped 2026-05-04 evening: Vite middleware API + pg pool scaffold, smoke-verified against Scott's Supabase URI. Sessions 2 (schema + real endpoints) and 3 (migration script + store-call swap) still ahead.
 
 This doc is the single "where are we today" snapshot. It is overwritten every substantive session. It does NOT replace `north-star.md` (vision), `adr/0001-phase-1-scope.md` (scope), `phase-1-definition-of-done.md` (gates), or `post-phase-1-backlog.md` (deferrals). It pulls from all four into a single readable picture.
 
@@ -20,7 +20,12 @@ This doc is the single "where are we today" snapshot. It is overwritten every su
 - Local-first, no SaaS, no cloud-storage of financial data — invariant across phases
 
 **In progress / open:**
-- **Phase 1 Foundation (NEW gate-zero per ADR-0002):** storage migration to user-owned cloud DB (Supabase + Postgres). Vite middleware API, schema runner with `user_id`, IndexedDB → Postgres migration script, multi-layer backup (cloud DB + JSON export in v1; local SQLite cache deferred to v1.1; encryption layer deferred to v1.1). All other Phase 1 work waits until Foundation is verified.
+- **Phase 1 Foundation (NEW gate-zero per ADR-0002):** Sessions 2-3 still open.
+  - **Session 1 (Build-B) — DONE 2026-05-04 evening, commit `6bb9843`.** Vite middleware API mounted at `/api/*` via `configureServer`. `pg.Pool` (max: 5) cached server-side, keyed off the user-owned connection string. `POST /api/connect` opens the pool from a string POSTed by the client; `GET /api/health` round-trips `SELECT 1`. Client bootstrap (`src/lib/db-client.ts`) reads `localStorage.iris_db_connection_string` on app boot and POSTs it. Smoke verified end-to-end against Scott's Supabase Session Pooler URI: `{ok:true, db:'connected'}` 200.
+  - **Session 2 (next):** schema migration runner with `user_id` column from day one; first 3-4 read/write endpoints replacing the most-used IndexedDB store calls; pre-flight schema verification on `/api/connect`.
+  - **Session 3:** one-shot `scripts/migrate-indexeddb-to-postgres.ts` (idempotent, verifiable, reversible, logged); swap remaining store-call sites to `fetch('/api/...')`; verify each surface against the new layer; mark IndexedDB read-only for one fallback session.
+  - Multi-layer backup v1 (provider auto-backups + JSON export) lands alongside Session 3. Local SQLite cache + app-level encryption deferred to v1.1.
+  - All other Phase 1 work waits until Foundation is verified.
 - Phase 2 sequencing decision — Path A (Investments) vs Path B (Co-op Mechanics). Default Path A → Path B → Phase 3 but no longer fixed. Will be decided via ADR-0003 after Phase 1 ships. *(Was previously labeled ADR-0002; renumbered to ADR-0003 because storage architecture took the ADR-0002 slot.)*
 - BudgetView refactor — 1,643-line file, deferred until after Foundation lands.
 - Vitest data-layer test suite (~10 tests) — deferred until after Foundation lands; tests will exercise the new storage layer, not the deprecated IndexedDB calls.
@@ -33,6 +38,11 @@ This doc is the single "where are we today" snapshot. It is overwritten every su
 
 **Most recent commits (most recent first):**
 ```
+6bb9843 feat(foundation): Vite middleware API + pg pool — Phase 1 Foundation Session 1 (Build-B)
+d4dd7ab docs(cadence): trajectory entry for 2026-05-04 late afternoon
+bd9e2d5 docs(cadence): security process rules + credential-rotation learning
+e1ce260 docs: cadence-log.md — partnership trajectory tracking
+eeb34f8 docs(state): pin commit hash for ADR-0002 landing
 6d5f16e docs(adr-0002): storage architecture — user-owned cloud DB
 4426317 feat(phase-1): plain-language sweep labels + custom destination on Variable Pay card
 4e23bdc docs: log Scott-creep / vocabulary audit; close stale Variable Pay visibility item
@@ -67,6 +77,14 @@ These are the ideas we agreed are central. If a future session drifts from any o
 ## Recent shifts (drift detection log)
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
+
+### 2026-05-04 evening — Foundation Session 1 (Build-B) shipped
+
+- **Changed:** Vite middleware API now mounted at `/api/*` via `configureServer` (`server/api-plugin.ts`). `pg.Pool` (max: 5) lives in module state (`server/db-pool.ts`), keyed off the user-owned connection string. Two endpoints: `POST /api/connect` opens the pool, `GET /api/health` round-trips `SELECT 1`. Client bootstrap (`src/lib/db-client.ts`) reads `localStorage.iris_db_connection_string` on app boot and POSTs it. `tsconfig.node.json` extended to type-check `server/**/*.ts`. Commit `6bb9843`.
+- **Why:** ADR-0002 needed a real foundation to build on. Build-B was the smallest possible end-to-end slice — no schema, no data endpoints — that proves the pieces fit: client → middleware → pg → Supabase → response.
+- **Verified:** Smoke passed end-to-end against Scott's real Supabase Session Pooler URI. Client console: `[iris] db bootstrap: {status: 'connected'}`. `curl http://localhost:5173/api/health` from a separate process: `{"ok":true,"db":"connected"}` 200. Pool is shared across all clients on the dev server (the point of putting it in Node, not the browser).
+- **Honest scope-hold:** Session 1 stayed locked at scaffold + smoke. No drift into schema or real endpoints despite auto mode being on. Token usage ended well under the budget — fresh context for Session 2.
+- **Enhancement or drift?** **Enhancement.** Foundation gate-zero work as scoped in ADR-0002. Six locked Phase 1 features unchanged.
 
 ### 2026-05-04 — Storage architecture revised (ADR-0002)
 
