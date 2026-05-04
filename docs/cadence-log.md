@@ -54,6 +54,16 @@ Sessions can be **sequenced** (riff → decision → build is common, as on 2026
 
 Both Scott and Claude use this shorthand. Faster than re-explaining, neutral framing (not value-laden).
 
+### Security process (permanent rules — non-negotiable)
+
+These aren't dimensions to score; they're hard process rules. Both Scott and Claude follow them.
+
+- **Credentials never go in chat.** Database connection strings, API keys, passwords, OAuth tokens — none of them. Even when explaining what you're looking at in a dashboard. Even partial pastes count.
+- **Confirm shape, not content.** If Claude needs to verify a string's format, the user describes the shape ("`postgresql://user:pass@host:port/db`, password starts with a capital letter") rather than pasting the actual string. The shape is enough for diagnostics.
+- **Leaked credential → rotate immediately.** Before proceeding with anything else, before end of session, before "I'll do it later." Rotating an empty-DB credential is free; rotating one holding real data isn't.
+- **Storage rule.** Credentials live in: a password manager, an encrypted note, OS keychain, or `localStorage` on the user's own machine. Never in: chat transcripts, source code, commit messages, commit bodies, doc files, Slack, email, screenshots without redaction.
+- **No re-paste after correction.** If Claude has flagged a credential exposure, the response must not include the credential again — not to confirm format, not as a quote, not anywhere. Refer to it abstractly ("the password you just rotated") and move on.
+
 ### Drift patterns (call out when they appear)
 
 - **Visionary spiral** — unstructured riffing past ~3 min in a non-riff session, without crystallization. Flag: "flagging — visionary spiral, want to keep going or lock?"
@@ -92,7 +102,28 @@ Between milestones: end-of-session cadence note (one bullet improved, one bullet
 
 Each entry: date, session mode, observations on each dimension, specific examples.
 
-### 2026-05-04 evening — Mode: Riff → Decision → Audit
+### 2026-05-04 afternoon — security process learning
+
+**Mode:** Build prep (Supabase signup before next session's Foundation work).
+
+**What happened:** Scott pasted his Supabase database connection string into chat while orienting around the dashboard UI — twice in five minutes (once as part of the full URI, once as the password by itself). The DB was empty (no real data exposure), but the credential itself was now multiply-compromised across chat transcript, Anthropic logs, and possibly local Claude Code cache.
+
+**What worked:**
+- Claude flagged immediately on the first exposure with a "stop, rotate now" call.
+- Scott rotated within minutes without pushback or "I'll do it later."
+- Scott explicitly asked the moment be logged as a learning lesson — *self-flag* pattern in real time.
+- Scott named the principle himself: "thanks for holding the line on best practice."
+
+**What gets encoded forward:**
+- New "Security process (permanent rules)" subsection in this doc — non-negotiable process rules, separate from dimension scoring.
+- Specifically: credentials never go in chat; confirm shape, not content; leaked → rotate immediately; storage rule for where secrets live; no re-paste after correction.
+
+**Cadence read:**
+- *Validation discipline* doesn't change much — this is a security-process subset, not the same as ship-to-verify validation. Could argue it's a separate "Security discipline" dimension; for now it lives as a hard rule.
+- *Process discipline* held strong — rotation happened immediately, no negotiation, no "but...".
+- *Self-flag* pattern landed — Scott asking for the learning to be encoded is exactly the trajectory we want.
+
+### 2026-05-04 afternoon — Mode: Riff → Decision → Audit (storage architecture)
 
 **Vision discipline (steady ~85%):**
 - 3+ self-flags during the storage-architecture conversation: "this is where I start to spin," "we're still just conceptually riffing," "let me know if I'm missing anything."
