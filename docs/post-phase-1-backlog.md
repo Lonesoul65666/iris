@@ -100,16 +100,48 @@ Log into NetBenefits, look under Account Information → Download for "Quicken W
 **When it returns:**
 After Teller verification, since Fidelity routing depends on what Teller covers.
 
-## Existing IndexedDB settings migration
+## Existing IndexedDB settings migration — SUPERSEDED by ADR-0002
 
-**Status:** Risk mitigation needed for the new generic `getSetting`/`saveSetting`.
+**Status:** Superseded 2026-05-04. Folded into the broader IndexedDB → Postgres migration script that's part of Phase 1 Foundation. The settings JSON-encoding edge case still applies; it's handled inside the migration script's idempotent read step.
 
-The settings storage now JSON-encodes on write. Reads attempt JSON.parse first, fall back to raw string for legacy data. **Edge case:** legacy raw string values that happen to look like valid JSON (e.g. `"42"`) will parse to non-string types at runtime, which could surprise callers using the default `getSetting<string>`.
+## Phase 1 Foundation — storage migration to user-owned cloud DB (NEW per ADR-0002)
 
-For Scott's personal use (single user, can wipe IndexedDB if anything goes sideways), risk is low. But before shipping to multiple users, a write-time migration that re-encodes legacy entries is worth doing.
+**Status:** Locked 2026-05-04 via ADR-0002. **Phase 1 gate-zero — no other Phase 1 work proceeds until this lands and is verified.**
 
-**When it returns:**
-Pre-distribution prep, beyond Phase 3.
+**Scope:**
+- Vite middleware API at `/api/*` (same port as dev server, no CORS, no second port)
+- Postgres schema with versioned migration runner
+- Every relevant table includes `user_id` column from day one (partner-mode prep)
+- Connection string stored in `localStorage` on the client (never in source, never in DB)
+- IndexedDB → Postgres migration script — idempotent, verifiable, reversible (IndexedDB stays read-only intact for one session as fallback)
+- Multi-layer backup v1: cloud DB (primary) + provider auto-backups (managed) + JSON export button in Settings (Layer 4)
+- Onboarding flow for connection-string paste (manual in v1; OAuth wizard is v2+ per below)
+
+**Sequencing within Foundation:**
+1. API server scaffold + schema + first 3-4 endpoints (settings, expenses, incomeSources, buckets)
+2. Migration script + verification step
+3. Swap remaining store calls to API; verify each surface still works
+4. JSON export button
+5. Edge cases, recovery scenarios, smoke tests
+
+**When it returns:** Next session opens here.
+
+## Phase 1.1 follow-ups (after Foundation + Features verified)
+
+- **Local SQLite cache layer for offline mode.** Read-through cache; queued writes when online. Restores Iris's pre-cloud behavior of "always works even without internet."
+- **Application-level encryption of descriptive fields.** Memos, payee names, custom labels encrypted with a user-set passphrase before sending to Postgres. Numbers, dates, categories stay queryable. Neutralizes the "provider staff can read your data" concern.
+- **Scheduled JSON export (Layer 5).** Auto-write a snapshot to a user-chosen folder weekly/monthly so archives accumulate without effort.
+
+## Post-Phase-1 onboarding wizard (v2+)
+
+**Status:** Logged 2026-05-04. Manual paste-the-connection-string is fine for "just us" during Phase 1 dogfood. For real users it's friction we'll need to remove.
+
+**Candidate paths:**
+- **OAuth-provisioning via Supabase API:** user signs into Supabase via OAuth; Iris auto-creates the project and configures the schema; user never sees a connection string. Likely the right v2 answer.
+- **Guided in-app browser flow:** Iris opens browser tabs at the right places, walks the user through clicks, captures the connection string at the end. Lower-tech bridge.
+- **Bundled local-only mode:** for users who don't want cloud, accept single-machine constraint. Reuse Foundation work but point at local SQLite instead of remote Postgres. Dual-mode storage adapter.
+
+**When it returns:** v2.0 cycle, after Phase 1 ships and dogfood validates the architecture.
 
 ## Co-op mechanics ideas (Phase 2 Path B candidates)
 

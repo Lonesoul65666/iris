@@ -1,7 +1,7 @@
 # Iris — Where We Are
 
-**Last reviewed:** 2026-05-02 (post vision-lock session)
-**Status:** Phase 0 foundation complete. Phase 1 mission newly widened. No Phase 1 features have shipped yet under the locked scope.
+**Last reviewed:** 2026-05-04 (post storage-architecture decision — ADR-0002)
+**Status:** Phase 0 foundation complete. Phase 1 mission widened (2026-05-02). Phase 1 storage architecture revised (2026-05-04, ADR-0002) — splits into Foundation → Features → DoD soak. Two Phase-1 ships landed; Foundation work has not yet started.
 
 This doc is the single "where are we today" snapshot. It is overwritten every substantive session. It does NOT replace `north-star.md` (vision), `adr/0001-phase-1-scope.md` (scope), `phase-1-definition-of-done.md` (gates), or `post-phase-1-backlog.md` (deferrals). It pulls from all four into a single readable picture.
 
@@ -20,17 +20,23 @@ This doc is the single "where are we today" snapshot. It is overwritten every su
 - Local-first, no SaaS, no cloud-storage of financial data — invariant across phases
 
 **In progress / open:**
-- Phase 2 sequencing decision — Path A (Investments) vs Path B (Co-op Mechanics). Default Path A → Path B → Phase 3 but no longer fixed. Will be decided via ADR-0002 after Phase 1 ships.
-- BudgetView refactor — 1,643-line file, deferred, plan in `post-phase-1-backlog.md`.
-- Vitest data-layer test suite (~10 tests) — deferred, plan in backlog.
-- Coinbase / Teller / Fidelity OFX connectors — Coinbase next; Teller and Fidelity gated on Scott's pre-build verification (teller.io signup + NetBenefits OFX check).
-- Income-source auto-classifier hardening — surfaced 2026-05-03. Multiple mis-classifications on Scott's real data (Cap One CC payment as base, dispute credits / AA refunds / intra-family Zelle transfers as income, variable comp tagged as reimbursement). Needs a guard pass: when one payer produces multiple subtypes, prefer high-variance large-amount streams as `variable` not `reimbursement`; filter out CC payments, dispute credits, refunds, intra-family transfers from income detection entirely.
-- DoD #5 verification — Variable Pay card now lands on $7,918 floor (correct after band-detection fix). Pending Scott confirming surplus totals reconcile against his actual paychecks.
-- DoD #6 verification — Work Expense card was wildly off due to the classifier bug. Scott reclassified the variable source manually 2026-05-03. Needs verification next session that totals now reconcile against Coupa within $50 over 90d.
+- **Phase 1 Foundation (NEW gate-zero per ADR-0002):** storage migration to user-owned cloud DB (Supabase + Postgres). Vite middleware API, schema runner with `user_id`, IndexedDB → Postgres migration script, multi-layer backup (cloud DB + JSON export in v1; local SQLite cache deferred to v1.1; encryption layer deferred to v1.1). All other Phase 1 work waits until Foundation is verified.
+- Phase 2 sequencing decision — Path A (Investments) vs Path B (Co-op Mechanics). Default Path A → Path B → Phase 3 but no longer fixed. Will be decided via ADR-0003 after Phase 1 ships. *(Was previously labeled ADR-0002; renumbered to ADR-0003 because storage architecture took the ADR-0002 slot.)*
+- BudgetView refactor — 1,643-line file, deferred until after Foundation lands.
+- Vitest data-layer test suite (~10 tests) — deferred until after Foundation lands; tests will exercise the new storage layer, not the deprecated IndexedDB calls.
+- Coinbase / Teller / Fidelity OFX connectors — deferred until after Foundation. They write to the canonical store, so they wait for the canonical store.
+- Income-source auto-classifier hardening — still queued. Multiple real-data mis-classifications surfaced 2026-05-03 (Cap One CC payment as base, dispute credits / AA refunds / intra-family Zelles as income, variable comp tagged as reimbursement). Sequencing: lands after Foundation so the fix runs against the new layer.
+- DoD #5 verification — Variable Pay card lands on $7,918 floor on Scott's real data (correct). Pending re-verification on the new storage layer post-Foundation.
+- DoD #6 verification — Work Expense card was wildly off due to classifier bug. Scott reclassified the variable source manually 2026-05-03. Re-verifies after Foundation + classifier hardening land.
+- Onboarding for non-technical users (post-Phase-1) — manual paste-the-connection-string is fine for "just us." Real users will need an OAuth-provisioning wizard. Logged in `post-phase-1-backlog.md`.
 - Lint debt (97 errors) — deferred to dedicated session.
 
-**Most recent commits:**
+**Most recent commits (most recent first):**
 ```
+(this commit) docs(adr-0002): storage architecture — user-owned cloud DB
+4426317 feat(phase-1): plain-language sweep labels + custom destination on Variable Pay card
+4e23bdc docs: log Scott-creep / vocabulary audit; close stale Variable Pay visibility item
+53e8a97 docs: log 2026-05-03 ships and classifier hardening backlog
 4896476 fix(variable-pay): require 3+ paychecks before declaring a pay-band change
 80af74f feat(phase-1): trim sidebar to budget engine only via PHASE_1_LOCK
 a202e03 docs(north-star): add state.md to reading order
@@ -50,7 +56,7 @@ These are the ideas we agreed are central. If a future session drifts from any o
 3. **Both partners have agency, neither is a viewer.** Co-op, not shared visibility. Honeydue's mistake. If we ever ship a "partner can only read" mode, we've drifted.
 4. **Parallel views, not consensus.** Two partners can interpret the same numbers differently. Iris honors both. Don't average opinions into mush.
 5. **Money is binary; presentation is layered.** Every UI element either helps the truth or layers the journey. Anything that does neither gets cut.
-6. **Local-first, never cloud-storage of financial data.** No exceptions. SaaS is off the table. Cloud sync, if it ever exists, is encrypted P2P or user-controlled file transport.
+6. **User-controlled storage, never Iris-hosted.** Iris does not own, run, or have access to a multi-tenant cloud holding user financial data. Storage lives in user-owned accounts (Supabase / Turso / Neon / etc.) accessed via a credential the user holds. SaaS-by-Iris is off the table; user-owned cloud DB is fine. *Revised 2026-05-04 in ADR-0002.*
 7. **One-time purchase, not subscription.** Iris itself is sold once, not rented. User-paid third-party data services (Teller, Coinbase API) are separate.
 8. **Phase 1 is the Budget Engine. No investment, no AI, no co-op mechanics in Phase 1.** The boring bones come first. Everything else is Phase 2+.
 9. **One feature per session. Verify before declaring done.** The discipline rule that prevents the 2026-04-29 sprawl from recurring.
@@ -61,6 +67,15 @@ These are the ideas we agreed are central. If a future session drifts from any o
 ## Recent shifts (drift detection log)
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
+
+### 2026-05-04 — Storage architecture revised (ADR-0002)
+
+- **Changed:** Working Principle #1 in north-star revised from "data lives on user's machine" to "user-controlled storage, never Iris-hosted." Phase 1 splits into Foundation (storage migration) → Features (the original six, unchanged) → DoD soak. ADR-0002 captures the decision in full. Phase 2 sequencing ADR renumbered from ADR-0002 to ADR-0003.
+- **Why:** Two real constraints surfaced 2026-05-03 / 2026-05-04. (1) Per-browser IndexedDB causes data divergence across browsers — biting partnership work directly when Claude's preview-tool browser and Scott's Chrome can't see each other's data. (2) Scott's hardware churns on a normal cadence (work laptop replacement in days; gaming PC fails eventually); single-machine storage makes the data fragile by design. Original Working Principle #1 conflated "user-controlled" (mission-relevant) with "single-machine-resident" (implementation choice that's now wrong).
+- **Architecture:** user-owned cloud DB on Supabase free tier (Postgres). Vite middleware API on the same port. Schema includes `user_id` from day one to make partner-mode a flag-flip, not a retrofit. Multi-layer backup (cloud DB + provider auto-backup + JSON export in v1; local SQLite cache + encryption deferred to v1.1).
+- **Honest cost:** delays 30-day soak clock by ~3 sessions (the migration work). Adds onboarding friction (manual connection-string paste in v1). Internet dependency until v1.1's local cache lands.
+- **Bonus:** gaming-PC-as-server constraint dissolves. Static frontend can run anywhere. QA seat shared between Scott and Claude — no more screenshots-and-DevTools snippets to bridge data invisibility.
+- **Enhancement or drift?** **Enhancement, scope amendment.** Six locked features remain locked. The amendment adds a Foundation prerequisite that ADR-0001 implicitly assumed was solved. Open via partnership process (ADR conversation), not silent expansion.
 
 ### 2026-05-03 — First Phase 1 ships + income-source classifier diagnosed
 
@@ -285,3 +300,4 @@ If the next session does any of these without an explicit ADR conversation, push
 - Skips the verification step for a "shipped" feature
 - Drops the partnership-as-equals frame (e.g., reverts to deferential mode or flips to bossy mode)
 - Adds finance jargon to user-facing copy (HYSA, sinking fund, reimbursable, etc.) without a plain-language alternative — the audience widening to non-financially-literate partners makes this a real failure mode
+- Assumes machine-resident storage (e.g. "save to user's local file system," "the gaming PC always running," "IndexedDB persists") — ADR-0002 made user-owned cloud DB canonical. Any work that assumes data lives on a specific physical machine has drifted.

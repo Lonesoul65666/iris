@@ -1,6 +1,6 @@
 # Iris North Star
 
-**Last updated:** 2026-05-02 (vision and audience widened; tone principles and engineering style added)
+**Last updated:** 2026-05-04 (storage architecture revised — see ADR-0002)
 
 ## Mission
 
@@ -37,6 +37,11 @@ Across all three: **simple where it matters, fun where it can be, honest about t
 ### Phase 1 — Budget Engine (current)
 The foundational engine. Auto-sync, categorization, Pulse view, Edit Budget overlay, Variable Pay floor + sweep, Work Expense aggregate. Scope locked in `docs/adr/0001-phase-1-scope.md`. Definition of Done in `docs/phase-1-definition-of-done.md`. **No investment, AI, or co-op mechanics in Phase 1.**
 
+Phase 1 sequences as **Foundation → Features → DoD soak**:
+- **Foundation (ADR-0002, 2026-05-04 amendment):** storage migration to user-owned cloud DB (Supabase + Postgres), multi-layer backup, schema runner with `user_id` from day one, IndexedDB → Postgres migration script.
+- **Features:** the six locked in ADR-0001 — unchanged.
+- **DoD soak:** the eight binary criteria still hold; the 30-day clock starts only after Foundation + Features are both verified.
+
 ### Phase 2 — open sequencing decision
 Two candidate paths sit between Phase 1 and v1.0. The decision will be made via a future ADR after Phase 1 ships and real-use feedback informs priority:
 
@@ -55,7 +60,7 @@ Distribution and packaging — signed installer, auto-updater, license-key check
 
 These are non-negotiable across all phases:
 
-1. **Local-first.** Data lives in IndexedDB / SQLite on the user's machine. No cloud storage of financial data. Ever.
+1. **User-controlled storage.** Iris never hosts or owns the user's data. Data lives in storage the user controls — a database account they own at a provider they signed up for (Supabase, Turso, Neon), connected via a credential they hold. Iris connects to that storage on the user's behalf; Iris-the-vendor has no access to user data, runs no multi-tenant cloud, and does not retain any financial data after a user uninstalls. The user can export, migrate, or delete their data at any time without going through Iris. *Revised 2026-05-04 in ADR-0002 — see `docs/adr/0002-storage-architecture.md` for context.*
 2. **Privacy by default.** No telemetry without explicit opt-in. No third-party analytics.
 3. **Co-op, not shared visibility.** When two partners use Iris, both have agency. Different views and controls maybe; but neither is reduced to a viewer or a backseat passenger. This shapes the data model from day one even if partner-mode UI ships later.
 4. **Parallel views, not consensus.** Two partners may interpret the same numbers differently. Iris honors both interpretations rather than averaging them into mush. One truth in the data; multiple lenses on top.
@@ -145,8 +150,9 @@ Established 2026-05-02 after a sprawl spiral broke trust, refined the same eveni
 1. This document (`docs/north-star.md`) — the why and the who
 2. `docs/state.md` — the where-are-we-today snapshot, drift watch, and current-evaluation pass
 3. `docs/adr/0001-phase-1-scope.md` — the what for Phase 1
-4. `docs/phase-1-definition-of-done.md` — the when of "done"
-5. `docs/post-phase-1-backlog.md` — what's deferred and why
-6. Project memory files for historical context (`project_iris_*.md`, `feedback_iris_*.md`)
+4. `docs/adr/0002-storage-architecture.md` — the storage layer decision (user-owned cloud DB)
+5. `docs/phase-1-definition-of-done.md` — the when of "done"
+6. `docs/post-phase-1-backlog.md` — what's deferred and why
+7. Project memory files for historical context (`project_iris_*.md`, `feedback_iris_*.md`)
 
 These are the canonical ground truth. Code reflects them; if it doesn't, the code is the bug.
