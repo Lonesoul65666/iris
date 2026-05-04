@@ -33,7 +33,7 @@ This doc is the single "where are we today" snapshot. It is overwritten every su
 
 **Most recent commits (most recent first):**
 ```
-(this commit) docs(adr-0002): storage architecture — user-owned cloud DB
+6d5f16e docs(adr-0002): storage architecture — user-owned cloud DB
 4426317 feat(phase-1): plain-language sweep labels + custom destination on Variable Pay card
 4e23bdc docs: log Scott-creep / vocabulary audit; close stale Variable Pay visibility item
 53e8a97 docs: log 2026-05-03 ships and classifier hardening backlog
