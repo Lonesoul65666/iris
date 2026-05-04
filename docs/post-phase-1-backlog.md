@@ -57,14 +57,13 @@ Per the previous session's "5 things to push us to 75% pro alignment," a small V
 **When it returns:**
 Phase 0 work item, alongside or after BudgetView refactor. ~half a day for initial 10-test suite.
 
-## Variable Pay card visibility bug — open
+## Variable Pay card visibility bug — CLOSED 2026-05-03
 
-**Status:** Reported by Scott on 2026-04-29; not yet diagnosed.
+**Status:** Closed. The original bug per memory (card not rendering on Scott's screen) was already resolved by intervening work — the income-source auto-detection now correctly classifies the base stream as `subtype: 'base'` with confirmed status. Verified during the 2026-05-03 diagnostic: card renders on Scott's real data, floor lands on his actual $7,918 base (after the band-detection fix in commit 4896476).
 
-Card was built but Scott couldn't see it on his screen. Likely cause: his "Abnormal Sec-osv" base source isn't classified as `subtype: 'base'`, OR `effectiveFloor` computes ≤ 0, OR browser cache. The render gates on these conditions.
+A separate bug surfaced during that diagnostic — pay-band detection treating a single bonus / RSU vest as a new pay band — and was fixed in the same session. See commit 4896476.
 
-**When it returns:**
-Phase 1 work — required to satisfy DoD criterion 5. Diagnose by either DOM inspection on Scott's machine or by walking through the IncomeSources panel together.
+DoD #5 status: Variable Pay card is *visible and accurate* on real data. Pending: Scott confirming surplus totals reconcile against his actual paychecks.
 
 ## Coinbase API connector
 
@@ -171,6 +170,36 @@ The original plan was Phase 1 (Budget) → Phase 2 (Investments) → Phase 3 (In
 **When this returns:** Phase 1 — required to satisfy DoD #6 ("Work Expense card reconciles against Coupa within $50 over 90d") on real data without manual reclassification every session. The manual fix Scott did 2026-05-03 doesn't generalize and won't survive a re-detection sweep.
 
 **Next-session test data:** Scott's IndexedDB still has all the noisy classifications — easy real-world fixture for verifying the structural fix lands correctly. Don't wipe.
+
+## Scott-creep / vocabulary audit (Phase 1 — partner-mode prep)
+
+**Status:** Surfaced 2026-05-03 by Scott noticing "HYSA" jargon in the Variable Pay card sweep destinations. Logged for next session.
+
+**Context:** The 2026-05-02 mission widening expanded the target audience to include partners with different financial literacy levels (couples-first), single parents, teachers, CPAs, etc. Anywhere the UI uses Scott-vocabulary instead of plain language, a non-financially-literate partner using partner-mode (or any non-finance-savvy user) is going to bounce. This is a "presentation layers the truth" principle violation (north-star Tone #1).
+
+**Pass needs to cover at least:**
+
+1. **Sweep destination labels** in `src/components/Budget/VariableSurplusCard.tsx:14-20`:
+   - `HYSA → Savings` (HYSA = high-yield-savings-account, jargon)
+   - `Extra Mortgage Payment → Pay down debt` (generalizes — not all users have a mortgage)
+   - `Stash → ?` (verify whether "Stash" is intentional brand language or a leaked variable name; if leaked, "Goal" or "Savings goal" is plainer)
+   - `Investing → Invest` (verb form, more direct)
+   - `Manual / decide later → Decide later` (drop the "Manual" prefix)
+
+2. **Other Iris surfaces likely to have similar leaks** — needs a real pass:
+   - "Variable surplus" / "above base" framing on the Variable Pay card itself (CFO-grade vocabulary)
+   - "Sinking fund" terminology (Goodbudget-era — plain version is "Goal" or "Savings for [thing]")
+   - "Reimbursement matching" / "reimbursable" language on Work Expenses card
+   - Income source subtype names exposed in any UI: `base / variable / reimbursement / dividend / sale`
+   - Action item / nudge copy in general
+   - Chart labels, tooltip text, term-labels across the budget views
+
+3. **Deeper question Scott raised but didn't decide:** instead of fixed destination buckets (HYSA / mortgage / stash / investing), should the choices be the user's own actual connected accounts ("Ally Savings," "Schwab Brokerage," "Joint Emergency Fund")? That's a UX shift, not a label rename. Worth deciding before the rename so we're not renaming labels we're about to remove.
+
+**When it returns:**
+Phase 1 work — pairs naturally with the income-source auto-classifier hardening session (both are "stop making the app speak Scott's language" passes). Likely a half-day session: audit pass first, then label changes, then evaluate whether the destination-bucket UX needs the deeper rethink.
+
+**Drift signal for future sessions:** any new copy that gets added during a feature commit should be eyeballed against this principle. If a non-financially-literate partner can't understand it at a glance, push back.
 
 ## Lessons learned to encode
 
