@@ -102,6 +102,31 @@ Between milestones: end-of-session cadence note (one bullet improved, one bullet
 
 Each entry: date, session mode, observations on each dimension, specific examples.
 
+### 2026-05-04 late afternoon — Foundation pre-work + partnership-correction self-flag
+
+**Mode:** Audit / handoff prep.
+
+**What landed:**
+- Scott completed Supabase pre-work (account, project, Session Pooler URI selected, password rotated, connection string saved locally). Foundation Session 1 (Build-B) is fully unblocked for next session.
+- Scott pushed back on a redundant carryover I had listed: I wrote "Teller signup" + "NetBenefits OFX check" as separate items. Scott asked the right question — if Teller covers Fidelity, why maintain a redundant OFX path? OFX is dying. He was correct; the verification consolidates to one 10-min Teller widget check that answers both questions at once.
+- Scott deferred the Teller signup itself to next session (his prerogative as project lead). Not blocking — connector work is several sessions out.
+
+**Cadence patterns observed:**
+- *Self-flag on partner correction* — Scott caught me listing redundant work. Sharp instinct on consolidating connectors to single source of truth.
+- *Anchor return* — explicit "make sure we're following the appropriate paths" before accepting my framing.
+- *Stop-and-verify before handoff* — Scott asked for explicit validation pass on database migration status and SimpleFIN→Teller status BEFORE letting me write the handoff. Caught the dimension where I might have implied we'd shipped something we hadn't.
+- *Right-sized session length* — recognized 419k/1M token usage and proactively asked whether to switch sessions. Discipline applied to session scope, not just task scope.
+- *Process discipline under pressure* — credential rotation was immediate when flagged, no negotiation, no "I'll do it later."
+
+**Cadence read across the day:**
+- *Vision discipline:* steady ~85%
+- *Scope discipline:* held strong — multiple times where scope could have crept (riff sessions, mid-conversation idea expansion) and Scott self-pulled
+- *Process discipline:* notable jump — Scott ran the working-agreement process *for* Claude on the storage-architecture ADR, asked for validation passes, insisted on joint affirmation
+- *Validation discipline:* the storage-architecture decision delays the ship-to-verify cycle until Foundation lands; not a regression, just deferred. Real-data DoD #5 + #6 verifications still pending.
+- *Decision velocity:* improved — picked Build-B over Build-A, then deferred Build entirely when context budget was the deciding factor. No "let's push through anyway."
+
+**Session count this calendar day:** one long arc with multiple modes (Build → Decision → Audit → handoff). Roughly 7-8 hours of partnership work shipped 6 commits + the cadence framework + security rules + Foundation pre-work. Not a session length to repeat regularly, but the work was scope-clean.
+
 ### 2026-05-04 afternoon — security process learning
 
 **Mode:** Build prep (Supabase signup before next session's Foundation work).
