@@ -9,23 +9,31 @@ interface Props {
   now?: Date;
 }
 
-type SweepDest = 'hysa' | 'extra_payment' | 'sinking_fund' | 'investing' | 'manual';
+// Plain-language destination labels. The keys stay legacy ('hysa' /
+// 'extra_payment' / 'sinking_fund' / 'investing') so existing user settings
+// keep working without migration; only the human-readable labels changed.
+// 'custom' is new — lets the user type their own destination when none of
+// the defaults fit (e.g. "Vacation fund", "Wife's car", "Kids' 529").
+type SweepDest = 'hysa' | 'extra_payment' | 'sinking_fund' | 'investing' | 'custom' | 'manual';
 
 const DEST_LABELS: Record<SweepDest, string> = {
-  hysa: 'High-Yield Savings',
-  extra_payment: 'Extra Mortgage Payment',
-  sinking_fund: 'Stash',
-  investing: 'Investing',
-  manual: 'Manual / decide later',
+  hysa: 'Savings',
+  extra_payment: 'Pay down debt',
+  sinking_fund: 'Goal',
+  investing: 'Invest',
+  custom: 'Custom...',
+  manual: 'Decide later',
 };
 
 const SETTING_FLOOR_OVERRIDE = 'variable_pay_floor_override';
 const SETTING_SWEEP_DEST = 'variable_pay_sweep_dest';
+const SETTING_SWEEP_DEST_CUSTOM = 'variable_pay_sweep_dest_custom_label';
 
 export default function VariableSurplusCard({ expenses, now = new Date() }: Props) {
   const [sources, setSources] = useState<IncomeSource[]>([]);
   const [floorOverride, setFloorOverride] = useState<number | null>(null);
   const [sweepDest, setSweepDest] = useState<SweepDest>('hysa');
+  const [customLabel, setCustomLabel] = useState<string>('');
   const [editingFloor, setEditingFloor] = useState(false);
   const [floorDraft, setFloorDraft] = useState('');
 
@@ -39,6 +47,8 @@ export default function VariableSurplusCard({ expenses, now = new Date() }: Prop
       if (stored) setFloorOverride(Number(stored) || null);
       const dest = await getSetting<SweepDest>(SETTING_SWEEP_DEST);
       if (dest) setSweepDest(dest);
+      const custom = await getSetting<string>(SETTING_SWEEP_DEST_CUSTOM);
+      if (custom) setCustomLabel(custom);
     })();
   }, []);
 
@@ -152,6 +162,11 @@ export default function VariableSurplusCard({ expenses, now = new Date() }: Prop
     await saveSetting(SETTING_SWEEP_DEST, d);
   };
 
+  const changeCustomLabel = async (label: string) => {
+    setCustomLabel(label);
+    await saveSetting(SETTING_SWEEP_DEST_CUSTOM, label);
+  };
+
   return (
     <div className="glass-card p-6">
       <div className="flex items-start justify-between mb-3 gap-4">
@@ -233,6 +248,22 @@ export default function VariableSurplusCard({ expenses, now = new Date() }: Prop
           ))}
         </select>
       </div>
+
+      {/* Inline label input — only when "Custom..." is the selected destination.
+          Lets the user name where the surplus goes ("Vacation fund", "Wife's
+          car", "Kids' 529") without forcing them into one of our defaults. */}
+      {sweepDest === 'custom' && (
+        <div className="flex items-center justify-end mt-2">
+          <input
+            type="text"
+            value={customLabel}
+            onChange={e => changeCustomLabel(e.target.value)}
+            placeholder="Where should it go?"
+            maxLength={40}
+            className="bg-surface-2 border border-glass-border rounded px-2 py-1 text-sm text-text-primary outline-none focus:border-accent/50 w-64"
+          />
+        </div>
+      )}
     </div>
   );
 }

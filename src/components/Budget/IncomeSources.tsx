@@ -44,12 +44,14 @@ const CADENCE_LABEL: Record<IncomeCadence, string> = {
   irregular: 'Irregular',
 };
 
+// Plain-language labels — keys stay the same so existing per-source settings
+// keep working without migration.
 const SWEEP_LABEL: Record<SweepDestination, string> = {
-  hysa: 'HYSA',
-  sinking_fund: 'Sinking fund',
-  investing: 'Investing',
-  extra_payment: 'Extra debt payment',
-  manual: 'Manual',
+  hysa: 'Savings',
+  sinking_fund: 'Goal',
+  investing: 'Invest',
+  extra_payment: 'Pay down debt',
+  manual: 'Decide later',
   none: 'No sweep',
 };
 
