@@ -86,6 +86,18 @@ These are the ideas we agreed are central. If a future session drifts from any o
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
 
+### 2026-05-05 morning — Build-D split scope-lock
+
+- **Changed:** Foundation Session 3 (originally scoped as one big Build-D: migration script + store-call swap + JSON export) now splits into **Build-D1** and **Build-D2**.
+- **Build-D1 scope (today, ~45-60 min target):** read-only migration script that copies the two highest-volume IndexedDB stores (`incomeSources`, `expenses`) into Postgres via the existing upsert endpoints. Lives at `src/lib/migrate-indexeddb-to-postgres.ts`. Callable from DevTools console as `window.__irisMigrate()`. Sets a `migration_v1_complete` settings flag so it doesn't re-run unprompted. Logs a transcript with row counts on both sides for verification.
+- **Build-D1 explicitly does NOT:**
+  - Swap any store-call sites (the React app still reads from IndexedDB)
+  - Migrate the budget-config stores (`buckets`, `sinkingFunds`, `funMoney`, `paycheck`, `customCategories`, `recurringDecisions`, `inflowDecisions`, `earners`) — those need a schema decision (own-tables vs settings-blobs) which is a Build-D2 design call
+  - Add the JSON export endpoint (Build-D2)
+  - Delete the smoke-test rows (Build-D2 housekeeping)
+- **Why split:** Build-D1 is purely additive — it copies data INTO Postgres without touching what the running app reads. Even mid-write, the app keeps working. Tighter feedback loop, real rollback point if data shapes mismatch. Build-D2 is the riskier session because that's where the React app's data path actually flips; better on a fresh brain with a wider verification surface.
+- **Enhancement or drift?** **Enhancement.** Right-sized methodology — the original Session 3 was 2-3 hours of work compressed into one session-mode declaration. Splitting respects the partnership doc's "Scott's time is finite — 1-2 hours at a time" reality without changing what gets built.
+
 ### 2026-05-05 late evening — Foundation Session 2 (Build-C) shipped
 
 - **Changed:** Schema migration runner + 3 resources of typed endpoints landed (commit `5e00bd3`). Postgres now holds the canonical schema for `users`, `settings`, `income_sources`, `expenses`. The Vite middleware API can do real read/write round-trips against it. Eight handlers live: `/api/settings/{list,get/:key,save}`, `/api/incomeSources/{list,save}`, `/api/expenses/{list,save}`. `/api/connect` and `/api/health` now also surface migration status.
