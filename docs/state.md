@@ -86,6 +86,25 @@ These are the ideas we agreed are central. If a future session drifts from any o
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
 
+### 2026-05-05 morning — Foundation Build-D1 shipped (IndexedDB → Postgres migration)
+
+- **Changed:** First half of Foundation Session 3 landed. `src/lib/migrate-indexeddb-to-postgres.ts` reads `incomeSources` + `expenses` from IndexedDB and calls the upsert endpoints. Exposed on `window.__irisMigrate` from `main.tsx`. Idempotent (settings flag `migration_v1_complete`); per-row errors collected, never fatal. Commit: see most recent in log.
+- **Real-data shake-out:** First run revealed the expenses endpoint was too strict on date format (only accepted `YYYY-MM-DD`). Real IndexedDB rows arrive in mixed shapes — ISO datetime (`2026-04-15T00:00:00.000Z`), MM/DD/YYYY (CSV imports), occasionally human-readable strings. Patched the endpoint with `normalizeDate()` (handles all four cases including `Date.parse` fallback) and `normalizeAmount()` (accepts numbers AND strings with `$`/commas/whitespace). Error response now returns `invalidFields` + `seenTypes` for fast future debugging.
+- **Verified end-to-end on Scott's real Supabase:**
+  - 22/22 income sources written, 0 errors
+  - 638/638 expenses written, 0 errors
+  - Total run time: 51.9 seconds (sequential, ~80ms/row average)
+  - Counts confirmed via list endpoints: `income_sources` = 23 (22 + 1 smoke-test), `expenses` = 639 (638 + 1 smoke-test), `settings` = 2 (`migration_v1_complete` flag + `smoke-test-key`)
+  - Schema validated: typed columns + jsonb data merge correctly on read; ON CONFLICT DO UPDATE worked for the second run with `force: true`.
+- **What's still IndexedDB-only:** budget-config stores (`buckets`, `sinkingFunds`, `funMoney`, `paycheck`, `customCategories`, `recurringDecisions`, `inflowDecisions`, `earners`). Build-D2 handles them with a schema decision (own-tables vs settings-blobs).
+- **What did NOT happen:** no store-call swap (the React app still reads from IndexedDB), no JSON export endpoint, no DELETE for the smoke-test rows, no migration of budget-config stores, no UI changes. All deferred to Build-D2.
+- **Discipline notes:**
+  - *Same-session diagnose-and-fix.* The first migration run failed for 638/638 expenses; root-caused via the 400 error pattern, fixed the validator, re-ran cleanly — all in one continuous session. Validation discipline pattern continues.
+  - *Right-sized scope held.* Build-D was originally one big "Session 3 = migration + swap + export." Split into D1 + D2 this morning. D1 stayed at scope (migration only, no swap). Auto mode didn't break the line.
+  - *Real-data over mocks.* Server-side smoke had passed in Build-C with synthetic shapes. The real shake-out came from Scott's actual data — exactly the failure mode the partnership doc names. Worth banking: synthetic smoke ≠ real-data validation.
+- **Carry-forward (post-Phase-1-backlog):** Connector-collision decision logged. When Teller/OFX/Coinbase land in Foundation Session 4+, the migrated CSV-imported expenses won't auto-dedupe with connector-fetched transactions. Three paths (dedupe-on-import / reset-and-replay / tag-the-source) need a deliberate decision before the first connector ships. Not blocking; just flagged.
+- **Enhancement or drift?** **Enhancement.** Phase 1 scope unchanged. Build-D1 stayed at the locked scope. Postgres now holds Scott's real data; the React app still reads IndexedDB until Build-D2.
+
 ### 2026-05-05 morning — Build-D split scope-lock
 
 - **Changed:** Foundation Session 3 (originally scoped as one big Build-D: migration script + store-call swap + JSON export) now splits into **Build-D1** and **Build-D2**.

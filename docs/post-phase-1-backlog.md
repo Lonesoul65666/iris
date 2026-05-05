@@ -100,6 +100,22 @@ Log into NetBenefits, look under Account Information → Download for "Quicken W
 **When it returns:**
 After Teller verification, since Fidelity routing depends on what Teller covers.
 
+## Connector-collision decision (pre-Teller, pre-OFX, pre-Coinbase)
+
+**Status:** Surfaced during Build-D1 (2026-05-05). Needs a decision before Foundation Session 4+ wires the first connector.
+
+**Problem:** Build-D1 migrated 638 expenses + 22 income sources from IndexedDB (CSV-imported) to Postgres. When real connectors land, they'll fetch the same real-world transactions from a different source, with different transaction IDs and slightly different payee strings. The upsert path is keyed on `(user_id, id)`, so Teller-fetched transactions land as **new rows alongside** existing CSV rows. Budget aggregates double.
+
+**Three candidate paths:**
+
+- **Path A — Dedupe on import.** Connector-side fuzzy matching: `(source, date, amount, normalized_payee)` similarity tolerance. Skip or merge near-matches. Most surgical, preserves history, more code. Risk of false positives (real duplicate transactions get collapsed).
+- **Path B — Reset and replay.** At first Teller connect, wipe the CSV-imported rows for that account/source and let Teller backfill. Loses CSV history but cleaner. One-time cost paid at connector wire-up.
+- **Path C — Tag the source.** Keep both, mark each row with `source: 'csv-import' | 'teller-{institution}' | ...`. Downstream code (budget aggregator, Pulse classifier) filters as needed. Costs schema work + every read site has to be source-aware.
+
+**Decision belongs in:** A new ADR or addendum to ADR-0001 right before connector code starts. Don't sleepwalk into it.
+
+**Note on classifier-staleness:** Separate from this question. Some migrated rows have known mis-classifications (Cap One CC payment as 'base', dispute credits as income, etc. — see 2026-05-03 diagnostic). That's a classifier-hardening pass, not a connector decision. Will run against whatever data is in Postgres at the time.
+
 ## Existing IndexedDB settings migration — SUPERSEDED by ADR-0002
 
 **Status:** Superseded 2026-05-04. Folded into the broader IndexedDB → Postgres migration script that's part of Phase 1 Foundation. The settings JSON-encoding edge case still applies; it's handled inside the migration script's idempotent read step.
