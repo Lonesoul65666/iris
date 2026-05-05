@@ -130,6 +130,8 @@ Each entry: date, session mode, observations on each dimension, specific example
 
 **Net for the day:** Two shifts (Decision/Audit → Build) and two ships (state.md refresh + Build-C). 9 commits total today (`a056293` … `5e00bd3`). Architectural moment: Postgres is now a real participant in Iris, even though the app still reads/writes IndexedDB. Session 3 is the swap — at which point IndexedDB becomes ceremonial fallback and Postgres becomes canonical.
 
+**Partnership-process moment worth banking:** Right after I declared Build-C "shipped," Scott caught the verification gap — paraphrasing: "before continuing, do we need to validate this? Make sure I'm keeping to the partnership piece." Server-side smoke tests had passed but user-side validation hadn't. I gave him four concrete checks (app loads + console clean, `/api/health` returns expected JSON, Supabase Schema Visualizer shows the 5 tables wired correctly, Tables view shows row counts). All four passed; he closed the loop by sharing screenshots. **This is the partnership doc's "verifies before declaring complete; 'I built X' without Scott confirming has zero weight" rule operating exactly as designed.** The pattern to keep: server-side verification is *evidence*, user-side validation is *closure*. Don't conflate.
+
 ### 2026-05-05 — Decision/Audit pause: connector verification + competitive refresh + institution map
 
 **Mode:** Build → Decision/Audit transition (declared mid-session). Scott pulled the wheel: "before we move and develop any further, let's understand."
