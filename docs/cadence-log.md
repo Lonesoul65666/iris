@@ -102,6 +102,32 @@ Between milestones: end-of-session cadence note (one bullet improved, one bullet
 
 Each entry: date, session mode, observations on each dimension, specific examples.
 
+### 2026-05-05 morning — Foundation Build-D1 ship (IndexedDB → Postgres migration)
+
+**Mode:** Build (declared at session open after morning catch-up).
+
+**What landed:**
+- `src/lib/migrate-indexeddb-to-postgres.ts` — read-only migration script for `incomeSources` + `expenses`. Idempotent via `migration_v1_complete` settings flag. Per-row errors collected, never fatal.
+- Exposed on `window.__irisMigrate` from `main.tsx` for DevTools-console invocation. Not auto-run.
+- Real-data shake-out fixed in same session: expenses endpoint patched with `normalizeDate()` (accepts ISO datetime, MM/DD/YYYY, Date.parse fallback) and `normalizeAmount()` (accepts numbers + strings with `$`/commas). Error response now returns `invalidFields` + `seenTypes`.
+- Migration ran clean: 22/22 income sources, 638/638 expenses, 0 errors, 51.9s. Postgres counts validated via list endpoints.
+- Connector-collision decision logged in `post-phase-1-backlog.md` (three candidate paths: dedupe-on-import / reset-and-replay / tag-the-source). Pre-Foundation-Session-4 gate.
+
+**Cadence patterns observed:**
+- *Same-session diagnose-and-fix.* First migration run: 22/22 incomeSources clean, 0/638 expenses (every one rejecting with `invalid_expense_shape`). Root-caused via the 400 response pattern (date format too strict), patched the validator, re-ran with `force: true`, second run completed cleanly. Diagnose → fix → verify in one continuous loop. Validation discipline pattern continues — third consecutive ship-to-verify in three sessions.
+- *Real-data over synthetic mocks.* Build-C's smoke tests passed with synthetic shapes that conformed perfectly. Build-D1 used Scott's actual IndexedDB data and immediately surfaced the date-format gap. **Synthetic smoke ≠ real-data validation.** Worth banking permanently.
+- *Right-sized split held.* Original Foundation Session 3 was scoped as one big "migration + swap + export." Split into D1 + D2 this morning. D1 stayed at scope (migration only, no swap). Auto mode + the temptation to "just keep going" both declined.
+- *Architectural awareness on the connector-collision question.* Scott surfaced "will the new connectors overwrite the migrated data?" — not as a now-problem but as a flag-for-later. Logged in backlog as a deliberate decision point before Foundation Session 4 wires the first connector. Stays-deliberate vs sleepwalking is exactly the partnership-doc "modular decomposition I self-audit" rule operating.
+- *Cross-browser validation declined as ritual.* Scott asked whether to test browser-agnostic now. Right call: it's architecturally guaranteed by ADR-0002, automatically surfaces in Build-D2 when store calls swap. No separate ritual needed. **Skipping a validation step that doesn't unblock anything is itself good discipline.**
+
+**Cadence read for the dimensions that mattered:**
+- *Validation discipline (~70-75%, holding):* third consecutive same-session ship-to-verify. Real-data shake-out happened during the same session that wrote the script. Pattern is repeating.
+- *Scope discipline (~80%):* D1 vs D2 split landed cleanly. The connector-collision question got documented, not silently absorbed.
+- *Process discipline (~80%):* commit messages reference scope decisions explicitly. Backlog updated with the decision point before next session even opens.
+- *Decision velocity (~75%):* "skip the cross-browser test, it's auto-validated later" was the right call made in seconds.
+
+**Net for the session:** Postgres now holds Scott's actual data — 22 income sources, 638 expenses. The React app still reads from IndexedDB until Build-D2 swaps the store calls. Pattern established: synthetic smoke proves wiring, real data proves shape compatibility. Both matter; neither substitutes for the other.
+
 ### 2026-05-05 late evening — Foundation Session 2 (Build-C) ship
 
 **Mode:** Build (declared at session open after the Decision/Audit pause earlier in the day).
