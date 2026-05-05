@@ -17,6 +17,9 @@ dist-ssr
 .env.*
 !.env.example
 
+# Throwaway scratch — verification harnesses, one-off launchers, etc.
+public/teller-connect.html
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
