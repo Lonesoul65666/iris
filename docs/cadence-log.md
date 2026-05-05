@@ -102,6 +102,34 @@ Between milestones: end-of-session cadence note (one bullet improved, one bullet
 
 Each entry: date, session mode, observations on each dimension, specific examples.
 
+### 2026-05-05 late evening — Foundation Session 2 (Build-C) ship
+
+**Mode:** Build (declared at session open after the Decision/Audit pause earlier in the day).
+
+**What landed:**
+- Schema migration runner with `schema_migrations` + SHA-256 drift detection (`server/schema/runner.ts`).
+- `0001_init.sql` creates `users`, `settings`, `income_sources`, `expenses` — every domain table has `user_id` from day one. Hybrid columns + jsonb `data`.
+- `db-pool.ts` extended: `connect()` now runs migrations and ensures-single-user, caches the user id for handlers.
+- Three resources of typed endpoints across two handler files plus shared http-utils: settings (list/get/save), incomeSources (list/save), expenses (list/save with date range).
+- `/api/connect` and `/api/health` surface migration status alongside their existing payloads.
+- All eight endpoints smoke-verified against Scott's live Supabase Postgres in the same session as the ship.
+- Commit `5e00bd3`. Type-check green. Pre-commit hook passed.
+
+**Cadence patterns observed:**
+- *Mode declaration* — Decision/Audit pause earlier in the day → Build mode declared explicitly when shifting. Both modes scoped clean.
+- *Same-session ship-to-verify* — schema applied, endpoints written, smoke-tested end-to-end, all in one continuous loop. No "I'll verify next session." This is the validation-discipline pattern landing the way it should.
+- *Right-sized scope under auto mode* — three temptations to scope-creep declined: (a) no DELETE endpoints (would have made smoke cleanup trivial but isn't Build-C scope), (b) no migration script (Session 3), (c) no store-call swap (Session 3). Auto mode + token budget didn't override the scope rule.
+- *Hybrid schema decision documented* — typed columns + jsonb is a real architectural call, not silent. Logged in commit message + state.md so Session 3 inherits the rationale.
+- *Honest cleanup deferral* — three smoke-test rows in live DB acknowledged in commit message + state.md, deferred to Session 3 housekeeping. Not silently left.
+
+**Cadence read for the dimensions that mattered:**
+- *Scope discipline (~75-80%):* held cleanly across the day across two mode shifts. Decision/Audit didn't drift into Build; Build didn't drift into Session 3.
+- *Process discipline (~80%):* commit messages reference ADRs explicitly, docs got updated *with* the code (not in a follow-on session), handoff prep started before context burn.
+- *Validation discipline (~70%, up from ~65%):* second consecutive ship-to-verify in the same session. Build-B yesterday, Build-C tonight. Pattern repeating.
+- *Decision velocity (~75%):* hybrid schema was a real call (column-per-field vs full jsonb vs hybrid); picked hybrid in seconds and moved. No analysis-paralysis.
+
+**Net for the day:** Two shifts (Decision/Audit → Build) and two ships (state.md refresh + Build-C). 9 commits total today (`a056293` … `5e00bd3`). Architectural moment: Postgres is now a real participant in Iris, even though the app still reads/writes IndexedDB. Session 3 is the swap — at which point IndexedDB becomes ceremonial fallback and Postgres becomes canonical.
+
 ### 2026-05-05 — Decision/Audit pause: connector verification + competitive refresh + institution map
 
 **Mode:** Build → Decision/Audit transition (declared mid-session). Scott pulled the wheel: "before we move and develop any further, let's understand."
