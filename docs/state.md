@@ -78,6 +78,18 @@ These are the ideas we agreed are central. If a future session drifts from any o
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
 
+### 2026-05-05 — Teller coverage map locked
+
+- **Changed:** Teller real-coverage check completed via standalone scratch launcher (`public/teller-connect.html`, gitignored). Three enrollments verified end-to-end (consent → bank login → `onSuccess` callback → access token returned):
+  - **Bank of America** — works (verified 2026-05-04).
+  - **Citibank** — works (verified 2026-05-05; previous failure was a `file://` null-origin bug in the scratch launcher, not a coverage gap; serving via Vite at `http://localhost:5173/teller-connect.html` resolved it).
+  - **Capital One** — works.
+  - **Fidelity** — confirmed not in Teller catalog (expected per ADR-0001; stays on the Fidelity OFX path).
+- **Why:** Ground-truth Teller coverage before any connector code lands in Foundation Session 4+. Don't write code against an aggregator we haven't verified covers the institutions Scott's household actually uses.
+- **Open question carried forward:** other institutions Scott / partner use that still need verification (Chase, Discover, Amex, brokerages other than Fidelity, etc.). Run them through the same scratch launcher when convenient. The launcher persists enrollment history in localStorage for forward bookkeeping.
+- **Architecture footnote:** the `file://` → `http://localhost:5173/` migration of the launcher revealed that any future Iris-embedded Teller Connect needs a real HTTP origin — not just for security but because Teller Connect uses `postMessage` between iframes, which requires a non-null origin. Mentioned here so it's documented before Foundation Session 4 connector work starts.
+- **Enhancement or drift?** **Enhancement, scope-clean.** No code in Iris source. Throwaway scratch HTML in `public/` (gitignored). Phase 1 scope unchanged.
+
 ### 2026-05-04 evening — Competitive landscape refreshed + Teller BoA verified
 
 - **Changed:** Two threads landed in a Decision/Audit pause after Build-B shipped.
