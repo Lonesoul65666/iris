@@ -6,12 +6,18 @@
 // `date` and `amount` are typed columns (queryable / indexable). The full
 // expense object lives in `data` jsonb so we can evolve the row shape without
 // schema churn.
+//
+// Date / amount normalization (added 2026-05-05 during Build-D1 migration):
+// real-world IndexedDB rows arrive in mixed shapes (ISO datetime strings,
+// MM/DD/YYYY from CSVs, numeric strings). We coerce to canonical
+// `YYYY-MM-DD` (date) and JS number (amount) here so the migration script
+// doesn't have to scrub data row-by-row.
 
 import { sendJson, readJsonBody, requireContext, methodNotAllowed, errorMessage, type Req, type Res } from './http-utils.ts'
 
 interface ExpenseShape {
   id: string
-  date: string  // ISO 'YYYY-MM-DD'
+  date: string  // canonical 'YYYY-MM-DD' on the wire after normalization
   amount: number
   [k: string]: unknown
 }
@@ -26,6 +32,40 @@ function rowToExpense(row: { id: string; date: string; amount: string; data: Rec
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+function normalizeDate(input: unknown): string | null {
+  if (typeof input !== 'string') return null
+  // ISO date or ISO datetime — take the YYYY-MM-DD prefix if present.
+  const isoMatch = input.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (isoMatch) return isoMatch[1]
+  // MM/DD/YYYY or M/D/YYYY (CSV imports).
+  const slashMatch = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (slashMatch) {
+    const mm = slashMatch[1].padStart(2, '0')
+    const dd = slashMatch[2].padStart(2, '0')
+    return `${slashMatch[3]}-${mm}-${dd}`
+  }
+  // Last resort: try Date.parse for things like "April 15, 2026".
+  const t = Date.parse(input)
+  if (!Number.isNaN(t)) {
+    const d = new Date(t)
+    const y = d.getUTCFullYear()
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(d.getUTCDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+  return null
+}
+
+function normalizeAmount(input: unknown): number | null {
+  if (typeof input === 'number' && Number.isFinite(input)) return input
+  if (typeof input === 'string') {
+    const cleaned = input.replace(/[$,\s]/g, '')
+    const n = parseFloat(cleaned)
+    if (Number.isFinite(n)) return n
+  }
+  return null
+}
 
 export async function handleExpensesList(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
@@ -59,7 +99,7 @@ export async function handleExpensesSave(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
   const ctx = requireContext(res)
   if (!ctx) return
-  let body: { expense?: ExpenseShape }
+  let body: { expense?: Record<string, unknown> }
   try {
     body = (await readJsonBody(req)) as typeof body
   } catch {
@@ -71,12 +111,28 @@ export async function handleExpensesSave(req: Req, res: Res): Promise<void> {
     sendJson(res, 400, { ok: false, error: 'missing_expense' })
     return
   }
-  if (typeof e.id !== 'string' || typeof e.date !== 'string' || !ISO_DATE.test(e.date)
-      || typeof e.amount !== 'number' || !Number.isFinite(e.amount)) {
-    sendJson(res, 400, { ok: false, error: 'invalid_expense_shape' })
+
+  const id = e.id
+  const dateNorm = normalizeDate(e.date)
+  const amountNorm = normalizeAmount(e.amount)
+
+  const invalidFields: string[] = []
+  if (typeof id !== 'string' || id.length === 0) invalidFields.push('id')
+  if (dateNorm === null) invalidFields.push('date')
+  if (amountNorm === null) invalidFields.push('amount')
+  if (invalidFields.length > 0) {
+    sendJson(res, 400, {
+      ok: false,
+      error: 'invalid_expense_shape',
+      invalidFields,
+      seenTypes: { id: typeof id, date: typeof e.date, amount: typeof e.amount },
+    })
     return
   }
-  const data = { ...e }
+
+  // Persist canonical normalized values both in the typed columns AND in the
+  // jsonb `data` blob so reads are consistent.
+  const data = { ...e, date: dateNorm, amount: amountNorm }
   try {
     await ctx.pool.query(
       `INSERT INTO expenses (id, user_id, date, amount, data, updated_at)
@@ -86,7 +142,7 @@ export async function handleExpensesSave(req: Req, res: Res): Promise<void> {
              amount     = EXCLUDED.amount,
              data       = EXCLUDED.data,
              updated_at = now()`,
-      [e.id, ctx.userId, e.date, e.amount, JSON.stringify(data)],
+      [id, ctx.userId, dateNorm, amountNorm, JSON.stringify(data)],
     )
     sendJson(res, 200, { ok: true })
   } catch (err) {
