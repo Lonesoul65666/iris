@@ -22,6 +22,7 @@ import { connect, getPool, hasPool, getLastMigrationResult } from './db-pool.ts'
 import { handleSettingsList, handleSettingsGet, handleSettingsSave } from './api-handlers/settings.ts'
 import { handleIncomeSourcesList, handleIncomeSourcesSave } from './api-handlers/income-sources.ts'
 import { handleExpensesList, handleExpensesSave } from './api-handlers/expenses.ts'
+import { handleCollectionsList, handleCollectionsSave } from './api-handlers/collections.ts'
 
 type Req = IncomingMessage
 type Res = ServerResponse
@@ -107,6 +108,26 @@ export function irisApi(): Plugin {
 
       server.middlewares.use('/api/expenses/list', wrap(handleExpensesList))
       server.middlewares.use('/api/expenses/save', wrap(handleExpensesSave))
+
+      // /api/collections/:name/{list,save} — single-name routing.
+      // req.url after the '/api/collections' prefix looks like '/buckets/list'
+      // or '/sinkingFunds/save?...'.
+      server.middlewares.use('/api/collections', wrap(async (req, res) => {
+        const suffix = (req.url ?? '').replace(/^\/+/, '').split('?')[0]
+        const segments = suffix.split('/').filter(Boolean)
+        if (segments.length !== 2) {
+          sendJson(res, 400, { ok: false, error: 'invalid_collections_path', expected: '/api/collections/:name/{list|save}' })
+          return
+        }
+        const [name, action] = segments
+        if (action === 'list') {
+          await handleCollectionsList(req, res, name)
+        } else if (action === 'save') {
+          await handleCollectionsSave(req, res, name)
+        } else {
+          sendJson(res, 404, { ok: false, error: 'unknown_collections_action' })
+        }
+      }))
     },
   }
 }
