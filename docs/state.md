@@ -78,17 +78,38 @@ These are the ideas we agreed are central. If a future session drifts from any o
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
 
-### 2026-05-05 — Teller coverage map locked
+### 2026-05-05 — Full institution map locked + Teller coverage verified
 
-- **Changed:** Teller real-coverage check completed via standalone scratch launcher (`public/teller-connect.html`, gitignored). Three enrollments verified end-to-end (consent → bank login → `onSuccess` callback → access token returned):
-  - **Bank of America** — works (verified 2026-05-04).
-  - **Citibank** — works (verified 2026-05-05; previous failure was a `file://` null-origin bug in the scratch launcher, not a coverage gap; serving via Vite at `http://localhost:5173/teller-connect.html` resolved it).
-  - **Capital One** — works.
-  - **Fidelity** — confirmed not in Teller catalog (expected per ADR-0001; stays on the Fidelity OFX path).
-- **Why:** Ground-truth Teller coverage before any connector code lands in Foundation Session 4+. Don't write code against an aggregator we haven't verified covers the institutions Scott's household actually uses.
-- **Open question carried forward:** other institutions Scott / partner use that still need verification (Chase, Discover, Amex, brokerages other than Fidelity, etc.). Run them through the same scratch launcher when convenient. The launcher persists enrollment history in localStorage for forward bookkeeping.
-- **Architecture footnote:** the `file://` → `http://localhost:5173/` migration of the launcher revealed that any future Iris-embedded Teller Connect needs a real HTTP origin — not just for security but because Teller Connect uses `postMessage` between iframes, which requires a non-null origin. Mentioned here so it's documented before Foundation Session 4 connector work starts.
-- **Enhancement or drift?** **Enhancement, scope-clean.** No code in Iris source. Throwaway scratch HTML in `public/` (gitignored). Phase 1 scope unchanged.
+- **Changed:** Scott's full household financial-institution inventory documented. Connector strategy refined accordingly.
+
+**Institution map (Scott's household, May 2026):**
+
+| Institution | Holdings | Connector | Status |
+|---|---|---|---|
+| Bank of America | Bank + CC | Teller | ✅ Verified 2026-05-04 |
+| Citibank | Bank + CC | Teller | ✅ Verified 2026-05-05 |
+| Capital One | Bank + CC | Teller | ✅ Verified 2026-05-05 |
+| Wells Fargo | **Mortgage only** (no bank/CC) | Teller (try) or manual | ⚠ Needs empirical test — does Teller surface mortgage as a loan account? |
+| Fidelity | 401k (NetBenefits) + investments | OFX (Direct Connect) | Planned, untested |
+| Morgan Stanley | Equity (RSUs/ESPP, post-E*Trade migration) | OFX (messy — see notes) | Planned, untested |
+| Coinbase | Crypto | Coinbase personal API | Planned, untested |
+
+**Connector strategy (3 connectors, 7 institutions):**
+
+- **Teller** — covers BoA, Citi, Cap One (verified). Maybe Wells Fargo mortgage (untested). Three of three real-bank verifications passed end-to-end via the scratch launcher (consent → login → `onSuccess` → access token).
+- **OFX Direct Connect** — covers Fidelity (canonical path) and Morgan Stanley (post-2023 E*Trade migration is workable but reportedly clunky; OFX Error 16503 is a known issue some users solved with VPN). Both institutions require enabling third-party data sharing in their respective Security/Settings panels before OFX works.
+- **Coinbase API** — direct integration, simplest of the three.
+
+**Open empirical questions (resolved later via scratch tests, not blocking):**
+
+1. **Wells Fargo mortgage via Teller** — log into WF through Teller Connect, see whether the mortgage account appears as an account_type of `loan` (or similar). If yes → use Teller. If no → mortgage gets manual entry in Iris (monthly balance + payment, low-frequency data so manual is fine).
+2. **Morgan Stanley OFX viability** — try OFX Direct Connect from Quicken or similar OFX client first to confirm it works at all on Scott's account, before writing Iris connector code. Several reported failures post-E*Trade-migration; want ground truth before committing.
+3. **Fidelity OFX** — likewise, try OFX from a known client before integration. Should be cleanest of the three brokerages.
+
+**Architecture footnote:** Teller Connect requires a non-null HTTP origin because it uses `postMessage` between iframes. `file://` URLs are treated as null-origin and break the wizard mid-flow. Iris's in-app embed will satisfy this naturally, but worth documenting before Foundation Session 4 connector work starts. The scratch launcher (`public/teller-connect.html`, gitignored) lives at `http://localhost:5173/teller-connect.html` to satisfy this constraint.
+
+- **Why:** Ground-truth the connector map before writing any connector code in Foundation Session 4+. The institution inventory shifts the picture: 7 institutions across 3 connector types, with 2 of the 3 connectors still untested in any client at all (OFX-Fidelity, OFX-MorganStanley, Coinbase-API). Teller is the only verified leg.
+- **Enhancement or drift?** **Enhancement, scope-clean.** No code in Iris source. Phase 1 scope unchanged. ADR-0001's three-connector architecture (Teller + OFX + Coinbase) holds — Morgan Stanley adds an OFX enrollment, not a fourth connector type.
 
 ### 2026-05-04 evening — Competitive landscape refreshed + Teller BoA verified
 
