@@ -38,6 +38,12 @@ This doc is the single "where are we today" snapshot. It is overwritten every su
 
 **Most recent commits (most recent first):**
 ```
+cac6201 feat(foundation): generic collections table + budget-config migration — Build-D2a
+3585026 docs: Build-D1 closeout — state.md + cadence-log + backlog connector-collision decision
+726f323 feat(foundation): IndexedDB → Postgres migration script — Phase 1 Foundation Build-D1
+ac60107 docs(state): split Foundation Session 3 into Build-D1 and Build-D2
+93b984a docs: log Build-C user-side validation + partnership-process pattern
+b59d666 docs: log Foundation Session 2 (Build-C) in state.md + cadence-log
 5e00bd3 feat(foundation): schema runner + first endpoints — Phase 1 Foundation Session 2 (Build-C)
 7b08d6c docs(state): WF and Morgan Stanley confirmed NOT in Teller catalog
 047683d docs(cadence): trajectory entry for 2026-05-05 Decision/Audit session
@@ -85,6 +91,22 @@ These are the ideas we agreed are central. If a future session drifts from any o
 ## Recent shifts (drift detection log)
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
+
+### 2026-05-05 midday — Build-D2a shipped (collections table + budget-config migration script)
+
+- **Changed:** `0002_budget_config.sql` adds a generic `collections` table — `(user_id, name, key, data jsonb, updated_at)` — that holds the eight budget-config IndexedDB stores (`buckets`, `sinkingFunds`, `funMoney`, `paycheck`, `customCategories`, `recurringDecisions`, `inflowDecisions`, `earners`). One table, not eight, because these stores share the same shape and have no per-resource query needs. New `server/api-handlers/collections.ts` exposes `GET /api/collections/:name/list` + `POST /api/collections/:name/save` (single item or batch in transaction). Migration script (`migrate-indexeddb-to-postgres.ts`) restructured into v1/v2 phases — each independently flagged + idempotent. v2 attempts batched save, falls back to per-row on batch failure for granular error info. New `{ phases: ['v2'] }` option lets you run only v2. Commit `cac6201`.
+- **Why generic-table over per-resource-tables:** typed columns earn their place when there are real queries (date ranges on expenses, status filters on income_sources). Budget-config stores have neither — they're "load full collection, save full collection" patterns. Generic beats specific here. We can split a collection into its own typed table later if a real query need emerges; the upsert pattern doesn't lock us in.
+- **Verified server-side against Scott's live Supabase:**
+  - `0002_budget_config.sql` ran cleanly on first /api/connect after server restart (`migrations.skipped: [1, 2]` after the second connect, confirming both migrations are in the schema_migrations table).
+  - Smoke tests: list-empty / single-save / batch-save / list-after-save / cross-collection-isolation / 400-on-bad-name / 404-on-unknown-action / upsert-via-ON-CONFLICT — all green.
+  - Four `smoke-bucket-*` rows now in `collections` (under name=`buckets`); Build-D2b cleans them as housekeeping.
+- **What's still NOT done:** real-data v2 migration run from Scott's Chrome (his IndexedDB is the source of truth — preview tool's headless browser has empty IDB), no store-call swap (the React app still reads IndexedDB), no JSON export endpoint, no DELETE, no UI changes. All Build-D2b territory.
+- **Why the work happened solo:** Scott declared a 1-hour validation gap; I sized Build-D2a as "purely additive, no UI changes, no risk to running app." Even if anything went sideways, the worst case was a revert before he returned. Build-D2b (store-call swap + UI verification) explicitly waits for him because that's where the React app's data path actually flips.
+- **Discipline notes:**
+  - *Right-sized scope under solo execution.* Auto mode + 1-hour window + no human in the loop is exactly the failure mode the partnership doc names. Held the scope: schema + endpoint + migration extension + smoke. Stopped before store-call-swap.
+  - *Generic-vs-specific architectural call documented.* The schema decision (one collections table vs eight) is a real call worth explaining; rationale lives in the commit message + this entry + the SQL file's leading comment.
+  - *Same-session smoke under synthetic shapes proven before real data.* Build-D1 taught us synthetic ≠ real-data validation. Build-D2a's synthetic smoke proves the wiring; real-data run with Scott's IndexedDB will test shape compatibility.
+- **Enhancement or drift?** **Enhancement.** Phase 1 scope unchanged. Foundation Build-D2a is purely additive — Postgres now has the table waiting for budget-config data, but no app behavior has changed. Build-D2b is the swap session.
 
 ### 2026-05-05 morning — Foundation Build-D1 shipped (IndexedDB → Postgres migration)
 
