@@ -106,7 +106,7 @@ After Teller verification, since Fidelity routing depends on what Teller covers.
 
 ## Phase 1 Foundation — storage migration to user-owned cloud DB (NEW per ADR-0002)
 
-**Status:** Locked 2026-05-04 via ADR-0002. **Phase 1 gate-zero — no other Phase 1 work proceeds until this lands and is verified.**
+**Status:** In progress. **Phase 1 gate-zero — no other Phase 1 work proceeds until all three sessions land and verify.**
 
 **Scope:**
 - Vite middleware API at `/api/*` (same port as dev server, no CORS, no second port)
@@ -118,13 +118,13 @@ After Teller verification, since Fidelity routing depends on what Teller covers.
 - Onboarding flow for connection-string paste (manual in v1; OAuth wizard is v2+ per below)
 
 **Sequencing within Foundation:**
-1. API server scaffold + schema + first 3-4 endpoints (settings, expenses, incomeSources, buckets)
-2. Migration script + verification step
-3. Swap remaining store calls to API; verify each surface still works
-4. JSON export button
-5. Edge cases, recovery scenarios, smoke tests
+1. **Session 1 — Build-B (DONE 2026-05-04, commit `6bb9843`):** Vite middleware API scaffold; `pg.Pool` cached server-side via `POST /api/connect`; `GET /api/health` smoke endpoint with live `SELECT 1`; client bootstrap that POSTs `localStorage.iris_db_connection_string` on app boot. Smoke verified end-to-end against Scott's Supabase URI.
+2. **Session 2 — Build-C (NEXT):** versioned schema migration runner; `0001_init.sql` with `users`, `settings`, `income_sources`, `expenses` (every table with `user_id`); first 3-4 typed endpoints replacing the most-used IndexedDB store calls; smoke each.
+3. **Session 3:** IndexedDB → Postgres migration script (idempotent, verifiable, reversible, logged); swap remaining store-call sites to `fetch('/api/...')`; verify each surface against the new layer; mark IndexedDB read-only for one fallback session.
+4. **Bundled with Session 3:** JSON export button in Settings (Layer 4 backup).
+5. Edge cases, recovery scenarios, smoke tests.
 
-**When it returns:** Next session opens here.
+**When it returns:** Session 2 opens next session.
 
 ## Phase 1.1 follow-ups (after Foundation + Features verified)
 
