@@ -78,6 +78,14 @@ These are the ideas we agreed are central. If a future session drifts from any o
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
 
+### 2026-05-04 evening — Competitive landscape refreshed + Teller BoA verified
+
+- **Changed:** Two threads landed in a Decision/Audit pause after Build-B shipped.
+  1. **Origin and Monarch deep-dive** — corrected stale notes on both. Origin pivoted from advisor-led to all-in-one platform with three-view Partner Mode at $99/yr; Monarch ships "Shared Views" (mine/theirs/ours labeling + per-transaction privacy toggle) at $14.99/mo. Both are reviewer-rated weak on budgeting and on data-sync-2FA-breakage respectively. Iris's differentiation refines to (privacy + one-time-pay + budget-engine-quality + co-op-as-gameplay) — see refreshed Other-finance-apps section + Conclusion + Open-decisions table above.
+  2. **Teller real-coverage check** — Scott set up the "Iris Finance" app at teller.io (certificates issued, Getting Started 100%) and successfully connected Bank of America via Teller Connect. First successful real-bank handshake on the connector side. Citi attempt failed on first try; needs a retry pass. Fidelity confirmed not in Teller's catalog (expected — brokerage stays on the OFX path per ADR-0001).
+- **Why:** Scott explicitly pulled the session into Decision/Audit mode after Build-B to validate where we stand against actual competitors and to ground-truth Teller before Foundation Session 2 opens with assumptions about it.
+- **Enhancement or drift?** **Enhancement, scope-clean.** No code, no scope changes. Reading the landscape honestly + verifying connector reality. Phase 1 scope, ADR-0002, and the locked six features are unchanged. Phase 2 sequencing inputs got new evidence (Path B leans up), but the actual decision still happens in ADR-0003 after Phase 1 ships.
+
 ### 2026-05-04 evening — Foundation Session 1 (Build-B) shipped
 
 - **Changed:** Vite middleware API now mounted at `/api/*` via `configureServer` (`server/api-plugin.ts`). `pg.Pool` (max: 5) lives in module state (`server/db-pool.ts`), keyed off the user-owned connection string. Two endpoints: `POST /api/connect` opens the pool, `GET /api/health` round-trips `SELECT 1`. Client bootstrap (`src/lib/db-client.ts`) reads `localStorage.iris_db_connection_string` on app boot and POSTs it. `tsconfig.node.json` extended to type-check `server/**/*.ts`. Commit `6bb9843`.
@@ -152,21 +160,36 @@ Beyond the Honeydue / Zeta / YNAB / Monarch / Copilot baseline:
 - **GreenLight / FamZoo.** Family financial education for kids. Different audience but proves families pay for software that ties money to relationships.
 - **Goodbudget.** Envelope budgeting with family sharing (free + paid tiers). Closest existing example of "couples sharing a budget tool" but the UX is dated and boring.
 - **Lunch Money.** Solo budget app with strong /r/personalfinance fan base. Modern, lovable, $40/yr. Solo-focused. Proof-point that small subscriptions for budget apps can sustain.
-- **Origin Money.** Wealth-management app with spouse plan ($200/yr). Adviser-led, not self-service. Different segment.
+- **Origin Financial.** *(Refreshed 2026-05-04 — prior entry was wrong.)* Pivoted from advisor-led to all-in-one platform: budgeting + investing + estate planning + tax filing + SEC-regulated AI advisor. **Partner Mode** ships three views — partner A, partner B, together — for one price. Pricing $99/yr (with $1 promo first-year, Sept 2025), $12.99/mo. Connectors: Plaid + MX + Finicity. Forbes "Best Budgeting App" 2024. **Reviewer-rated weak on budgeting** ("not Origin's strongest feature" — Rob Berger) and investment tracking. **The closest direct competitor for our couples thesis.** Their weakness (budgeting) is exactly our Phase 1 focus.
+- **Monarch Money.** Couples-aware budget + net-worth platform. **"Shared Views"** lets each transaction or account be labeled mine / theirs / ours, with a per-transaction privacy toggle (eye icon) hiding from partner. Free unlimited partner access, separate logins. AI Assistant + cash-flow projections. Pricing $14.99/mo or $99.99/yr (Core), $199/yr (Plus); 50%-off code MONARCHVIP through end of 2026. Connectors: Plaid + MX. NerdWallet 30-day review noted real weaknesses: **2FA accounts repeatedly pause syncing**, **savings buckets don't sync**, **custom categories tedious to create**, no mortgage account support, investment tracking less sophisticated than Quicken Simplifi. Reviewer ultimately went back to her spreadsheet. **The most mechanically sophisticated couples competitor — but the mechanic is visibility management, not gameplay.**
 - **Empower (formerly Personal Capital).** Free wealth tracking, sells advisory services. Very polished. Solo-mental-model. Comp for what Iris's Phase 2 investment layer should reach toward visually.
 - **Quicken Premier (desktop, perpetual + subscription tiers).** The dinosaur — clunky but trusted. Reference for "you can charge for desktop financial software."
 - **Tiller Money.** Spreadsheet-based finance. Power-user audience. Proof that some users want flexibility over polish; Iris is NOT trying to be Tiller (we're polished + opinionated).
 
-**Conclusion from the broader scan:**
+**Conclusion from the broader scan (refreshed 2026-05-04):**
 
-The "couples + co-op + fun + private + local-first" intersection is genuinely empty. Pieces of it exist in adjacent products:
+Earlier framing was that the **(couples + co-op + fun + private + local-first)** intersection was empty. After the Origin / Monarch deep-dive, that's now sharper:
+
+- **(couples + finance)** is *contested*. Origin and Monarch are both shipping real partner-mode mechanics with momentum.
+- **(couples + co-op-as-gameplay + private + one-time-pay)** is still *empty*.
+
+Pieces of the intersection exist in adjacent products:
 - Strava / Duolingo Friends Quest = solo-feeds-shared mechanic, not in finance
 - Honeydue / Zeta = couples in finance, not co-op-fun
+- Origin = couples in finance with shared dashboard + filter-by-member, but cloud + subscription + budgeting-is-weak
+- Monarch = couples in finance with the most sophisticated visibility mechanic shipping (mine/theirs/ours + per-transaction privacy), but cloud + subscription + reviewer-noted sync friction
 - Goodbudget = couples in budgeting, not modern or fun
 - Splitwise = couples transactional finance, not planning or fun
 - Pandemic / Codenames Duet = different-roles-same-goal, in board games not software
 
-No competitor combines all five attributes. The thesis still holds.
+**Iris's actual differentiation, sharpened:**
+
+1. **Privacy / user-owned data** — Origin and Monarch are multi-tenant cloud. ADR-0002 makes this real and committed.
+2. **One-time pricing** — both competitors are subscription. Quicken-style perpetual license is a credible alternative.
+3. **Budget engine quality** — both competitors are reviewer-rated weak/tedious here. Variable Pay floor + sweep + Work Expense aggregate are mechanics neither covers. **The reviewer evidence validates that the seam is real.**
+4. **Co-op as gameplay, not co-presence** — Monarch's mine/theirs/ours is the most sophisticated couples mechanic shipping today, and it's still about *managing visibility*, not *playing together*. The Pokémon-cards / scheduled-co-op-moments / joint-collection thesis (Phase 2 Path B) is still wide open.
+
+The thesis still holds — but the bar is higher than "no one is doing couples." It's now "no one is doing couples *the way Iris will*."
 
 ### Reality checks
 
@@ -277,7 +300,7 @@ Iris is closer to the Lunch Money pattern. Phase 1 (boring bones) is achievable 
 
 ### Overall assessment
 
-**Positioning:** ~30% of total design work, done well. The thesis is defensible against the broader competitive landscape (no competitor combines all five attributes — couples + co-op + fun + private + local-first).
+**Positioning:** ~30% of total design work, done well. The thesis is defensible against the broader competitive landscape — no competitor combines couples + co-op-as-gameplay + private + one-time-pay. **However**, the (couples + finance) space is now actively contested by Origin and Monarch with real momentum, so Iris's differentiation is pulled toward privacy + pricing + co-op-as-gameplay + budget-engine-quality, not toward "we're the first to think couples need a money tool."
 
 **Mechanics:** ~5% done. We have a list of candidates from gaming and adjacent apps; we have not yet designed Iris-native mechanics. This is Phase 2 Path B work.
 
@@ -295,7 +318,7 @@ These are the things we know are unresolved. They don't need to be resolved now,
 
 | Decision | When it gets made | Inputs needed |
 |---|---|---|
-| Phase 2 sequencing: Path A (Investments) vs Path B (Co-op Mechanics) | ADR-0002, after Phase 1 ships | Scott + wife real-use feedback; Path B mechanics design sketches |
+| Phase 2 sequencing: Path A (Investments) vs Path B (Co-op Mechanics) | ADR-0003, after Phase 1 ships | Scott + wife real-use feedback; Path B mechanics design sketches. *2026-05-04 evidence tilts toward Path B-first*: Origin and Monarch already cover investment tracking decently; co-op-as-gameplay is still empty space. Building Path A first risks landing in catch-up territory; Path B first lands in white space. Decision is still ADR-0003's, but the inputs lean.* |
 | Sync architecture for partner-mode | Phase 2 design | Pick: LAN-only, e2e-encrypted-file, CRDT, or hybrid |
 | Pricing at v1.0 launch | Just before v1.0 release | Comparable pricing audit; perceived value at that point |
 | Native mobile companion (mobile-glance mode) | Beyond Phase 3 | Whether desktop adoption produces real demand for it |
