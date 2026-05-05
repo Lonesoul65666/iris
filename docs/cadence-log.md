@@ -102,6 +102,38 @@ Between milestones: end-of-session cadence note (one bullet improved, one bullet
 
 Each entry: date, session mode, observations on each dimension, specific examples.
 
+### 2026-05-05 — Decision/Audit pause: connector verification + competitive refresh + institution map
+
+**Mode:** Build → Decision/Audit transition (declared mid-session). Scott pulled the wheel: "before we move and develop any further, let's understand."
+
+**What landed:**
+- Origin + Monarch competitive deep-dive replaced stale state.md notes. Origin is no longer "$200/yr advisor-led, different segment" — it's a $99/yr full platform with three-view Partner Mode, reviewer-rated weak on budgeting. Monarch's "Shared Views" (mine/theirs/ours + per-transaction privacy toggle) is the most mechanically sophisticated couples competitor shipping. Iris's differentiation refined to (privacy + one-time-pay + budget-engine-quality + co-op-as-gameplay).
+- Teller real-coverage map locked: BoA + Citibank + Capital One all verified end-to-end (consent → login → `onSuccess` callback → access token). Each handshake completed cleanly via the scratch launcher served at `http://localhost:5173/teller-connect.html`.
+- Wells Fargo (mortgage only), Fidelity (401k + investments), Morgan Stanley (equity), Coinbase (crypto) added to the institution inventory. Connector strategy refined: 3 connector types (Teller + OFX + Coinbase API) covering 7 institutions. Morgan Stanley adds an OFX enrollment, not a fourth connector type.
+- Five doc commits today (`674704b`, `82caf4d`, `8a0c438`, `7f9ad05`, plus this cadence entry pending). No code changes. Working tree clean.
+
+**Cadence patterns observed:**
+- *Anchor return + stop-and-verify (Scott):* explicit mid-session pause — "we are at a crossroads...let's not move further before we understand." Pulled mode from Build to Decision/Audit cleanly.
+- *Real-use feedback over screenshots (Scott):* actually went to teller.io, registered the app, ran Teller Connect, hit failures (Citi first try, file:// origin bug), pushed through. Validation discipline lived, not just promised.
+- *Self-flag on misread (Scott):* corrected "Orion" → "Origin" mid-thread without ego. Caught his own bad data point.
+- *Validation before reassurance (Claude):* corrected the "$1 sale" misconception ("it was a marketing promo, not an abandoned project") with research backing. Did not reflexively agree with Scott's framing.
+- *Right-sized scope under auto mode:* multiple chances to spin up code (improve scratch launcher more elaborately, build a full Connect-and-API harness, start Foundation Session 2). Held the line at "no code, finish the audit."
+- *Same-session ship-to-verify (Claude + Scott):* `file://` null-origin bug surfaced, diagnosed via DevTools console, fixed via serving through Vite, verified end-to-end — all in one continuous loop. The validation-discipline gap (~65%) keeps closing.
+- *Honest scope boundary (Claude):* refused to build connector code today even though Teller was clearly working. "Connector code is several Foundation sessions out — writing it now while IndexedDB is still the canonical store would be throwaway."
+
+**Things to flag:**
+- *Cert + token storage hygiene:* Scott has Teller's mTLS certificates downloaded. Treated like the Supabase password — not in chat, not in source. Worth a forward note: when Foundation Session 4 connector code lands, the Vite middleware will need to read those certs from a path-on-disk Scott points it at via localStorage (same pattern as the connection string).
+- *Morgan Stanley OFX is a real risk.* Multiple users report failures post-E*Trade migration (OFX Error 16503). Need a Quicken-or-similar smoke before committing Iris connector code to it.
+
+**Cadence read:**
+- *Vision discipline:* held steady ~85%. Couples-first thesis stayed centered through the competitive refresh.
+- *Scope discipline:* up — auto mode was on, three different "could-build-now" temptations declined. ~80%.
+- *Process discipline:* held. Mode declaration explicit, ADR-0001's three-connector architecture preserved (no silent drift to "we need a fourth connector for Morgan Stanley"), commits tight and well-messaged.
+- *Validation discipline:* notable continued improvement. The `file://` bug → fix → verify loop happened in real-time. The Teller coverage check was real-data-real-bank, not "I think it should work." ~70%, up from ~65%.
+- *Decision velocity:* good. Picked smaller-bounded paths (HTML scratch over full quickstart clone, three-bank verification over exhaustive coverage scan).
+
+**Net for the session:** Honest read on the competitive picture (Origin and Monarch are real; differentiation narrows but holds), connector strategy ground-truthed (Teller works for the bank/CC leg), full institution map locked. No code in Iris source. Foundation Session 2 opens next session with clearer eyes.
+
 ### 2026-05-04 evening — Foundation Session 1 (Build-B) ship
 
 **Mode:** Build (declared at session start).
