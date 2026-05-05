@@ -102,6 +102,32 @@ Between milestones: end-of-session cadence note (one bullet improved, one bullet
 
 Each entry: date, session mode, observations on each dimension, specific examples.
 
+### 2026-05-05 midday — Build-D2a solo ship (collections table + migration script extension)
+
+**Mode:** Build (declared, solo execution while Scott was away ~1 hour).
+
+**What landed:**
+- `0002_budget_config.sql` — generic `collections` table for the eight budget-config stores. One table, not eight; rationale documented in the SQL file + commit message + state.md.
+- `server/api-handlers/collections.ts` — list + save (single item or batched in a transaction).
+- `server/api-plugin.ts` mounts `/api/collections/:name/{list|save}` with single-name routing.
+- `src/lib/migrate-indexeddb-to-postgres.ts` restructured into v1/v2 phases. Each independently flagged + idempotent. v2 attempts batch save, falls back to per-row on batch failure.
+- Smoke verified end-to-end: list / single-save / batch-save / cross-collection / invalid-name-400 / unknown-action-404 / upsert. Migration 2 applied on Scott's Supabase via the bootstrap connect.
+- Commit `cac6201`. Type-check green.
+
+**Cadence patterns observed:**
+- *Solo execution with scope discipline.* Scott declared a 1-hour validation gap; I sized Build-D2a as "purely additive, no UI changes, no risk to running app." Worst case = revert before he returns. Auto mode + 1-hour window + no-human-in-loop is exactly the failure mode the partnership doc names — held the scope cleanly. **First time we've tried solo execution this deliberately. Worked because the scope was bounded *before* I started, not negotiated as I went.**
+- *Generic vs specific architectural call.* The schema decision (one collections table vs eight per-resource tables) was a real call. Documented the rationale in three places (SQL leading comment, commit message, state.md entry) so future-Claude (or Scott) can push back if the call ages badly.
+- *Synthetic-smoke-before-real-data pattern repeated.* Build-D1 learned that synthetic shapes pass validation that real data doesn't. Build-D2a's smoke proves the wiring; v2's real-data run from Scott's Chrome will prove shape compatibility for the eight budget-config stores. Two separate proof points; neither substitutes for the other.
+- *Right-sized stop.* Build-D2b (store-call swap + UI verification + JSON export) explicitly didn't get touched. Auto mode didn't bleed into "while I'm in here, just do the swap."
+
+**Cadence read for the dimensions that mattered:**
+- *Scope discipline (~80%):* held under the hardest mode yet (solo + auto + bounded time). The swap was right there; didn't take it.
+- *Process discipline (~80%):* commit message references ADR-0002, scope-decisions explicit, real-data validation explicitly deferred to Scott's return.
+- *Validation discipline (~70-75%):* synthetic smoke ran before commit; real-data run still to come. Pattern: prove the wiring solo, prove the data with the partner.
+- *Decision velocity (~80%):* the generic-vs-specific schema call + the v1/v2 split + the "fall back to per-row on batch failure" robustness pattern were all decided in seconds.
+
+**Net for the session:** Solo execution proven viable for scoped additive work. The partnership rule "Auto mode does NOT mean Claude drops the one-feature-per-session rule or scope locks" held. Build-D2a is the smallest interesting next step from D1; the table is ready, the endpoints work, the migration script is extended. v2 real-data run + store-call swap waits for Scott — the right boundary.
+
 ### 2026-05-05 morning — Foundation Build-D1 ship (IndexedDB → Postgres migration)
 
 **Mode:** Build (declared at session open after morning catch-up).
