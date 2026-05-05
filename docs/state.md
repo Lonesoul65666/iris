@@ -1,7 +1,7 @@
 # Iris — Where We Are
 
-**Last reviewed:** 2026-05-04 (Foundation Session 1 / Build-B shipped)
-**Status:** Phase 0 foundation complete. Phase 1 mission widened (2026-05-02). Phase 1 storage architecture revised (2026-05-04, ADR-0002) — splits into Foundation → Features → DoD soak. Foundation Session 1 shipped 2026-05-04 evening: Vite middleware API + pg pool scaffold, smoke-verified against Scott's Supabase URI. Sessions 2 (schema + real endpoints) and 3 (migration script + store-call swap) still ahead.
+**Last reviewed:** 2026-05-05 (Foundation Session 2 / Build-C shipped)
+**Status:** Phase 0 foundation complete. Phase 1 mission widened (2026-05-02). Phase 1 storage architecture revised (2026-05-04, ADR-0002) — splits into Foundation → Features → DoD soak. Foundation Sessions 1 + 2 shipped: Vite middleware API + pg pool + schema migration runner + first 3 resources of typed endpoints (settings, incomeSources, expenses). All smoke-verified against Scott's Supabase Postgres. Session 3 (IndexedDB → Postgres migration script + store-call swap) is the last Foundation session.
 
 This doc is the single "where are we today" snapshot. It is overwritten every substantive session. It does NOT replace `north-star.md` (vision), `adr/0001-phase-1-scope.md` (scope), `phase-1-definition-of-done.md` (gates), or `post-phase-1-backlog.md` (deferrals). It pulls from all four into a single readable picture.
 
@@ -20,10 +20,10 @@ This doc is the single "where are we today" snapshot. It is overwritten every su
 - Local-first, no SaaS, no cloud-storage of financial data — invariant across phases
 
 **In progress / open:**
-- **Phase 1 Foundation (NEW gate-zero per ADR-0002):** Sessions 2-3 still open.
-  - **Session 1 (Build-B) — DONE 2026-05-04 evening, commit `6bb9843`.** Vite middleware API mounted at `/api/*` via `configureServer`. `pg.Pool` (max: 5) cached server-side, keyed off the user-owned connection string. `POST /api/connect` opens the pool from a string POSTed by the client; `GET /api/health` round-trips `SELECT 1`. Client bootstrap (`src/lib/db-client.ts`) reads `localStorage.iris_db_connection_string` on app boot and POSTs it. Smoke verified end-to-end against Scott's Supabase Session Pooler URI: `{ok:true, db:'connected'}` 200.
-  - **Session 2 (next):** schema migration runner with `user_id` column from day one; first 3-4 read/write endpoints replacing the most-used IndexedDB store calls; pre-flight schema verification on `/api/connect`.
-  - **Session 3:** one-shot `scripts/migrate-indexeddb-to-postgres.ts` (idempotent, verifiable, reversible, logged); swap remaining store-call sites to `fetch('/api/...')`; verify each surface against the new layer; mark IndexedDB read-only for one fallback session.
+- **Phase 1 Foundation (NEW gate-zero per ADR-0002):** Session 3 only remaining.
+  - **Session 1 (Build-B) — DONE 2026-05-04 evening, commit `6bb9843`.** Vite middleware API mounted at `/api/*` via `configureServer`. `pg.Pool` (max: 5) cached server-side. `POST /api/connect` opens the pool; `GET /api/health` round-trips `SELECT 1`. Client bootstrap reads `localStorage.iris_db_connection_string` on app boot and POSTs it.
+  - **Session 2 (Build-C) — DONE 2026-05-05, commit `5e00bd3`.** Versioned schema migration runner (`server/schema/runner.ts`) with `schema_migrations` table + SHA-256 drift detection. First migration (`0001_init.sql`) creates `users`, `settings`, `income_sources`, `expenses` — every domain table has `user_id` from day one. Hybrid columns + jsonb `data` strategy keeps hot paths indexable without schema churn. `connect()` now also runs migrations and ensures-single-user before returning. Three resources of typed endpoints: settings (list/get/save), incomeSources (list/save), expenses (list/save with date range). All smoke-verified against Scott's Supabase: list-empty → save → get → list-one round-trips clean, ON CONFLICT DO UPDATE works, 404 + 400 paths return correct codes.
+  - **Session 3 (next):** one-shot `scripts/migrate-indexeddb-to-postgres.ts` (idempotent, verifiable, reversible, logged); swap remaining store-call sites to `fetch('/api/...')`; verify each surface against the new layer; mark IndexedDB read-only for one fallback session. Cleanup of three smoke-test rows in DB (id prefix `smoke-test-`) happens here. JSON export endpoint (Layer 4 backup per ADR-0002) bundles in.
   - Multi-layer backup v1 (provider auto-backups + JSON export) lands alongside Session 3. Local SQLite cache + app-level encryption deferred to v1.1.
   - All other Phase 1 work waits until Foundation is verified.
 - Phase 2 sequencing decision — Path A (Investments) vs Path B (Co-op Mechanics). Default Path A → Path B → Phase 3 but no longer fixed. Will be decided via ADR-0003 after Phase 1 ships. *(Was previously labeled ADR-0002; renumbered to ADR-0003 because storage architecture took the ADR-0002 slot.)*
@@ -38,6 +38,14 @@ This doc is the single "where are we today" snapshot. It is overwritten every su
 
 **Most recent commits (most recent first):**
 ```
+5e00bd3 feat(foundation): schema runner + first endpoints — Phase 1 Foundation Session 2 (Build-C)
+7b08d6c docs(state): WF and Morgan Stanley confirmed NOT in Teller catalog
+047683d docs(cadence): trajectory entry for 2026-05-05 Decision/Audit session
+8a0c438 docs(state): full household institution map + connector strategy refinement
+82caf4d docs(state): lock Teller coverage map (BoA, Citi, Cap One verified)
+674704b docs(state): refresh Origin + Monarch competitive entries; sharpen differentiation
+7f9ad05 docs(backlog): mark Foundation Session 1 done; sequence Sessions 2 + 3
+a056293 docs: log Foundation Session 1 ship in state.md + cadence-log
 6bb9843 feat(foundation): Vite middleware API + pg pool — Phase 1 Foundation Session 1 (Build-B)
 d4dd7ab docs(cadence): trajectory entry for 2026-05-04 late afternoon
 bd9e2d5 docs(cadence): security process rules + credential-rotation learning
@@ -77,6 +85,16 @@ These are the ideas we agreed are central. If a future session drifts from any o
 ## Recent shifts (drift detection log)
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
+
+### 2026-05-05 late evening — Foundation Session 2 (Build-C) shipped
+
+- **Changed:** Schema migration runner + 3 resources of typed endpoints landed (commit `5e00bd3`). Postgres now holds the canonical schema for `users`, `settings`, `income_sources`, `expenses`. The Vite middleware API can do real read/write round-trips against it. Eight handlers live: `/api/settings/{list,get/:key,save}`, `/api/incomeSources/{list,save}`, `/api/expenses/{list,save}`. `/api/connect` and `/api/health` now also surface migration status.
+- **Why:** Foundation gate-zero work needed both schema and endpoints before Session 3 can write the IndexedDB → Postgres migration script. The schema lives. The endpoints work. Session 3's migration script can call them directly.
+- **Verified:** Each endpoint smoke-tested end-to-end against Scott's live Supabase Postgres. `applied: [1]` means the first migration ran cleanly inside a transaction. Settings round-trip (list → save → get → list one), incomeSources round-trip (list empty → save → list one with full shape preserved), expenses round-trip with date range. ON CONFLICT DO UPDATE works for upserts. 404 for missing settings key, 400 for invalid expense shape — both correct. Type-check green; pre-commit hook ran on the commit.
+- **Honest scope-hold:** Session 2 stayed at "schema + read/write endpoints, no migration script, no store-call swap, no DELETE." All three temptations to scope-creep got declined. Three smoke-test rows (id prefix `smoke-test-`) sit in the live DB; Session 3's housekeeping handles them.
+- **Hybrid schema strategy locked:** typed columns for queryable fields (`id`, `user_id`, `date`, `status`, `key`, `payer`, `subtype`); jsonb `data` column for the rest. Lets the row shape evolve without schema churn while keeping hot paths indexable. Pattern applies to all three domain tables.
+- **Single-user model in code:** `db-pool.ts` ensures exactly one user exists in the `users` table after migrations run. All handlers use `getCurrentUserId()` implicitly. Partner mode adds real auth in Phase 2; the schema is already partner-ready (`user_id` on every domain row).
+- **Enhancement or drift?** **Enhancement.** Foundation gate-zero work as scoped in ADR-0002. Six locked Phase 1 features unchanged. Architecture milestone — this is the moment Postgres becomes a real participant, even though the app itself still reads/writes from IndexedDB until Session 3.
 
 ### 2026-05-05 — Full institution map locked + Teller coverage verified
 
