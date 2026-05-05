@@ -1,16 +1,27 @@
-// Vite middleware API plugin for Iris (Phase 1 Foundation, Build-B).
+// Vite middleware API plugin for Iris.
 //
-// Mounts a tiny set of endpoints on the same dev port as the frontend:
-//   POST /api/connect  { connectionString } -> { ok }
-//   GET  /api/health                        -> { ok, db: 'connected' | 'not_configured' | 'error', ... }
+// Mounts the dev-time API on the same port as the frontend:
+//   POST /api/connect                    { connectionString } -> { ok }
+//   GET  /api/health                     -> { ok, db, migrations? }
+//   GET  /api/settings/list              -> { ok, items }
+//   GET  /api/settings/get/:key          -> { ok, value }
+//   POST /api/settings/save              { key, value } -> { ok }
+//   GET  /api/incomeSources/list         -> { ok, items }
+//   POST /api/incomeSources/save         { source } -> { ok }
+//   GET  /api/expenses/list?from=&to=    -> { ok, items }
+//   POST /api/expenses/save              { expense } -> { ok }
 //
-// Build-B is scaffold-only. Schema + real endpoints land in Foundation Session 2.
 // Connection string never touches source / commits — it's POSTed in from the
-// client at boot from localStorage.
+// client at boot from localStorage. Schema migrations + single-user-ensure
+// run inside `connect()`; subsequent endpoints rely on the cached pool +
+// user_id (Phase 1 single-user model — partner mode adds real auth later).
 
 import type { Plugin, ViteDevServer } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { connect, getPool, hasPool } from './db-pool.ts'
+import { connect, getPool, hasPool, getLastMigrationResult } from './db-pool.ts'
+import { handleSettingsList, handleSettingsGet, handleSettingsSave } from './api-handlers/settings.ts'
+import { handleIncomeSourcesList, handleIncomeSourcesSave } from './api-handlers/income-sources.ts'
+import { handleExpensesList, handleExpensesSave } from './api-handlers/expenses.ts'
 
 type Req = IncomingMessage
 type Res = ServerResponse
@@ -23,9 +34,7 @@ function sendJson(res: Res, status: number, body: unknown): void {
 
 async function readJsonBody(req: Req): Promise<unknown> {
   const chunks: Buffer[] = []
-  for await (const chunk of req) {
-    chunks.push(chunk as Buffer)
-  }
+  for await (const chunk of req) chunks.push(chunk as Buffer)
   if (chunks.length === 0) return {}
   const raw = Buffer.concat(chunks).toString('utf8')
   if (!raw.trim()) return {}
@@ -33,10 +42,7 @@ async function readJsonBody(req: Req): Promise<unknown> {
 }
 
 async function handleConnect(req: Req, res: Res): Promise<void> {
-  if (req.method !== 'POST') {
-    sendJson(res, 405, { ok: false, error: 'method_not_allowed' })
-    return
-  }
+  if (req.method !== 'POST') { sendJson(res, 405, { ok: false, error: 'method_not_allowed' }); return }
   let body: { connectionString?: unknown }
   try {
     body = (await readJsonBody(req)) as typeof body
@@ -51,24 +57,20 @@ async function handleConnect(req: Req, res: Res): Promise<void> {
   }
   try {
     await connect(cs)
-    sendJson(res, 200, { ok: true })
+    sendJson(res, 200, { ok: true, migrations: getLastMigrationResult() })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    // Don't echo the connection string back; only the error message.
     sendJson(res, 500, { ok: false, error: 'connect_failed', message })
   }
 }
 
 async function handleHealth(_req: Req, res: Res): Promise<void> {
-  if (!hasPool()) {
-    sendJson(res, 503, { ok: false, db: 'not_configured' })
-    return
-  }
+  if (!hasPool()) { sendJson(res, 503, { ok: false, db: 'not_configured' }); return }
   try {
     const pool = getPool()!
     const r = await pool.query<{ one: number }>('SELECT 1 AS one')
     if (r.rows[0]?.one === 1) {
-      sendJson(res, 200, { ok: true, db: 'connected' })
+      sendJson(res, 200, { ok: true, db: 'connected', migrations: getLastMigrationResult() })
     } else {
       sendJson(res, 500, { ok: false, db: 'error', message: 'unexpected_select_1_result' })
     }
@@ -79,15 +81,32 @@ async function handleHealth(_req: Req, res: Res): Promise<void> {
 }
 
 export function irisApi(): Plugin {
+  const wrap = (h: (req: Req, res: Res) => Promise<void>) =>
+    (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
+      void h(req, res).catch(next)
+    }
+
   return {
     name: 'iris-api',
     configureServer(server: ViteDevServer) {
-      server.middlewares.use('/api/connect', (req, res, next) => {
-        void handleConnect(req, res).catch(next)
-      })
-      server.middlewares.use('/api/health', (req, res, next) => {
-        void handleHealth(req, res).catch(next)
-      })
+      server.middlewares.use('/api/connect', wrap(handleConnect))
+      server.middlewares.use('/api/health', wrap(handleHealth))
+
+      server.middlewares.use('/api/settings/list', wrap(handleSettingsList))
+      server.middlewares.use('/api/settings/save', wrap(handleSettingsSave))
+      // /api/settings/get/:key — extract the suffix from req.url
+      server.middlewares.use('/api/settings/get', wrap(async (req, res) => {
+        // req.url here is everything after the /api/settings/get prefix
+        const key = decodeURIComponent((req.url ?? '').replace(/^\/+/, '').split('?')[0])
+        if (!key) { sendJson(res, 400, { ok: false, error: 'missing_key' }); return }
+        await handleSettingsGet(req, res, key)
+      }))
+
+      server.middlewares.use('/api/incomeSources/list', wrap(handleIncomeSourcesList))
+      server.middlewares.use('/api/incomeSources/save', wrap(handleIncomeSourcesSave))
+
+      server.middlewares.use('/api/expenses/list', wrap(handleExpensesList))
+      server.middlewares.use('/api/expenses/save', wrap(handleExpensesSave))
     },
   }
 }
