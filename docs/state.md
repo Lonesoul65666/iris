@@ -89,20 +89,20 @@ Append-only log of meaningful vision/scope shifts. Each entry: date, what change
 | Bank of America | Bank + CC | Teller | ✅ Verified 2026-05-04 |
 | Citibank | Bank + CC | Teller | ✅ Verified 2026-05-05 |
 | Capital One | Bank + CC | Teller | ✅ Verified 2026-05-05 |
-| Wells Fargo | **Mortgage only** (no bank/CC) | Teller (try) or manual | ⚠ Needs empirical test — does Teller surface mortgage as a loan account? |
+| Wells Fargo | **Mortgage only** (no bank/CC) | OFX or manual entry | ❌ NOT in Teller (verified 2026-05-05) |
 | Fidelity | 401k (NetBenefits) + investments | OFX (Direct Connect) | Planned, untested |
-| Morgan Stanley | Equity (RSUs/ESPP, post-E*Trade migration) | OFX (messy — see notes) | Planned, untested |
+| Morgan Stanley | Equity (RSUs/ESPP, post-E*Trade migration) | OFX (messy — see notes) | ❌ NOT in Teller (verified 2026-05-05); OFX still untested |
 | Coinbase | Crypto | Coinbase personal API | Planned, untested |
 
 **Connector strategy (3 connectors, 7 institutions):**
 
-- **Teller** — covers BoA, Citi, Cap One (verified). Maybe Wells Fargo mortgage (untested). Three of three real-bank verifications passed end-to-end via the scratch launcher (consent → login → `onSuccess` → access token).
-- **OFX Direct Connect** — covers Fidelity (canonical path) and Morgan Stanley (post-2023 E*Trade migration is workable but reportedly clunky; OFX Error 16503 is a known issue some users solved with VPN). Both institutions require enabling third-party data sharing in their respective Security/Settings panels before OFX works.
+- **Teller** — covers **only** BoA, Citi, Cap One for Scott's household (verified). Wells Fargo and Morgan Stanley are not in Teller's catalog (verified by failed enrollment attempts 2026-05-05). Three of three bank/CC verifications passed end-to-end via the scratch launcher.
+- **OFX Direct Connect** — covers Fidelity (canonical path), Wells Fargo (mortgage — likely supported, untested), and Morgan Stanley (post-2023 E*Trade migration is workable but reportedly clunky; OFX Error 16503 is a known issue some users solved with VPN). All three require enabling third-party data sharing in their respective Security/Settings panels before OFX works. **Mortgage data is low-frequency** — if WF OFX is more friction than it's worth, manual monthly entry in Iris is a reasonable fallback (one balance + payment + interest YTD per month).
 - **Coinbase API** — direct integration, simplest of the three.
 
 **Open empirical questions (resolved later via scratch tests, not blocking):**
 
-1. **Wells Fargo mortgage via Teller** — log into WF through Teller Connect, see whether the mortgage account appears as an account_type of `loan` (or similar). If yes → use Teller. If no → mortgage gets manual entry in Iris (monthly balance + payment, low-frequency data so manual is fine).
+1. **Wells Fargo OFX** — does WF support OFX Direct Connect for mortgage data? Try via Quicken or similar OFX client. If it works → use OFX. If not → manual monthly entry in Iris (low-frequency data, fine fallback).
 2. **Morgan Stanley OFX viability** — try OFX Direct Connect from Quicken or similar OFX client first to confirm it works at all on Scott's account, before writing Iris connector code. Several reported failures post-E*Trade-migration; want ground truth before committing.
 3. **Fidelity OFX** — likewise, try OFX from a known client before integration. Should be cleanest of the three brokerages.
 
