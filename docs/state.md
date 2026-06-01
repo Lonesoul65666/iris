@@ -1,7 +1,7 @@
 # Iris — Where We Are
 
-**Last reviewed:** 2026-05-10 (Reset & Reconnect + Build-D2b shipped and validated in real Chrome)
-**Status:** Phase 0 foundation complete. Phase 1 mission widened (2026-05-02). Storage migration to user-owned Postgres (ADR-0002) is **functionally complete for the budget engine**: Foundation Build-B (middleware API + pool), Build-C (schema runner + typed endpoints), Build-D1 (IndexedDB→Postgres migration of income/expenses), Build-D2a (collections table + budget-config migration), and **Build-D2b (budget store reads/writes through Postgres — validated in Scott's real Chrome 2026-05-10)** all shipped. SimpleFIN (deprecated) fully removed. **Known remaining gap (split-brain):** auth/userProfile + audit log + portfolio still read IndexedDB; deciding whether to migrate auth+audit to truly finish Foundation. Connectors (Teller/OFX/Coinbase) are Foundation Session 4+.
+**Last reviewed:** 2026-05-10 (Build-D2c shipped — app is now browser/laptop-agnostic, validated in real Chrome)
+**Status:** Phase 0 foundation complete. Phase 1 mission widened (2026-05-02). **Storage migration to user-owned Postgres (ADR-0002) is functionally COMPLETE.** Foundation Build-B → D2c all shipped: middleware API + pool, schema runner + typed endpoints, income/expense + budget-config migration, budget store on Postgres, and now (Build-D2c) **settings + auth (PINs) + userProfile + audit log on Postgres**. Validated end-to-end in Scott's real Chrome: new-browser → paste connection string → log in → full identity + budget experience, all from Postgres. SimpleFIN removed. **Only IndexedDB residue left = Phase 2 investment stores** (holdings/equity/monthlyInvestments/snapshots/chat) — intentionally deferred, don't touch budget/auth. Next: cold-start `load()` error boundary (#3), then connectors (Teller/OFX/Coinbase) for real auto-synced numbers (Foundation Session 4+, after the connector-collision decision).
 
 This doc is the single "where are we today" snapshot. It is overwritten every substantive session. It does NOT replace `north-star.md` (vision), `adr/0001-phase-1-scope.md` (scope), `phase-1-definition-of-done.md` (gates), or `post-phase-1-backlog.md` (deferrals). It pulls from all four into a single readable picture.
 
@@ -38,6 +38,7 @@ This doc is the single "where are we today" snapshot. It is overwritten every su
 
 **Most recent commits (most recent first):**
 ```
+0e6160c feat(foundation): Build-D2c — settings + userProfile + audit log → Postgres (browser-agnostic)
 5548e46 chore(connectors): remove deprecated SimpleFIN integration
 1c793ef feat(foundation): complete Build-D2b — budget store reads/writes via Postgres
 cac6201 feat(foundation): generic collections table + budget-config migration — Build-D2a
@@ -93,6 +94,18 @@ These are the ideas we agreed are central. If a future session drifts from any o
 ## Recent shifts (drift detection log)
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
+
+### 2026-05-10 — Build-D2c shipped: app is browser/laptop-agnostic (validated in real Chrome)
+
+- **Changed:** the last budget/auth-relevant stores moved off per-browser IndexedDB to user-owned Postgres. Commit `0e6160c`.
+  - `portfolioStore.getSetting/saveSetting` rewired to `/api/settings` — the keystone. Makes `auth_users` (PINs), `enabled_modules`, `onboarding_complete`, nudge dismisses, market annotations all browser-independent. Native jsonb round-trip (no manual stringify/parse).
+  - `userProfile` → settings key `user_profile`. `auditLogStore` → `/api/audit` + new `0003_audit_log.sql`.
+  - Migration v3 (`migration_v3_complete` flag) copies IndexedDB settings (decoding legacy JSON-stringified values) + userProfile + audit into Postgres.
+- **Decision context:** Scott chose "make everything browser-independent, defer non-budget to later." Refined the cut: auth/settings/audit aren't "later" — auth PINs lived in IndexedDB, so the budget side wasn't truly portable without them. Holdings/equity/chat (Phase 2 investment side) correctly deferred.
+- **Validated in Scott's real Chrome (the careful auth path):** first reload after the rewire showed the onboarding wizard (Postgres settings empty — expected, NOT data loss, IndexedDB intact). Ran `window.__irisMigrate({phases:['v3']})` → 11 settings (incl auth_users) + 1 profile + 2 audit, 0 errors. Reload → full identity restored ("Scott & Claire", dashboard, login, $388,534 / -$7,119 all intact), served from Postgres. Migration `[3]` applied clean. Cleaned 3 dead `simplefin_*` keys that rode along; 12 real settings keys remain.
+- **The ADR-0002 promise is now real:** new browser/laptop → paste connection string → log in → full budget experience, zero per-machine data. (The connection string itself staying in localStorage is the one intentional per-browser paste.)
+- **Note:** `gemini_api_key` now lives in the user's Postgres (was IndexedDB) — consistent with BYO-key + user-owned-DB model; it's the user's key in the user's DB.
+- **Enhancement or drift?** **Enhancement.** Foundation's storage migration is functionally complete. Phase 1 scope unchanged. Investment stores remain IndexedDB by explicit deferral.
 
 ### 2026-05-10 — Reset & Reconnect + Build-D2b shipped (validated in real Chrome)
 

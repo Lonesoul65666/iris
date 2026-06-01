@@ -102,6 +102,22 @@ Between milestones: end-of-session cadence note (one bullet improved, one bullet
 
 Each entry: date, session mode, observations on each dimension, specific examples.
 
+### 2026-05-10 (cont.) — Build-D2c: browser-agnostic finish, validated through the auth migration in real Chrome
+
+**Mode:** Decision → Build. Scott: "make everything browser-independent... defer non-budget to later builds. Thoughts?"
+
+**What landed:**
+- As architect-of-record, refined Scott's cut: auth/settings/audit are NOT "the other stuff" — auth PINs lived in IndexedDB, so the budget side wasn't portable without them. Got agreement on migrating settings+profile+audit now, deferring holdings/equity/chat (Phase 2).
+- Build-D2c shipped (`0e6160c`): settings layer + userProfile + audit log → Postgres; migration v3. Validated through the delicate auth path in Scott's real Chrome — drove the two-reload migration dance myself via the Chrome extension, narrating each step first.
+
+**Cadence patterns observed:**
+- *Architect-of-record duty exercised (Claude):* Scott proposed a reasonable-but-slightly-wrong scope line; rather than silently comply OR silently override, surfaced the auth-is-in-IndexedDB finding with code evidence and proposed the corrected cut. He agreed. This is the "modular decomposition I self-audit / Scott can't validate architecture himself" clause working.
+- *Explain-then-act on a risky op (Claude):* before driving an auth migration in Scott's real browser, narrated exactly what would happen (incl. "the app will look fresh — that's expected, not data loss") so he wasn't alarmed. Kept the fallback (IndexedDB intact) explicit.
+- *Validation discipline at its peak:* the entire migration was validated live in the real browser — onboarding-wizard-appears → migrate → identity-restored — with server-side count confirmation. Caught + cleaned 3 dead simplefin keys that rode along.
+- *Right-sized deferral (Scott):* held the line on deferring investment stores to Phase 2 rather than "migrate everything while we're here." Scope discipline under a big build.
+
+**Cadence read:** Validation + process discipline both at session highs. The browser-agnostic milestone — Foundation's actual point — is done and proven, not claimed. Decision velocity strong (scope cut agreed in one exchange). Net: ADR-0002 delivered end to end.
+
 ### 2026-05-10 — Reset & Reconnect after a 3-week gap (Build-D2b validated, SimpleFIN removed)
 
 **Mode:** Decision/Audit → Build. Scott returned after ~3 weeks (mom's open-heart surgery, job hunt, Hawaii trip) and opened with the hard founder question: "is this a good project to do?"
