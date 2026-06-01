@@ -128,7 +128,7 @@ export default function SetupChecklist() {
  *
  * This works for ANY user, not just Scott: the defaults are the defaults.
  * Any structural divergence (added ticker, removed account, different shares,
- * a SimpleFIN sync) flips the result to "real portfolio."
+ * a connector sync) flips the result to "real portfolio."
  */
 export function isDefaultPortfolio(accounts: Account[] | { id: string; holdings?: { ticker: string; shares: number }[] }[]): boolean {
   if (accounts.length === 0) return true;

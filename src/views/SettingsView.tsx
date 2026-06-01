@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { useAppData, formatCurrency, clearChatHistory, clearAllAccounts, clearAllPortfolioData, clearAllBudgetData, clearAllActionData, clearAllExpenses, clearExpensesBySource, saveUserProfile, saveMonthlyInvestment, saveSetting, saveAccount } from '../context/AppDataContext';
 import { Icons } from '../components/ui/Icons';
 import DataBackup from '../components/Settings/DataBackup';
-import SimpleFinPanel from '../components/Settings/SimpleFinPanel';
-import { getAllAccounts } from '../stores/portfolioStore';
 import NudgeManagementPanel from '../components/Settings/NudgeManagementPanel';
 import LLMBudgetPanel from '../components/Settings/LLMBudgetPanel';
 import HouseholdEarners from '../components/Settings/HouseholdEarners';
@@ -475,13 +473,6 @@ export default function SettingsView() {
       <ConvictionHoldsPanel accounts={accounts} setAccounts={setAccounts} />
 
       <NudgeManagementPanel />
-
-      <SimpleFinPanel
-        onSynced={async () => {
-          const fresh = await getAllAccounts();
-          setAccounts(fresh);
-        }}
-      />
 
       {/* Data Management */}
       <div className="glass-card p-6 space-y-5">

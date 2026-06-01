@@ -6,7 +6,7 @@ import type { ExpenseCategory, TransactionFlow, TransactionType } from '../types
  * When transaction rules UI ships, these become the seed defaults — users can override
  * or add their own via merchantRules store.
  *
- * Extracted from ExpenseManager.tsx so services (SimpleFIN sync, future SMS/email
+ * Extracted from ExpenseManager.tsx so services (future connector syncs, SMS/email
  * imports) can reuse without pulling in the React component graph.
  */
 

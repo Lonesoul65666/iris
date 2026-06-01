@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAppData, saveUserProfile, saveSetting } from '../context/AppDataContext';
 import { setupLLMRouter, testProvider, type TestResult } from '../services/llm';
-import SimpleFinPanel from '../components/Settings/SimpleFinPanel';
-import { getAllAccounts, getSetting } from '../stores/portfolioStore';
+import { getSetting } from '../stores/portfolioStore';
 import { saveEarner } from '../stores/budgetStore';
 import { loadSampleData } from '../services/sampleData';
 import type { Earner } from '../types/budget';
@@ -56,7 +55,7 @@ const MODULE_OPTIONS: { id: ModuleId; emoji: string; title: string; tagline: str
 ];
 
 export default function OnboardingView() {
-  const { profile, setProfile, setView, refreshLlmReady, setApiKeyInput, fileInputRef, handleImageUpload, accounts, setAccounts } = useAppData();
+  const { profile, setProfile, setView, refreshLlmReady, setApiKeyInput, fileInputRef, handleImageUpload, accounts } = useAppData();
   const [step, setStep] = useState<Step>(0);
   // If a user already exists (auth_users populated or profile.name set from a
   // prior incomplete onboarding), skip the user-creation step. They'll still
@@ -1071,22 +1070,8 @@ export default function OnboardingView() {
           <div className="glass-card p-10 md:p-12">
             <h2 className="text-3xl md:text-4xl font-extrabold text-text-primary mb-3 tracking-tight">Load your portfolio</h2>
             <p className="text-base md:text-lg text-text-secondary mb-6 leading-relaxed">
-              Four ways to get your holdings into Iris. The first is easiest and keeps itself fresh.
+              Three ways to get your holdings into Iris.
             </p>
-
-            <div className="mb-5">
-              <SimpleFinPanel
-                compact
-                onSynced={async () => {
-                  const fresh = await getAllAccounts();
-                  setAccounts(fresh);
-                }}
-              />
-            </div>
-
-            <div className="text-center text-[11px] uppercase tracking-wider text-text-muted mb-4">
-              or, do it yourself (free)
-            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
               <ImportOption
