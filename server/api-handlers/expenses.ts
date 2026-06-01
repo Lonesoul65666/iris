@@ -1,7 +1,11 @@
 // Expense (transaction) endpoints — mirrors the IndexedDB `expenses` store.
 //
 //   GET  /api/expenses/list?from=YYYY-MM-DD&to=YYYY-MM-DD  -> { ok, items }
-//   POST /api/expenses/save  { expense } -> { ok }
+//   POST /api/expenses/save    { expense }                 -> { ok }
+//   POST /api/expenses/delete  { id } | { ids:[...] }
+//                            | { all: true }
+//                            | { source: '...' }
+//                            | { batchPrefix: '...' }      -> { ok, deleted: N }
 //
 // `date` and `amount` are typed columns (queryable / indexable). The full
 // expense object lives in `data` jsonb so we can evolve the row shape without
@@ -90,6 +94,52 @@ export async function handleExpensesList(req: Req, res: Res): Promise<void> {
   try {
     const r = await ctx.pool.query<{ id: string; date: string; amount: string; data: Record<string, unknown> }>(sql, params)
     sendJson(res, 200, { ok: true, items: r.rows.map(rowToExpense) })
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) })
+  }
+}
+
+export async function handleExpensesDelete(req: Req, res: Res): Promise<void> {
+  if (req.method !== 'POST') return methodNotAllowed(res)
+  const ctx = requireContext(res)
+  if (!ctx) return
+  let body: { id?: unknown; ids?: unknown; all?: unknown; source?: unknown; batchPrefix?: unknown }
+  try {
+    body = (await readJsonBody(req)) as typeof body
+  } catch {
+    sendJson(res, 400, { ok: false, error: 'invalid_json' })
+    return
+  }
+  try {
+    let r: { rowCount: number | null }
+    if (body.all === true) {
+      r = await ctx.pool.query('DELETE FROM expenses WHERE user_id = $1', [ctx.userId])
+    } else if (typeof body.source === 'string' && body.source.length > 0) {
+      r = await ctx.pool.query(
+        `DELETE FROM expenses WHERE user_id = $1 AND data->>'source' = $2`,
+        [ctx.userId, body.source],
+      )
+    } else if (typeof body.batchPrefix === 'string' && body.batchPrefix.length > 0) {
+      r = await ctx.pool.query(
+        `DELETE FROM expenses WHERE user_id = $1 AND data->>'importBatch' LIKE $2`,
+        [ctx.userId, `${body.batchPrefix}%`],
+      )
+    } else {
+      const ids: string[] = []
+      if (typeof body.id === 'string' && body.id.length > 0) ids.push(body.id)
+      if (Array.isArray(body.ids)) {
+        for (const id of body.ids) if (typeof id === 'string' && id.length > 0) ids.push(id)
+      }
+      if (ids.length === 0) {
+        sendJson(res, 400, { ok: false, error: 'missing_id_or_filter' })
+        return
+      }
+      r = await ctx.pool.query(
+        'DELETE FROM expenses WHERE user_id = $1 AND id = ANY($2::text[])',
+        [ctx.userId, ids],
+      )
+    }
+    sendJson(res, 200, { ok: true, deleted: r.rowCount ?? 0 })
   } catch (err) {
     sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) })
   }

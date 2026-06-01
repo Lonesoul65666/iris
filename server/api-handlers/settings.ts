@@ -3,6 +3,7 @@
 //   GET  /api/settings/list       -> { ok, items: [{key, value, updatedAt}] }
 //   GET  /api/settings/get/:key   -> { ok, value } | { ok:false, error:'not_found' }
 //   POST /api/settings/save       { key, value } -> { ok }
+//   POST /api/settings/delete     { key } | { keys: [...] } -> { ok, deleted: N }
 
 import { sendJson, readJsonBody, requireContext, methodNotAllowed, errorMessage, type Req, type Res } from './http-utils.ts'
 
@@ -38,6 +39,39 @@ export async function handleSettingsGet(req: Req, res: Res, key: string): Promis
       return
     }
     sendJson(res, 200, { ok: true, value: r.rows[0].value })
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) })
+  }
+}
+
+export async function handleSettingsDelete(req: Req, res: Res): Promise<void> {
+  if (req.method !== 'POST') return methodNotAllowed(res)
+  const ctx = requireContext(res)
+  if (!ctx) return
+  let body: { key?: unknown; keys?: unknown }
+  try {
+    body = (await readJsonBody(req)) as typeof body
+  } catch {
+    sendJson(res, 400, { ok: false, error: 'invalid_json' })
+    return
+  }
+  const keys: string[] = []
+  if (typeof body.key === 'string' && body.key.length > 0) keys.push(body.key)
+  if (Array.isArray(body.keys)) {
+    for (const k of body.keys) {
+      if (typeof k === 'string' && k.length > 0) keys.push(k)
+    }
+  }
+  if (keys.length === 0) {
+    sendJson(res, 400, { ok: false, error: 'missing_key_or_keys' })
+    return
+  }
+  try {
+    const r = await ctx.pool.query(
+      'DELETE FROM settings WHERE user_id = $1 AND key = ANY($2::text[])',
+      [ctx.userId, keys],
+    )
+    sendJson(res, 200, { ok: true, deleted: r.rowCount ?? 0 })
   } catch (err) {
     sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) })
   }

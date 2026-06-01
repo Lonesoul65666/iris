@@ -39,7 +39,11 @@ export interface RecurringCandidate {
  * Strips trailing digits, dates, order numbers, location suffixes, noise tokens.
  * Goal: "NETFLIX.COM 11/15" and "NETFLIX.COM LOS GATOS CA" both → "netflix".
  */
-export function normalizeMerchant(desc: string): string {
+export function normalizeMerchant(desc: string | null | undefined): string {
+  // Defensive: not every transaction carries a description (some inflows /
+  // transfers / imported rows have none). A pure normalizer must never throw —
+  // an empty key signals "skip" to detectRecurring's `if (!key) continue`.
+  if (!desc) return '';
   let s = desc.toLowerCase().trim();
 
   // Strip common payment-processor prefixes
