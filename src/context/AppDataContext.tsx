@@ -144,6 +144,11 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
   // Load data on mount
   useEffect(() => {
     async function load() {
+     // Cold-start safety (Build-D2c+): a single failed /api/* call (e.g. a
+     // paused Supabase, a transient 500) must never wedge the app on
+     // "Loading Iris…". try/catch/finally guarantees setLoading(false) always
+     // runs; the catch surfaces the failure instead of swallowing it silently.
+     try {
       let accts = await getAllAccounts();
       if (accts.length === 0) {
         for (const a of defaultAccounts) await saveAccount(a);
@@ -403,13 +408,19 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
       // Prices are manual-refresh only (Invest → Refresh Prices) to conserve API calls.
       // lastPriceRefresh timestamp is shown in the UI so the user knows how stale data is.
 
-      setLoading(false);
-
       // NOTE: SimpleFIN auto-sync removed 2026-05-10. SimpleFIN was deprecated
       // (ADR-0001, 2026-05-01) in favor of the three-connector strategy
       // (Teller + Fidelity OFX + Coinbase API). Connector code lands in
       // Foundation Session 4+. Until then there is no live auto-sync; data
       // arrives via CSV import.
+     } catch (err) {
+       // eslint-disable-next-line no-console
+       console.error('[iris] data load failed:', err);
+     } finally {
+       // Always clear the loading gate — even on failure the app must render
+       // (with defaults) rather than hang on "Loading Iris…".
+       setLoading(false);
+     }
     }
     load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

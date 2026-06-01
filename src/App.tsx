@@ -126,39 +126,68 @@ export default function App() {
   const [view, setView] = useState<View>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      const authUsers = (await getSetting<Record<string, string>>('auth_users')) || {};
-      const userNames = Object.keys(authUsers);
-      const anyHasPin = userNames.some(n => !!authUsers[n]);
-
-      if (anyHasPin) {
-        // PIN auth configured — wait for the lock screen.
-        setNeedsLock(true);
-        return;
-      }
-
-      setNeedsLock(false);
-      // Pick a sensible activeUser: prior session > first configured user > profile.name > 'You'.
-      const stored = await getSetting<string>('active_user');
-      if (stored && (!userNames.length || userNames.includes(stored))) {
-        setActiveUser(stored);
-        return;
-      }
-      if (userNames.length) {
-        setActiveUser(userNames[0]);
-        return;
-      }
+      // Cold-start safety: the FIRST Postgres reads happen here (auth_users).
+      // If Supabase is paused/unreachable this would throw and leave needsLock
+      // null forever → stuck on "Loading Iris…". Catch it and surface a real
+      // error screen with recovery guidance instead.
       try {
-        const m = await import('./stores/portfolioStore');
-        const p = await m.getUserProfile();
-        setActiveUser(p?.name?.split(' ')[0] || 'You');
-      } catch {
-        setActiveUser('You');
+        const authUsers = (await getSetting<Record<string, string>>('auth_users')) || {};
+        const userNames = Object.keys(authUsers);
+        const anyHasPin = userNames.some(n => !!authUsers[n]);
+
+        if (anyHasPin) {
+          // PIN auth configured — wait for the lock screen.
+          setNeedsLock(true);
+          return;
+        }
+
+        setNeedsLock(false);
+        // Pick a sensible activeUser: prior session > first configured user > profile.name > 'You'.
+        const stored = await getSetting<string>('active_user');
+        if (stored && (!userNames.length || userNames.includes(stored))) {
+          setActiveUser(stored);
+          return;
+        }
+        if (userNames.length) {
+          setActiveUser(userNames[0]);
+          return;
+        }
+        try {
+          const m = await import('./stores/portfolioStore');
+          const p = await m.getUserProfile();
+          setActiveUser(p?.name?.split(' ')[0] || 'You');
+        } catch {
+          setActiveUser('You');
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[iris] auth/boot resolution failed:', err);
+        setBootError(err instanceof Error ? err.message : String(err));
       }
     })();
   }, []);
+
+  if (bootError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-surface-0 gap-4 p-8 text-center">
+        <div className="text-accent text-2xl font-bold">Iris</div>
+        <div className="text-text-primary text-lg font-semibold">Couldn't reach your database</div>
+        <div className="text-text-muted text-sm max-w-md break-words">{bootError}</div>
+        <div className="text-text-muted text-xs max-w-md">
+          If your Supabase project was paused for inactivity, restore it in the Supabase dashboard, then reload. Your data is safe.
+        </div>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-5 py-2.5 rounded-lg bg-accent hover:bg-accent-dim text-white text-sm font-semibold transition-colors">
+          Reload
+        </button>
+      </div>
+    );
+  }
 
   if (needsLock === null) {
     return <div className="flex items-center justify-center min-h-screen bg-surface-0"><div className="text-accent text-xl font-semibold animate-pulse">Loading Iris...</div></div>;
