@@ -134,13 +134,35 @@ After Teller verification, since Fidelity routing depends on what Teller covers.
 - Onboarding flow for connection-string paste (manual in v1; OAuth wizard is v2+ per below)
 
 **Sequencing within Foundation:**
-1. **Session 1 — Build-B (DONE 2026-05-04, commit `6bb9843`):** Vite middleware API scaffold; `pg.Pool` cached server-side via `POST /api/connect`; `GET /api/health` smoke endpoint with live `SELECT 1`; client bootstrap that POSTs `localStorage.iris_db_connection_string` on app boot. Smoke verified end-to-end against Scott's Supabase URI.
-2. **Session 2 — Build-C (NEXT):** versioned schema migration runner; `0001_init.sql` with `users`, `settings`, `income_sources`, `expenses` (every table with `user_id`); first 3-4 typed endpoints replacing the most-used IndexedDB store calls; smoke each.
-3. **Session 3:** IndexedDB → Postgres migration script (idempotent, verifiable, reversible, logged); swap remaining store-call sites to `fetch('/api/...')`; verify each surface against the new layer; mark IndexedDB read-only for one fallback session.
-4. **Bundled with Session 3:** JSON export button in Settings (Layer 4 backup).
-5. Edge cases, recovery scenarios, smoke tests.
+1. **Build-B (DONE 2026-05-04, `6bb9843`):** Vite middleware API + `pg.Pool` + `/api/connect` + `/api/health`.
+2. **Build-C (DONE 2026-05-05, `5e00bd3`):** schema runner; `0001_init.sql` (users, settings, income_sources, expenses); typed endpoints.
+3. **Build-D1 (DONE 2026-05-05, `726f323`):** IndexedDB→Postgres migration of income_sources + expenses (22 + 638 rows).
+4. **Build-D2a (DONE 2026-05-05, `cac6201`):** `0002_budget_config.sql` generic `collections` table; migration of the 8 budget-config stores (45 rows).
+5. **Build-D2b (DONE 2026-05-10, `1c793ef`):** budget store reads/writes via Postgres; DELETE + export endpoints; boot race fixed; validated in real Chrome (2 bugs fixed).
+6. **Build-D2c (NEXT — see below):** the non-budget stores that make auth + the app truly browser/laptop-independent.
 
-**When it returns:** Session 2 opens next session.
+### Build-D2c — settings + userProfile + audit log → Postgres (the browser-agnostic finish)
+
+**Why:** After D2b, the *budget engine* runs on Postgres, but auth/identity/audit still live in IndexedDB. Critically, **login PINs (`auth_users`) live in `iris-portfolio.settings` (IndexedDB)** via `portfolioStore.getSetting/saveSetting` — so on a new laptop, "paste connection string" recovers budget data but you **can't log in**. D2c closes that. Decided 2026-05-10.
+
+**The split-brain mapped:**
+- `iris-portfolio.settings` (IndexedDB) holds: `auth_users` (PINs), `enabled_modules`, `onboarding_complete`, visit timestamps, `nudge_dismiss::*`, market annotations. ← MOVE
+- `iris-portfolio.userProfile` (IndexedDB) holds identity. ← MOVE
+- `auditLogStore` (IndexedDB) holds budget-edit + account audit entries — a Phase 1 budget feature. ← MOVE
+- `iris-portfolio`: accounts/holdings, equity, monthlyInvestments, snapshots, chatHistory. ← **DEFER to Phase 2/3** (investment side; doesn't touch budget or auth).
+
+**Scope:**
+1. **Settings layer rewire** — reimplement `portfolioStore.getSetting/saveSetting` (+ `listNudgeDismisses`, `deleteNudgeDismiss`, `clearAllNudgeDismisses`, market report/annotations helpers) to call the existing `/api/settings/*` endpoints. No double JSON-encode — Postgres stores jsonb natively. This is the keystone: one rewire makes auth/PIN + modules + onboarding + nudges browser-independent. (Postgres `settings` table + endpoints already exist from Build-C.)
+2. **userProfile** — `getUserProfile/saveUserProfile/clearUserProfile` use settings key `user_profile` (single JSON blob). Keeps the Postgres `users` table (identity/user_id) separate from the app profile object.
+3. **Audit log** — `0003_audit_log.sql`: `audit_log(user_id, id pk, ts timestamptz, data jsonb)`. Endpoints `GET /api/audit/list` + `POST /api/audit/append`. Rewire `auditLogStore.ts` to fetch.
+4. **Migration v3** — extend `migrate-indexeddb-to-postgres.ts` with a v3 phase + `migration_v3_complete` flag: IndexedDB settings → `/api/settings/save` (incl `auth_users`), userProfile → settings `user_profile`, audit entries → `/api/audit/append`. Idempotent. IndexedDB stays intact as fallback.
+5. **Validate in real Chrome — especially login/PIN.** Don't lock Scott out: keep IndexedDB fallback, validate before committing.
+
+**Intentional non-goal:** the connection string itself stays in `localStorage` (per ADR-0002). "Browser-independent" = your *data* travels; you still paste the string once per browser. That one paste is by design, not a gap.
+
+**After D2c:** Foundation is functionally done — new laptop → paste connection string → log in → full budget experience. Then: connectors (Teller/OFX/Coinbase) for real auto-synced numbers (Foundation Session 4+, after the connector-collision decision above).
+
+**When it returns:** in progress 2026-05-10.
 
 ## Phase 1.1 follow-ups (after Foundation + Features verified)
 
