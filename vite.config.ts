@@ -14,12 +14,7 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/yf/, ''),
       },
-      // SimpleFIN Bridge proxy — dev only. In a Tauri wrapper, swap to native HTTP (no CORS).
-      '/api/simplefin': {
-        target: 'https://beta-bridge.simplefin.org',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/simplefin/, ''),
-      },
+      // SimpleFIN Bridge proxy removed 2026-05-10 — service deprecated (ADR-0001).
     },
   },
 })

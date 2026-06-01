@@ -13,7 +13,10 @@ export interface Person {
 
 export type LLMRoutingPreference = 'auto' | 'cloud-preferred' | 'local-only';
 
-export type FinancialDataSource = 'simplefin' | 'csv' | 'none';
+// 'simplefin' removed 2026-05-10 (deprecated per ADR-0001). The three-connector
+// strategy (Teller / Fidelity OFX / Coinbase) will extend this union when
+// connector code lands in Foundation Session 4+.
+export type FinancialDataSource = 'csv' | 'none';
 
 export interface UserPreferences {
   llmProvider: LLMRoutingPreference;

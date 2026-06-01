@@ -405,26 +405,11 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
 
       setLoading(false);
 
-      // Auto-sync SimpleFIN on app launch if connected. Throttle: skip if last
-      // sync was within the last 4 hours (catches casual refreshes; respects
-      // SimpleFIN's "twice-per-day" recommendation). Errors are non-fatal —
-      // the user can always hit Sync now manually in Settings.
-      try {
-        const { getSimpleFinStatus, syncAllFromSimpleFin } = await import('../services/simplefin');
-        const status = await getSimpleFinStatus();
-        if (status.connected) {
-          const lastSync = status.lastSync ? new Date(status.lastSync).getTime() : 0;
-          const hoursSinceSync = (Date.now() - lastSync) / 3_600_000;
-          if (hoursSinceSync >= 4) {
-            // Fire and forget — don't block app interactivity.
-            syncAllFromSimpleFin({ daysBack: 30 }).catch(err => {
-              console.warn('[Iris] Auto-sync failed:', err);
-            });
-          }
-        }
-      } catch (err) {
-        console.warn('[Iris] Auto-sync setup failed:', err);
-      }
+      // NOTE: SimpleFIN auto-sync removed 2026-05-10. SimpleFIN was deprecated
+      // (ADR-0001, 2026-05-01) in favor of the three-connector strategy
+      // (Teller + Fidelity OFX + Coinbase API). Connector code lands in
+      // Foundation Session 4+. Until then there is no live auto-sync; data
+      // arrives via CSV import.
     }
     load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

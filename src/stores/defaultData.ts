@@ -229,7 +229,7 @@ export const defaultUserProfile: UserProfile = {
   carValue: 0,
 };
 
-export const defaultAccounts: Account[] = [];   // empty — user adds via setup wizard or SimpleFIN
+export const defaultAccounts: Account[] = [];   // empty — user adds via setup wizard or connectors
 export const defaultEquityProfile: EquityProfile | null = null;
 export const defaultMonthlyInvestment: MonthlyInvestment = {
   id: 'monthly-auto',
