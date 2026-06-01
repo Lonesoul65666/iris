@@ -102,6 +102,16 @@ Between milestones: end-of-session cadence note (one bullet improved, one bullet
 
 Each entry: date, session mode, observations on each dimension, specific examples.
 
+### 2026-05-10 (cont.) — Cold-start error boundaries + a partner-caught doc lapse
+
+**Mode:** Build (error boundary) → Audit (doc fix).
+
+**What landed:** `dc5c734` — try/catch on App.tsx auth effect (+ recovery screen) and try/catch/finally on AppDataContext.load(), so a paused/unreachable DB can't wedge the app on "Loading Iris…". Validated no-regression in real Chrome.
+
+**Cadence pattern — the one that matters this entry:** *Scott caught a documentation lapse.* After I committed the error-boundary CODE, I jumped straight to the next conversation (connector-collision) and SKIPPED the docs closeout — breaking my own "code commit + docs commit, every time" rule. Scott called it: "it's not updated with most stuff we did. did you not document correctly?" He was right. state.md still framed the error boundary as a future "Next" item, and the backlog still said Build-D2c "in progress." Fixed both + added this entry.
+
+**Honest read:** this is a *Claude* slip, not a Scott one — exactly the kind of thing the sarcastic-accountability clause exists to catch, and it ran in the right direction (Scott → Claude). Lesson re-instated: docs closeout is part of "done," not an optional follow-up. Don't declare a build done or move to the next topic until state.md + backlog + cadence-log reflect it.
+
 ### 2026-05-10 (cont.) — Build-D2c: browser-agnostic finish, validated through the auth migration in real Chrome
 
 **Mode:** Decision → Build. Scott: "make everything browser-independent... defer non-budget to later builds. Thoughts?"
