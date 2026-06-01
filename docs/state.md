@@ -100,8 +100,8 @@ Append-only log of meaningful vision/scope shifts. Each entry: date, what change
 ### 2026-05-10 — Cold-start error boundaries (resilience)
 
 - **Changed:** wrapped the two "Loading Iris…" wedge points (commit `dc5c734`). (1) `App.tsx` auth-resolution effect (first Postgres reads — `auth_users`/`active_user`) had no try/catch; a paused/unreachable DB left `needsLock=null` forever. Now caught → renders a recovery screen ("if Supabase was paused, restore it and reload — your data is safe" + Reload button). (2) `AppDataContext.load()` body wrapped in try/catch/finally; `finally` always clears `setLoading(false)` so a mid-load throw renders the app (with defaults) instead of hanging.
-- **Validated:** real Chrome, healthy Supabase — app loads clean, no regression. Error path is a textbook try/catch/finally + conditional render (not exercised live; would require breaking the DB).
-- **Observed (future polish, NOT done):** a freshly-woken (post-pause) Supabase is slow on first queries (~8s "Loading Iris…"). The boundary catches *failures*, not *slowness* — a "waking up your database…" hint after a few seconds would help. Logged, deferred.
+- **Validated:** real Chrome, **healthy (NOT paused) Supabase** — `/api/health` 200 instantly, `auth_users` in 83ms, app loads clean, no regression. Error path is a textbook try/catch/finally + conditional render (not exercised live; would require breaking the DB).
+- **Correction on the record:** the DB did **not** pause this session — it was responsive throughout. The one confirmed auto-pause was ~3 weeks earlier (Supabase emailed Scott). A transient ~8s "Loading Iris…" on first load was almost certainly the **Vite dev server cold-compiling after a restart**, not a DB wake (health/auth queries were fast, which a waking paused DB would not be). The error boundary is insurance against the *future* idle auto-pause (free tier, ~7 days), not a response to a current pause.
 - **Enhancement or drift?** **Enhancement.** Pure resilience hardening; no scope change.
 
 ### 2026-05-10 — Build-D2c shipped: app is browser/laptop-agnostic (validated in real Chrome)
