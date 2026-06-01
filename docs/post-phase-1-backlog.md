@@ -167,7 +167,7 @@ After Teller verification, since Fidelity routing depends on what Teller covers.
 
 ### Connector-collision decision (RESOLVE before any Teller/OFX/Coinbase code)
 
-**Status:** Open — recommended approach proposed 2026-05-10, awaiting Scott's confirmation.
+**Status:** ✅ DECIDED 2026-05-10 — tag-source + **empirical per-account high-water-mark cutoff** (NOT a hardcoded 90 days; Teller has no universal history cap — depth is institution-dependent, discovered at connect time). Verified against Teller docs: `start_date`/`end_date` + `from_id` backward pagination, no documented limit.
 
 **Problem:** 638 CSV-imported expenses are in Postgres. When a connector (Teller first) starts fetching, the same real-world transaction can land twice (different IDs) → budget totals double.
 
