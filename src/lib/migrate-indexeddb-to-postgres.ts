@@ -13,6 +13,11 @@
 //       recurringDecisions, inflowDecisions, earners
 //     - All go to /api/collections/:name/save
 //
+//   v3 — non-budget stores that make auth + the app browser-independent
+//     (Build-D2c): iris-portfolio.settings (incl auth_users/PINs) → /api/settings,
+//     iris-portfolio.userProfile → settings 'user_profile',
+//     iris-audit.log → /api/audit/append.
+//
 // `migration_v1_complete` and `migration_v2_complete` settings flags
 // short-circuit future calls unless `{ force: true }` is passed. Per-row
 // errors are collected, not fatal — the transcript reports per-store counts.
@@ -26,8 +31,11 @@ import { openDB, type IDBPDatabase } from 'idb'
 
 const SOURCE_DB = 'iris-budget'
 const SOURCE_VERSION = 4
+const PORTFOLIO_DB = 'iris-portfolio'   // settings + userProfile (Build-D2c)
+const AUDIT_DB = 'iris-audit'           // audit log (Build-D2c)
 const MIGRATION_V1_FLAG = 'migration_v1_complete'
 const MIGRATION_V2_FLAG = 'migration_v2_complete'
+const MIGRATION_V3_FLAG = 'migration_v3_complete'
 
 // IndexedDB store names that go into the generic `collections` table.
 const BUDGET_CONFIG_STORES = [
@@ -76,6 +84,12 @@ export interface MigrationTranscript {
   v2: {
     status: 'completed' | 'already_complete' | 'completed_with_errors' | 'aborted' | 'skipped'
     collections: Record<BudgetConfigStoreName, StoreResult>
+  }
+  v3: {
+    status: 'completed' | 'already_complete' | 'completed_with_errors' | 'aborted' | 'skipped'
+    settings: StoreResult
+    userProfile: StoreResult
+    auditLog: StoreResult
   }
   notes: string[]
 }
@@ -138,6 +152,105 @@ function emptyV2() {
     status: 'skipped' as const,
     collections: collections as Record<BudgetConfigStoreName, StoreResult>,
   }
+}
+
+function emptyV3() {
+  return {
+    status: 'skipped' as const,
+    settings: emptyStoreResult(),
+    userProfile: emptyStoreResult(),
+    auditLog: emptyStoreResult(),
+  }
+}
+
+// The OLD iris-portfolio.settings store JSON-encoded every value to a string.
+// Decode it the same way the OLD portfolioStore.getSetting did (parse, fall
+// back to raw) so the value lands in Postgres jsonb in its true type.
+function decodeLegacySetting(raw: unknown): unknown {
+  if (typeof raw !== 'string') return raw
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return raw
+  }
+}
+
+// v3 — non-budget stores that make auth + the app browser-independent:
+//   iris-portfolio.settings  -> /api/settings/save   (incl auth_users / PINs)
+//   iris-portfolio.userProfile -> settings 'user_profile'
+//   iris-audit.log -> /api/audit/append
+async function runV3(notes: string[]): Promise<MigrationTranscript['v3']> {
+  const settingsResult = emptyStoreResult()
+  const profileResult = emptyStoreResult()
+  const auditResult = emptyStoreResult()
+
+  // ── settings + userProfile (iris-portfolio) ──
+  try {
+    const pdb = await openDB(PORTFOLIO_DB)
+    if (pdb.objectStoreNames.contains('settings')) {
+      const rows = (await pdb.getAll('settings')) as Array<{ key: string; value: unknown }>
+      settingsResult.read = rows.length
+      for (const row of rows) {
+        const value = decodeLegacySetting(row.value)
+        const r = await postUpsert('/api/settings/save', { key: row.key, value })
+        if (r.ok) settingsResult.written++
+        else settingsResult.errors.push({ id: row.key, error: r.error ?? 'unknown' })
+      }
+      // eslint-disable-next-line no-console
+      console.info(`[iris migrate v3] settings: ${settingsResult.written}/${settingsResult.read} written, ${settingsResult.errors.length} errors`)
+    }
+    if (pdb.objectStoreNames.contains('userProfile')) {
+      const profiles = (await pdb.getAll('userProfile')) as Array<Record<string, unknown>>
+      profileResult.read = profiles.length
+      if (profiles.length > 0) {
+        // Singleton store — take the first (most recent) profile.
+        const r = await postUpsert('/api/settings/save', { key: 'user_profile', value: profiles[0] })
+        if (r.ok) profileResult.written++
+        else profileResult.errors.push({ id: 'user_profile', error: r.error ?? 'unknown' })
+      }
+      // eslint-disable-next-line no-console
+      console.info(`[iris migrate v3] userProfile: ${profileResult.written}/${profileResult.read} written`)
+    }
+    pdb.close()
+  } catch (err) {
+    settingsResult.errors.push({ id: '<portfolio-db-open>', error: err instanceof Error ? err.message : String(err) })
+    // eslint-disable-next-line no-console
+    console.warn('[iris migrate v3] failed to open iris-portfolio:', err)
+  }
+
+  // ── audit log (iris-audit) ──
+  try {
+    const adb = await openDB(AUDIT_DB)
+    if (adb.objectStoreNames.contains('log')) {
+      const entries = (await adb.getAll('log')) as Array<Record<string, unknown> & { id?: string }>
+      auditResult.read = entries.length
+      for (const entry of entries) {
+        const r = await postUpsert('/api/audit/append', { entry })
+        if (r.ok) auditResult.written++
+        else auditResult.errors.push({ id: String(entry.id ?? '<no-id>'), error: r.error ?? 'unknown' })
+      }
+      // eslint-disable-next-line no-console
+      console.info(`[iris migrate v3] auditLog: ${auditResult.written}/${auditResult.read} written, ${auditResult.errors.length} errors`)
+    }
+    adb.close()
+  } catch (err) {
+    auditResult.errors.push({ id: '<audit-db-open>', error: err instanceof Error ? err.message : String(err) })
+    // eslint-disable-next-line no-console
+    console.warn('[iris migrate v3] failed to open iris-audit:', err)
+  }
+
+  const totalErrors = settingsResult.errors.length + profileResult.errors.length + auditResult.errors.length
+  let status: MigrationTranscript['v3']['status']
+  if (totalErrors === 0) {
+    await setFlag(MIGRATION_V3_FLAG)
+    status = 'completed'
+    notes.push('v3 flag set. iris-portfolio.settings + userProfile + iris-audit left intact as fallback.')
+  } else {
+    status = 'completed_with_errors'
+    notes.push(`v3 flag NOT set due to ${totalErrors} error(s).`)
+  }
+
+  return { status, settings: settingsResult, userProfile: profileResult, auditLog: auditResult }
 }
 
 async function runV1(
@@ -258,7 +371,7 @@ async function runV2(
 
 export interface MigrateOptions {
   force?: boolean
-  phases?: Array<'v1' | 'v2'>
+  phases?: Array<'v1' | 'v2' | 'v3'>
 }
 
 export async function migrateIndexedDbToPostgres(
@@ -267,13 +380,14 @@ export async function migrateIndexedDbToPostgres(
   const startTime = new Date().toISOString()
   const start = Date.now()
   const notes: string[] = []
-  const phases = opts.phases ?? ['v1', 'v2']
+  const phases = opts.phases ?? ['v1', 'v2', 'v3']
   const transcript: MigrationTranscript = {
     startTime,
     endTime: startTime,
     durationMs: 0,
     v1: emptyV1(),
     v2: emptyV2(),
+    v3: emptyV3(),
     notes,
   }
 
@@ -286,6 +400,17 @@ export async function migrateIndexedDbToPostgres(
     notes.push(`Failed to open IndexedDB: ${err instanceof Error ? err.message : String(err)}`)
     transcript.v1.status = 'aborted'
     transcript.v2.status = 'aborted'
+    // v3 opens its own DBs (iris-portfolio / iris-audit), so run it even if
+    // iris-budget fails to open.
+    if (phases.includes('v3')) {
+      if (!opts.force && (await isFlagSet(MIGRATION_V3_FLAG))) {
+        transcript.v3 = { ...emptyV3(), status: 'already_complete' }
+      } else {
+        transcript.v3 = await runV3(notes)
+      }
+    } else {
+      transcript.v3.status = 'aborted'
+    }
     transcript.endTime = new Date().toISOString()
     transcript.durationMs = Date.now() - start
     return transcript
@@ -311,6 +436,17 @@ export async function migrateIndexedDbToPostgres(
         console.info('[iris migrate v2] already complete, skipping')
       } else {
         transcript.v2 = await runV2(db, notes)
+      }
+    }
+
+    if (phases.includes('v3')) {
+      if (!opts.force && (await isFlagSet(MIGRATION_V3_FLAG))) {
+        transcript.v3 = { ...emptyV3(), status: 'already_complete' }
+        notes.push('v3 already complete. Pass { force: true } to re-run.')
+        // eslint-disable-next-line no-console
+        console.info('[iris migrate v3] already complete, skipping')
+      } else {
+        transcript.v3 = await runV3(notes)
       }
     }
   } finally {

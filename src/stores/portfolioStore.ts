@@ -66,21 +66,15 @@ export async function saveEquityProfile(profile: EquityProfile): Promise<void> {
   await db.put('equity', profile);
 }
 
-// User Profile
+// User Profile — Postgres-backed via the settings layer (Build-D2c, 2026-05-10).
+// Stored as a single JSON blob under settings key 'user_profile'. The Postgres
+// `users` table (identity / user_id) stays separate from this app-profile object.
 export async function getUserProfile(): Promise<UserProfile | undefined> {
-  const db = await getDB();
-  const all = await db.getAll('userProfile');
-  return all[0];
+  return getSetting<UserProfile>('user_profile');
 }
 
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
-  const db = await getDB();
-  // Store uses keyPath:'name'. If the user changes their name (or upgrades
-  // from the empty-name default to a real name), naive `put` leaves the old
-  // record behind and `getUserProfile` returns the wrong (older) one.
-  // Clear-and-write keeps the store as a singleton.
-  await db.clear('userProfile');
-  await db.put('userProfile', profile);
+  await saveSetting('user_profile', profile);
 }
 
 // Monthly Investments
@@ -111,33 +105,41 @@ export async function clearChatHistory(): Promise<void> {
   await db.clear('chatHistory');
 }
 
-// Settings
+// Settings — Postgres-backed via /api/settings (Build-D2c, 2026-05-10).
 //
-// Storage shape: every setting value is JSON-encoded on write. Reads attempt
-// JSON.parse first; if the stored value isn't valid JSON (legacy raw-string
-// data from before this change), fall back to returning the raw string.
+// Reimplemented to call the user-owned Postgres `settings` table instead of the
+// per-browser IndexedDB store. This is the keystone that makes auth (auth_users
+// / PINs), enabled_modules, onboarding state, and nudge dismisses
+// browser-independent. Values round-trip as native JSON (jsonb) — NO manual
+// stringify/parse (the server stores `value::jsonb` and returns it parsed).
 //
-// Generic signatures let callers state their expected type:
-//   getSetting<NotificationPreferences>(key)
-//   saveSetting('enabled_modules', ['investments', 'equity'])
-// Default T is string for backward source compatibility.
-export async function getSetting<T = string>(key: string): Promise<T | undefined> {
-  const db = await getDB();
-  const result = await db.get('settings', key);
-  if (result?.value === undefined) return undefined;
-  const raw = result.value;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return raw as unknown as T;
+// Requires the pool to be connected; main.tsx awaits bootstrapDbConnection()
+// before mounting <App/>, so all component-level calls are safe.
+async function settingsApi<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    throw new Error(`[iris api] ${path} → ${res.status} ${body.error ?? body.message ?? 'unknown'}`);
   }
+  return (await res.json()) as T;
+}
+
+export async function getSetting<T = string>(key: string): Promise<T | undefined> {
+  const res = await fetch(`/api/settings/get/${encodeURIComponent(key)}`);
+  if (res.status === 404) return undefined;
+  if (!res.ok) throw new Error(`[iris api] settings/get ${key} → ${res.status}`);
+  const body = (await res.json()) as { ok: boolean; value?: T };
+  return body.value;
 }
 
 export async function saveSetting<T = unknown>(key: string, value: T): Promise<void> {
-  const db = await getDB();
-  // Always JSON-encode so reads can round-trip arbitrary types. Strings get
-  // wrapped in quotes; objects/arrays/numbers get standard JSON encoding.
-  await db.put('settings', { key, value: JSON.stringify(value) });
+  await settingsApi('/api/settings/save', {
+    method: 'POST',
+    body: JSON.stringify({ key, value }),
+  });
 }
 
 // Snapshots
@@ -159,53 +161,46 @@ export async function clearSnapshots(): Promise<void> {
 
 // ─── Market Intelligence Persistence ───
 
+// Values round-trip as native JSON now (Build-D2c) — no manual stringify/parse.
 export async function saveMarketReport(report: unknown): Promise<void> {
-  await saveSetting('market_intelligence_report', JSON.stringify(report));
+  await saveSetting('market_intelligence_report', report);
 }
 
 export async function loadMarketReport(): Promise<unknown | null> {
-  const raw = await getSetting('market_intelligence_report');
-  if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return null; }
+  return (await getSetting<unknown>('market_intelligence_report')) ?? null;
 }
 
 export async function saveMarketAnnotations(annotations: { checkedIds: string[]; pinnedItems: unknown[] }): Promise<void> {
-  await saveSetting('market_intelligence_annotations', JSON.stringify(annotations));
+  await saveSetting('market_intelligence_annotations', annotations);
 }
 
 export async function loadMarketAnnotations(): Promise<{ checkedIds: string[]; pinnedItems: unknown[] } | null> {
-  const raw = await getSetting('market_intelligence_annotations');
-  if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return null; }
+  return (await getSetting<{ checkedIds: string[]; pinnedItems: unknown[] }>('market_intelligence_annotations')) ?? null;
 }
 
-// ─── Nudge Management ───
+// ─── Nudge Management (Postgres-backed via /api/settings, Build-D2c) ───
 
-/** List all dismiss records (keys prefixed with "nudge_dismiss::"). Returns raw JSON-parsed values. */
+interface SettingsListItem { key: string; value: unknown; updatedAt: string }
+
+/** List all dismiss records (keys prefixed with "nudge_dismiss::"). */
 export async function listNudgeDismisses(): Promise<unknown[]> {
-  const db = await getDB();
-  const all = await db.getAll('settings');
-  const out: unknown[] = [];
-  for (const row of all) {
-    if (!row.key.startsWith('nudge_dismiss::')) continue;
-    try { out.push(JSON.parse(row.value)); } catch { /* ignore malformed */ }
-  }
-  return out;
+  const body = await settingsApi<{ ok: boolean; items: SettingsListItem[] }>('/api/settings/list');
+  return body.items.filter((i) => i.key.startsWith('nudge_dismiss::')).map((i) => i.value);
 }
 
 export async function deleteNudgeDismiss(nudgeId: string): Promise<void> {
-  const db = await getDB();
-  await db.delete('settings', 'nudge_dismiss::' + nudgeId);
+  await settingsApi('/api/settings/delete', {
+    method: 'POST',
+    body: JSON.stringify({ key: 'nudge_dismiss::' + nudgeId }),
+  });
 }
 
 export async function clearAllNudgeDismisses(): Promise<void> {
-  const db = await getDB();
-  const all = await db.getAll('settings');
-  const tx = db.transaction('settings', 'readwrite');
-  for (const row of all) {
-    if (row.key.startsWith('nudge_dismiss::')) await tx.store.delete(row.key);
+  const body = await settingsApi<{ ok: boolean; items: SettingsListItem[] }>('/api/settings/list');
+  const keys = body.items.map((i) => i.key).filter((k) => k.startsWith('nudge_dismiss::'));
+  if (keys.length > 0) {
+    await settingsApi('/api/settings/delete', { method: 'POST', body: JSON.stringify({ keys }) });
   }
-  await tx.done;
 }
 
 // ─── Data Management ───
@@ -222,10 +217,12 @@ export async function clearEquity(): Promise<void> {
   await db.clear('equity');
 }
 
-// Reset user profile
+// Reset user profile (Postgres-backed via settings, Build-D2c).
 export async function clearUserProfile(): Promise<void> {
-  const db = await getDB();
-  await db.clear('userProfile');
+  await settingsApi('/api/settings/delete', {
+    method: 'POST',
+    body: JSON.stringify({ key: 'user_profile' }),
+  });
 }
 
 // Nuclear: clear everything in portfolio DB (accounts, equity, profile, investments, chat, settings)

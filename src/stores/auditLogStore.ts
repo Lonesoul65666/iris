@@ -1,4 +1,6 @@
-import { openDB, type IDBPDatabase } from 'idb';
+// Audit log — Postgres-backed via /api/audit (Build-D2c, 2026-05-10).
+// Was IndexedDB (`iris-audit`); moved so audit history travels with the
+// user-owned database. Convenience helpers below flow through logAuditEvent.
 
 // ─── Types ───
 
@@ -37,30 +39,26 @@ export interface BudgetDiff {
   kind: 'added' | 'removed' | 'edited';
 }
 
-// ─── DB ───
+// ─── API helper ───
 
-let dbInstance: IDBPDatabase<any> | null = null;
-
-async function getAuditDB() {
-  if (dbInstance) return dbInstance;
-  dbInstance = await openDB('iris-audit', 1, {
-    upgrade(db) {
-      const store = db.createObjectStore('log', { keyPath: 'id' });
-      store.createIndex('by-timestamp', 'timestamp');
-      store.createIndex('by-action', 'action');
-      store.createIndex('by-entity', 'entityId');
-    },
+async function auditApi<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   });
-  return dbInstance;
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    throw new Error(`[iris api] ${path} → ${res.status} ${body.error ?? body.message ?? 'unknown'}`);
+  }
+  return (await res.json()) as T;
 }
 
 // ─── Write ───
 
 export async function logAuditEvent(entry: Omit<AuditEntry, 'id'>): Promise<AuditEntry> {
-  const db = await getAuditDB();
   const id = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   const full: AuditEntry = { ...entry, id };
-  await db.put('log', full);
+  await auditApi('/api/audit/append', { method: 'POST', body: JSON.stringify({ entry: full }) });
   return full;
 }
 
@@ -150,25 +148,22 @@ export async function auditCsvImport(accountId: string, accountName: string, ins
 // ─── Read ───
 
 export async function getAuditLog(limit = 200): Promise<AuditEntry[]> {
-  const db = await getAuditDB();
-  const all = await db.getAllFromIndex('log', 'by-timestamp');
-  return all.reverse().slice(0, limit); // newest first
+  const body = await auditApi<{ ok: boolean; items: AuditEntry[] }>(`/api/audit/list?limit=${limit}`);
+  return body.items; // server returns newest-first
 }
 
 export async function getAuditLogForEntity(entityId: string): Promise<AuditEntry[]> {
-  const db = await getAuditDB();
-  const all = await db.getAllFromIndex('log', 'by-entity', entityId);
-  return all.reverse();
+  const body = await auditApi<{ ok: boolean; items: AuditEntry[] }>(
+    `/api/audit/list?entityId=${encodeURIComponent(entityId)}`,
+  );
+  return body.items;
 }
 
 export async function clearAuditLog(): Promise<void> {
-  const db = await getAuditDB();
-  await db.clear('log');
+  await auditApi('/api/audit/delete', { method: 'POST', body: JSON.stringify({ all: true }) });
 }
 
+// Legacy lifecycle no-op — IndexedDB audit DB no longer used (Build-D2c).
 export function closeAuditDB(): void {
-  if (dbInstance) {
-    dbInstance.close();
-    dbInstance = null;
-  }
+  // intentional no-op
 }
