@@ -1,7 +1,7 @@
 # Iris — Where We Are
 
-**Last reviewed:** 2026-05-05 (Foundation Session 2 / Build-C shipped)
-**Status:** Phase 0 foundation complete. Phase 1 mission widened (2026-05-02). Phase 1 storage architecture revised (2026-05-04, ADR-0002) — splits into Foundation → Features → DoD soak. Foundation Sessions 1 + 2 shipped: Vite middleware API + pg pool + schema migration runner + first 3 resources of typed endpoints (settings, incomeSources, expenses). All smoke-verified against Scott's Supabase Postgres. Session 3 (IndexedDB → Postgres migration script + store-call swap) is the last Foundation session.
+**Last reviewed:** 2026-05-10 (Reset & Reconnect + Build-D2b shipped and validated in real Chrome)
+**Status:** Phase 0 foundation complete. Phase 1 mission widened (2026-05-02). Storage migration to user-owned Postgres (ADR-0002) is **functionally complete for the budget engine**: Foundation Build-B (middleware API + pool), Build-C (schema runner + typed endpoints), Build-D1 (IndexedDB→Postgres migration of income/expenses), Build-D2a (collections table + budget-config migration), and **Build-D2b (budget store reads/writes through Postgres — validated in Scott's real Chrome 2026-05-10)** all shipped. SimpleFIN (deprecated) fully removed. **Known remaining gap (split-brain):** auth/userProfile + audit log + portfolio still read IndexedDB; deciding whether to migrate auth+audit to truly finish Foundation. Connectors (Teller/OFX/Coinbase) are Foundation Session 4+.
 
 This doc is the single "where are we today" snapshot. It is overwritten every substantive session. It does NOT replace `north-star.md` (vision), `adr/0001-phase-1-scope.md` (scope), `phase-1-definition-of-done.md` (gates), or `post-phase-1-backlog.md` (deferrals). It pulls from all four into a single readable picture.
 
@@ -38,6 +38,8 @@ This doc is the single "where are we today" snapshot. It is overwritten every su
 
 **Most recent commits (most recent first):**
 ```
+5548e46 chore(connectors): remove deprecated SimpleFIN integration
+1c793ef feat(foundation): complete Build-D2b — budget store reads/writes via Postgres
 cac6201 feat(foundation): generic collections table + budget-config migration — Build-D2a
 3585026 docs: Build-D1 closeout — state.md + cadence-log + backlog connector-collision decision
 726f323 feat(foundation): IndexedDB → Postgres migration script — Phase 1 Foundation Build-D1
@@ -91,6 +93,18 @@ These are the ideas we agreed are central. If a future session drifts from any o
 ## Recent shifts (drift detection log)
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
+
+### 2026-05-10 — Reset & Reconnect + Build-D2b shipped (validated in real Chrome)
+
+- **Context:** ~3-week gap (Scott: mom's surgery, job hunt, travel). Project decision reaffirmed — Iris continues, win-condition reframed as marriage tool + learning vehicle, commercial as lottery-ticket upside (not a Monarch competitor). External services drifted during the gap: Supabase auto-paused, SimpleFIN service shut down by Scott, Teller not logged in.
+- **Reset:** Supabase restored — **all data survived the pause** (22 income / 638 expenses / 45 budget-config rows intact; migrations 1+2 already applied, no drift). The ADR-0002 "keep IndexedDB intact as fallback" decision was confirmed as the safety net (turned out unneeded — data survived — but validated the principle).
+- **Build-D2b shipped (commit `1c793ef`):** budget store swapped from IndexedDB to Postgres `/api/*`. New endpoints (collections list/save/delete, expenses/incomeSources/settings delete, incomeSources save-batch, GET /api/export/full). `main.tsx` now awaits DB bootstrap before mounting (fixes a stuck-loading race). **Validated in Scott's real Chrome against live Supabase** — dashboard + full Budget view render correctly off Postgres.
+- **Two bugs found via real-Chrome validation** (type-check + server smoke both missed them):
+  1. `recurringDetector.normalizeMerchant()` crashed on expenses with no `description` — guarded.
+  2. 5 garbage rows (`smoke-bucket-1..4` + a stray `undefined` key) left in `collections.buckets` from D2a smoke tests poisoned budget math into `$NaN` (Unbudgeted, Cash Flow, Cycle). Deleted via the new DELETE endpoint; also cleaned leftover smoke rows from settings/income/expenses. Counts now exact: 22 / 638 / 27.
+- **SimpleFIN removed (commit `5548e46`):** deprecated per ADR-0001; the dead auto-sync was throwing 403 Forbidden on every launch. Removed service (524 lines), panel, auto-sync block, Vite proxy, type-union member, onboarding/settings usages. Console now clean.
+- **Known remaining gap (split-brain) — NOT yet resolved:** auth/userProfile + audit log + portfolio holdings still read IndexedDB. Budget engine is on Postgres; the rest isn't. Net Worth ($388,534) on the dashboard still comes from IndexedDB. Decision pending: migrate auth+audit to finish Foundation properly, or log as next session.
+- **Enhancement or drift?** **Enhancement.** Phase 1 scope unchanged. Foundation substantially advanced (budget engine now Postgres-backed and real-use validated). SimpleFIN removal aligns code with the 2026-05-01 ADR-0001 decision. The split-brain gap is documented, not silently shipped.
 
 ### 2026-05-05 midday — Build-D2a shipped (collections table + budget-config migration script)
 

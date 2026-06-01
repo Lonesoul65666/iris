@@ -102,6 +102,33 @@ Between milestones: end-of-session cadence note (one bullet improved, one bullet
 
 Each entry: date, session mode, observations on each dimension, specific examples.
 
+### 2026-05-10 — Reset & Reconnect after a 3-week gap (Build-D2b validated, SimpleFIN removed)
+
+**Mode:** Decision/Audit → Build. Scott returned after ~3 weeks (mom's open-heart surgery, job hunt, Hawaii trip) and opened with the hard founder question: "is this a good project to do?"
+
+**What landed:**
+- Project decision reaffirmed with an honest assessment (commercial = long shot vs funded competitors; marriage-tool + learning vehicle = genuinely worth it). Win-condition reframed.
+- External-service reset: Supabase restored (data survived the auto-pause), SimpleFIN service confirmed dead.
+- Swarm review (4 parallel agents) before resuming — surfaced split-brain, cold-start, SimpleFIN-live, no-tests, 14 real react-hooks lint errors.
+- Build-D2b validated in Scott's REAL Chrome (Claude-in-Chrome extension) — found + fixed 2 bugs (toLowerCase crash, $NaN from garbage smoke rows) that type-check and server-side curl both missed.
+- SimpleFIN fully removed; console now clean. Two clean commits (`1c793ef`, `5548e46`).
+
+**Cadence patterns observed:**
+- *Self-flag / stop-and-verify (Scott, strongest of the session):* "before we start building on this again... is this a good project?" — pausing to re-examine the whole premise before sinking more sessions into plumbing. Exactly the right question at exactly the right time (before, not after, more Foundation work).
+- *Honest tone held (Claude):* did NOT cheerlead the commercial viability. Separated "good business" (long shot) from "good for Scott's actual goals" (yes). Partnership doc's "straightforward when something is low-impact; push back, don't quietly comply" operating as intended.
+- *Anchor return (Scott):* "we are switching to the other one correct?" before letting SimpleFIN be removed — verified the connector strategy was intact before accepting a deletion. Caught a potential "are we stranding ourselves?" risk and resolved it.
+- *Real-use feedback over screenshots (both):* Scott insisted on validating in his actual Chrome, not the preview browser. That insistence directly surfaced 2 real bugs. Vindicates the partnership principle hard — "I clicked X and Y happened" beat every automated check we'd run.
+- *Continuity-survives-gaps (system working):* a 3-week gap with zero scramble to resume. The handoff/doc discipline paid off exactly as designed. Reframed Scott's apology as "the system is working" rather than accepting fault.
+
+**Cadence read:**
+- *Vision discipline (~85%):* steady. The "is this worth it" gut-check is high-order vision discipline, not drift.
+- *Scope discipline (~80%):* held — SimpleFIN removal stayed surgical; split-brain explicitly deferred as a decision rather than silently expanded or silently ignored.
+- *Process discipline (~85%, up):* swarm-before-resume, validate-in-real-browser, two clean commits with thorough messages, docs updated same session.
+- *Validation discipline (~75-80%, continued climb):* real-Chrome validation is now the default, not an afterthought. Bugs caught and fixed same-session.
+- *Decision velocity (~80%):* the project-continue decision and the connector-strategy confirm were both made cleanly and quickly once the honest framing was on the table.
+
+**Net:** The strongest validation-discipline session yet — driving the real browser caught two bugs nothing else would have. The project survived a 3-week real-life interruption and resumed clean. Honest assessment delivered without sandbagging or cheerleading. Split-brain remains the one open architectural decision before Foundation can be called fully done.
+
 ### 2026-05-05 midday — Build-D2a solo ship (collections table + migration script extension)
 
 **Mode:** Build (declared, solo execution while Scott was away ~1 hour).
