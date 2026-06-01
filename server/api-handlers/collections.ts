@@ -4,9 +4,11 @@
 // (user_id, name, key) where `name` is the collection name and `key` is the
 // IndexedDB keyPath value. Full row payload lives in `data` jsonb.
 //
-//   GET  /api/collections/:name/list  -> { ok, items: [{key, data, updatedAt}] }
-//   POST /api/collections/:name/save  { items: [{key, data}] | item: {key, data} }
-//                                     -> { ok, written }
+//   GET  /api/collections/:name/list    -> { ok, items: [{key, data, updatedAt}] }
+//   POST /api/collections/:name/save    { items: [{key, data}] | item: {key, data} }
+//                                       -> { ok, written }
+//   POST /api/collections/:name/delete  { key } | { keys: [...] } | { all: true }
+//                                       -> { ok, deleted: N }
 //
 // Single-name routing: the `:name` segment is parsed from the URL by the
 // dispatcher in api-plugin.ts.
@@ -39,6 +41,49 @@ export async function handleCollectionsList(req: Req, res: Res, name: string): P
       ok: true,
       items: r.rows.map((row) => ({ key: row.key, data: row.data, updatedAt: row.updated_at })),
     })
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) })
+  }
+}
+
+export async function handleCollectionsDelete(req: Req, res: Res, name: string): Promise<void> {
+  if (req.method !== 'POST') return methodNotAllowed(res)
+  if (!validName(name)) {
+    sendJson(res, 400, { ok: false, error: 'invalid_collection_name' })
+    return
+  }
+  const ctx = requireContext(res)
+  if (!ctx) return
+  let body: { key?: unknown; keys?: unknown; all?: unknown }
+  try {
+    body = (await readJsonBody(req)) as typeof body
+  } catch {
+    sendJson(res, 400, { ok: false, error: 'invalid_json' })
+    return
+  }
+  try {
+    let r: { rowCount: number | null }
+    if (body.all === true) {
+      r = await ctx.pool.query(
+        'DELETE FROM collections WHERE user_id = $1 AND name = $2',
+        [ctx.userId, name],
+      )
+    } else {
+      const keys: string[] = []
+      if (typeof body.key === 'string' && body.key.length > 0) keys.push(body.key)
+      if (Array.isArray(body.keys)) {
+        for (const k of body.keys) if (typeof k === 'string' && k.length > 0) keys.push(k)
+      }
+      if (keys.length === 0) {
+        sendJson(res, 400, { ok: false, error: 'missing_key_or_keys_or_all' })
+        return
+      }
+      r = await ctx.pool.query(
+        'DELETE FROM collections WHERE user_id = $1 AND name = $2 AND key = ANY($3::text[])',
+        [ctx.userId, name, keys],
+      )
+    }
+    sendJson(res, 200, { ok: true, deleted: r.rowCount ?? 0 })
   } catch (err) {
     sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) })
   }

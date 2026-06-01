@@ -19,10 +19,11 @@
 import type { Plugin, ViteDevServer } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { connect, getPool, hasPool, getLastMigrationResult } from './db-pool.ts'
-import { handleSettingsList, handleSettingsGet, handleSettingsSave } from './api-handlers/settings.ts'
-import { handleIncomeSourcesList, handleIncomeSourcesSave } from './api-handlers/income-sources.ts'
-import { handleExpensesList, handleExpensesSave } from './api-handlers/expenses.ts'
-import { handleCollectionsList, handleCollectionsSave } from './api-handlers/collections.ts'
+import { handleSettingsList, handleSettingsGet, handleSettingsSave, handleSettingsDelete } from './api-handlers/settings.ts'
+import { handleIncomeSourcesList, handleIncomeSourcesSave, handleIncomeSourcesSaveBatch, handleIncomeSourcesDelete } from './api-handlers/income-sources.ts'
+import { handleExpensesList, handleExpensesSave, handleExpensesDelete } from './api-handlers/expenses.ts'
+import { handleCollectionsList, handleCollectionsSave, handleCollectionsDelete } from './api-handlers/collections.ts'
+import { handleExportFull } from './api-handlers/export.ts'
 
 type Req = IncomingMessage
 type Res = ServerResponse
@@ -95,6 +96,7 @@ export function irisApi(): Plugin {
 
       server.middlewares.use('/api/settings/list', wrap(handleSettingsList))
       server.middlewares.use('/api/settings/save', wrap(handleSettingsSave))
+      server.middlewares.use('/api/settings/delete', wrap(handleSettingsDelete))
       // /api/settings/get/:key — extract the suffix from req.url
       server.middlewares.use('/api/settings/get', wrap(async (req, res) => {
         // req.url here is everything after the /api/settings/get prefix
@@ -104,10 +106,15 @@ export function irisApi(): Plugin {
       }))
 
       server.middlewares.use('/api/incomeSources/list', wrap(handleIncomeSourcesList))
+      server.middlewares.use('/api/incomeSources/save-batch', wrap(handleIncomeSourcesSaveBatch))
       server.middlewares.use('/api/incomeSources/save', wrap(handleIncomeSourcesSave))
+      server.middlewares.use('/api/incomeSources/delete', wrap(handleIncomeSourcesDelete))
 
       server.middlewares.use('/api/expenses/list', wrap(handleExpensesList))
       server.middlewares.use('/api/expenses/save', wrap(handleExpensesSave))
+      server.middlewares.use('/api/expenses/delete', wrap(handleExpensesDelete))
+
+      server.middlewares.use('/api/export/full', wrap(handleExportFull))
 
       // /api/collections/:name/{list,save} — single-name routing.
       // req.url after the '/api/collections' prefix looks like '/buckets/list'
@@ -124,6 +131,8 @@ export function irisApi(): Plugin {
           await handleCollectionsList(req, res, name)
         } else if (action === 'save') {
           await handleCollectionsSave(req, res, name)
+        } else if (action === 'delete') {
+          await handleCollectionsDelete(req, res, name)
         } else {
           sendJson(res, 404, { ok: false, error: 'unknown_collections_action' })
         }

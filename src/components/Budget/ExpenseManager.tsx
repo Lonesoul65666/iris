@@ -838,7 +838,7 @@ export default function ExpenseManager({ expenses, onExpensesChanged, geminiAvai
                           <td className="p-3 text-center">
                             {txType === 'expense' && (
                               <button onClick={async () => {
-                                const updated = { ...e, isWorkExpense: !e.isWorkExpense, reimbursementStatus: !e.isWorkExpense ? 'pending' : 'not_reimbursable' };
+                                const updated: Expense = { ...e, isWorkExpense: !e.isWorkExpense, reimbursementStatus: !e.isWorkExpense ? 'pending' : 'not_reimbursable' };
                                 await saveExpense(updated);
                                 onExpensesChanged();
                               }}
@@ -1162,7 +1162,7 @@ export default function ExpenseManager({ expenses, onExpensesChanged, geminiAvai
   );
 }
 
-// ─── Classifiers moved to utils/transactionCategorize.ts (shared w/ SimpleFIN sync) ───
+// ─── Classifiers moved to utils/transactionCategorize.ts (shared categorization) ───
 
 function guessWorkExpense(desc: string): boolean {
   const d = desc.toLowerCase();
