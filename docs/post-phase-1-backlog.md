@@ -122,7 +122,7 @@ After Teller verification, since Fidelity routing depends on what Teller covers.
 
 ## Phase 1 Foundation — storage migration to user-owned cloud DB (NEW per ADR-0002)
 
-**Status:** In progress. **Phase 1 gate-zero — no other Phase 1 work proceeds until all three sessions land and verify.**
+**Status:** ✅ **COMPLETE (2026-05-10).** All of Build-B → D2c shipped and validated in real Chrome; cold-start error boundaries added. App is browser/laptop-agnostic. Only the connector layer (Teller/OFX/Coinbase) remains, and that's gated on the connector-collision decision below.
 
 **Scope:**
 - Vite middleware API at `/api/*` (same port as dev server, no CORS, no second port)
@@ -139,7 +139,8 @@ After Teller verification, since Fidelity routing depends on what Teller covers.
 3. **Build-D1 (DONE 2026-05-05, `726f323`):** IndexedDB→Postgres migration of income_sources + expenses (22 + 638 rows).
 4. **Build-D2a (DONE 2026-05-05, `cac6201`):** `0002_budget_config.sql` generic `collections` table; migration of the 8 budget-config stores (45 rows).
 5. **Build-D2b (DONE 2026-05-10, `1c793ef`):** budget store reads/writes via Postgres; DELETE + export endpoints; boot race fixed; validated in real Chrome (2 bugs fixed).
-6. **Build-D2c (NEXT — see below):** the non-budget stores that make auth + the app truly browser/laptop-independent.
+6. **Build-D2c (DONE 2026-05-10, `0e6160c`):** settings + auth/PINs + userProfile + audit log → Postgres; migration v3. Validated in real Chrome through the auth path. App now browser/laptop-agnostic. See below.
+7. **Cold-start error boundaries (DONE 2026-05-10, `dc5c734`):** App.tsx auth effect + AppDataContext.load() wrapped so a paused/unreachable DB shows a recovery screen instead of wedging on "Loading Iris…".
 
 ### Build-D2c — settings + userProfile + audit log → Postgres (the browser-agnostic finish)
 
@@ -160,9 +161,24 @@ After Teller verification, since Fidelity routing depends on what Teller covers.
 
 **Intentional non-goal:** the connection string itself stays in `localStorage` (per ADR-0002). "Browser-independent" = your *data* travels; you still paste the string once per browser. That one paste is by design, not a gap.
 
-**After D2c:** Foundation is functionally done — new laptop → paste connection string → log in → full budget experience. Then: connectors (Teller/OFX/Coinbase) for real auto-synced numbers (Foundation Session 4+, after the connector-collision decision above).
+**After D2c:** ✅ Foundation functionally done — new laptop → paste connection string → log in → full budget experience (validated in real Chrome 2026-05-10). Plus cold-start error boundaries (`dc5c734`). Next is connectors (Teller/OFX/Coinbase) for real auto-synced numbers — gated on the connector-collision decision below.
 
-**When it returns:** in progress 2026-05-10.
+**Status:** ✅ DONE 2026-05-10.
+
+### Connector-collision decision (RESOLVE before any Teller/OFX/Coinbase code)
+
+**Status:** Open — recommended approach proposed 2026-05-10, awaiting Scott's confirmation.
+
+**Problem:** 638 CSV-imported expenses are in Postgres. When a connector (Teller first) starts fetching, the same real-world transaction can land twice (different IDs) → budget totals double.
+
+**Recommended approach (proposed): tag-the-source + high-water-mark cutoff.**
+- Teller's history is shallow (~90 days); the CSV data is deeper. That **rules out reset-and-replay** (would lose older history Teller can't replace).
+- **Tag every expense with `source`** (`csv-import`, `teller-<institution>`, `coinbase`, …) — provenance needed regardless.
+- **On first connector sync for an account, only import transactions newer than the latest CSV transaction for that account** (high-water mark). No overlap window → no dupes, no data loss. CSV = historical record; connector = live going-forward.
+- Small fallback dedupe (date + amount + normalized payee) at the boundary date for the one-day seam.
+- Pure fuzzy-dedupe (Path A) rejected as primary: false-positives on legit same-day/same-amount transactions.
+
+**Once confirmed:** this becomes the spec the connector work (Foundation Session 4+) builds against.
 
 ## Phase 1.1 follow-ups (after Foundation + Features verified)
 

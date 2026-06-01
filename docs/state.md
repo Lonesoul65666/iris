@@ -1,7 +1,7 @@
 # Iris — Where We Are
 
 **Last reviewed:** 2026-05-10 (Build-D2c shipped — app is now browser/laptop-agnostic, validated in real Chrome)
-**Status:** Phase 0 foundation complete. Phase 1 mission widened (2026-05-02). **Storage migration to user-owned Postgres (ADR-0002) is functionally COMPLETE.** Foundation Build-B → D2c all shipped: middleware API + pool, schema runner + typed endpoints, income/expense + budget-config migration, budget store on Postgres, and now (Build-D2c) **settings + auth (PINs) + userProfile + audit log on Postgres**. Validated end-to-end in Scott's real Chrome: new-browser → paste connection string → log in → full identity + budget experience, all from Postgres. SimpleFIN removed. **Only IndexedDB residue left = Phase 2 investment stores** (holdings/equity/monthlyInvestments/snapshots/chat) — intentionally deferred, don't touch budget/auth. Next: cold-start `load()` error boundary (#3), then connectors (Teller/OFX/Coinbase) for real auto-synced numbers (Foundation Session 4+, after the connector-collision decision).
+**Status:** Phase 0 foundation complete. Phase 1 mission widened (2026-05-02). **Storage migration to user-owned Postgres (ADR-0002) is functionally COMPLETE.** Foundation Build-B → D2c all shipped: middleware API + pool, schema runner + typed endpoints, income/expense + budget-config migration, budget store on Postgres, and now (Build-D2c) **settings + auth (PINs) + userProfile + audit log on Postgres**. Validated end-to-end in Scott's real Chrome: new-browser → paste connection string → log in → full identity + budget experience, all from Postgres. SimpleFIN removed. **Only IndexedDB residue left = Phase 2 investment stores** (holdings/equity/monthlyInvestments/snapshots/chat) — intentionally deferred, don't touch budget/auth. Cold-start error boundaries shipped 2026-05-10 (`dc5c734`) — a paused/unreachable DB now shows a recovery screen, never wedges on "Loading Iris…". **Next: connectors (Teller/OFX/Coinbase) for real auto-synced numbers (Foundation Session 4+) — gated on the connector-collision decision (recommended approach proposed, awaiting Scott's confirm).**
 
 This doc is the single "where are we today" snapshot. It is overwritten every substantive session. It does NOT replace `north-star.md` (vision), `adr/0001-phase-1-scope.md` (scope), `phase-1-definition-of-done.md` (gates), or `post-phase-1-backlog.md` (deferrals). It pulls from all four into a single readable picture.
 
@@ -38,6 +38,8 @@ This doc is the single "where are we today" snapshot. It is overwritten every su
 
 **Most recent commits (most recent first):**
 ```
+dc5c734 fix(resilience): cold-start error boundaries (app can't wedge on "Loading Iris…")
+49c4903 docs: Build-D2c closeout — app is browser/laptop-agnostic
 0e6160c feat(foundation): Build-D2c — settings + userProfile + audit log → Postgres (browser-agnostic)
 5548e46 chore(connectors): remove deprecated SimpleFIN integration
 1c793ef feat(foundation): complete Build-D2b — budget store reads/writes via Postgres
@@ -94,6 +96,13 @@ These are the ideas we agreed are central. If a future session drifts from any o
 ## Recent shifts (drift detection log)
 
 Append-only log of meaningful vision/scope shifts. Each entry: date, what changed, why, and whether it's a logical enhancement or a drift.
+
+### 2026-05-10 — Cold-start error boundaries (resilience)
+
+- **Changed:** wrapped the two "Loading Iris…" wedge points (commit `dc5c734`). (1) `App.tsx` auth-resolution effect (first Postgres reads — `auth_users`/`active_user`) had no try/catch; a paused/unreachable DB left `needsLock=null` forever. Now caught → renders a recovery screen ("if Supabase was paused, restore it and reload — your data is safe" + Reload button). (2) `AppDataContext.load()` body wrapped in try/catch/finally; `finally` always clears `setLoading(false)` so a mid-load throw renders the app (with defaults) instead of hanging.
+- **Validated:** real Chrome, healthy Supabase — app loads clean, no regression. Error path is a textbook try/catch/finally + conditional render (not exercised live; would require breaking the DB).
+- **Observed (future polish, NOT done):** a freshly-woken (post-pause) Supabase is slow on first queries (~8s "Loading Iris…"). The boundary catches *failures*, not *slowness* — a "waking up your database…" hint after a few seconds would help. Logged, deferred.
+- **Enhancement or drift?** **Enhancement.** Pure resilience hardening; no scope change.
 
 ### 2026-05-10 — Build-D2c shipped: app is browser/laptop-agnostic (validated in real Chrome)
 
