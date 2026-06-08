@@ -179,3 +179,64 @@ export interface TellerAccount {
 export async function fetchAccounts(accessToken: string): Promise<TellerAccount[]> {
   return tellerRequest<TellerAccount[]>(accessToken, '/accounts')
 }
+
+export interface TellerTransaction {
+  id: string
+  account_id: string
+  date: string            // 'YYYY-MM-DD'
+  description: string
+  amount: string          // signed decimal string, e.g. '-12.34'
+  status: string          // 'posted' | 'pending'
+  type: string
+  details?: {
+    category?: string
+    counterparty?: { name?: string; type?: string }
+  }
+}
+
+/**
+ * One page of an account's transactions. Teller returns newest-first; pass
+ * `fromId` (the id of the last txn from the previous page) to page backward.
+ */
+export async function fetchTransactionsPage(
+  accessToken: string,
+  accountId: string,
+  opts: { count?: number; fromId?: string } = {},
+): Promise<TellerTransaction[]> {
+  const params = new URLSearchParams()
+  params.set('count', String(opts.count ?? 250))
+  if (opts.fromId) params.set('from_id', opts.fromId)
+  return tellerRequest<TellerTransaction[]>(accessToken, `/accounts/${accountId}/transactions?${params.toString()}`)
+}
+
+/**
+ * Page backward through an account's history, newest-first (bounded by maxPages
+ * so a deep account can't run away). Pass `sinceDate` ('YYYY-MM-DD') to stop
+ * early once pagination crosses that date — Teller has no server-side date
+ * filter and the dev tier is rate-limited, so this avoids fetching years we'll
+ * discard. Returned transactions are filtered to >= sinceDate when provided.
+ */
+export async function fetchAllTransactions(
+  accessToken: string,
+  accountId: string,
+  opts: { maxPages?: number; pageSize?: number; sinceDate?: string } = {},
+): Promise<{ transactions: TellerTransaction[]; pages: number; truncated: boolean }> {
+  const maxPages = opts.maxPages ?? 20
+  const pageSize = opts.pageSize ?? 250
+  const all: TellerTransaction[] = []
+  let fromId: string | undefined
+  let pages = 0
+  let crossedCutoff = false
+  for (; pages < maxPages; pages++) {
+    const page = await fetchTransactionsPage(accessToken, accountId, { count: pageSize, fromId })
+    if (page.length === 0) break
+    all.push(...page)
+    // Teller returns newest-first; if the oldest row on this page predates the
+    // cutoff, every further page is older still — stop.
+    if (opts.sinceDate && page[page.length - 1].date < opts.sinceDate) { crossedCutoff = true; pages++; break }
+    if (page.length < pageSize) { pages++; break }
+    fromId = page[page.length - 1].id
+  }
+  const transactions = opts.sinceDate ? all.filter((t) => t.date >= opts.sinceDate!) : all
+  return { transactions, pages, truncated: pages >= maxPages && !crossedCutoff }
+}
