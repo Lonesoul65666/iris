@@ -22,6 +22,7 @@ import { connect, getPool, hasPool, getLastMigrationResult } from './db-pool.ts'
 import { handleSettingsList, handleSettingsGet, handleSettingsSave, handleSettingsDelete } from './api-handlers/settings.ts'
 import { handleIncomeSourcesList, handleIncomeSourcesSave, handleIncomeSourcesSaveBatch, handleIncomeSourcesDelete } from './api-handlers/income-sources.ts'
 import { handleExpensesList, handleExpensesSave, handleExpensesDelete } from './api-handlers/expenses.ts'
+import { handleExpensesRecategorize } from './api-handlers/recategorize.ts'
 import { handleCollectionsList, handleCollectionsSave, handleCollectionsDelete } from './api-handlers/collections.ts'
 import { handleExportFull } from './api-handlers/export.ts'
 import { handleAuditList, handleAuditAppend, handleAuditDelete } from './api-handlers/audit.ts'
@@ -116,6 +117,7 @@ export function irisApi(): Plugin {
       server.middlewares.use('/api/expenses/list', wrap(handleExpensesList))
       server.middlewares.use('/api/expenses/save', wrap(handleExpensesSave))
       server.middlewares.use('/api/expenses/delete', wrap(handleExpensesDelete))
+      server.middlewares.use('/api/expenses/recategorize', wrap(handleExpensesRecategorize))
 
       server.middlewares.use('/api/export/full', wrap(handleExportFull))
 
