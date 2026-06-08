@@ -25,6 +25,7 @@ import { handleExpensesList, handleExpensesSave, handleExpensesDelete } from './
 import { handleCollectionsList, handleCollectionsSave, handleCollectionsDelete } from './api-handlers/collections.ts'
 import { handleExportFull } from './api-handlers/export.ts'
 import { handleAuditList, handleAuditAppend, handleAuditDelete } from './api-handlers/audit.ts'
+import { handleConnectorsList, handleConnectorsSave, handleConnectorsDelete } from './api-handlers/connectors.ts'
 
 type Req = IncomingMessage
 type Res = ServerResponse
@@ -120,6 +121,10 @@ export function irisApi(): Plugin {
       server.middlewares.use('/api/audit/list', wrap(handleAuditList))
       server.middlewares.use('/api/audit/append', wrap(handleAuditAppend))
       server.middlewares.use('/api/audit/delete', wrap(handleAuditDelete))
+
+      server.middlewares.use('/api/connectors/list', wrap(handleConnectorsList))
+      server.middlewares.use('/api/connectors/save', wrap(handleConnectorsSave))
+      server.middlewares.use('/api/connectors/delete', wrap(handleConnectorsDelete))
 
       // /api/collections/:name/{list,save} — single-name routing.
       // req.url after the '/api/collections' prefix looks like '/buckets/list'
