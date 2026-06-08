@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAppData, formatCurrency, clearChatHistory, clearAllAccounts, clearAllPortfolioData, clearAllBudgetData, clearAllActionData, clearAllExpenses, clearExpensesBySource, saveUserProfile, saveMonthlyInvestment, saveSetting, saveAccount } from '../context/AppDataContext';
 import { Icons } from '../components/ui/Icons';
 import DataBackup from '../components/Settings/DataBackup';
+import ConnectorsPanel from '../components/Settings/ConnectorsPanel';
 import NudgeManagementPanel from '../components/Settings/NudgeManagementPanel';
 import LLMBudgetPanel from '../components/Settings/LLMBudgetPanel';
 import HouseholdEarners from '../components/Settings/HouseholdEarners';
@@ -547,6 +548,9 @@ export default function SettingsView() {
             </button>
           </div>
         </div>
+
+        {/* Connectors (Build-T2) */}
+        <ConnectorsPanel />
 
         {/* Data Backup */}
         <DataBackup />
