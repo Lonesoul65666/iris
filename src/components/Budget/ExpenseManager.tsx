@@ -781,7 +781,7 @@ export default function ExpenseManager({ expenses, onExpensesChanged, geminiAvai
                       <th className="text-left p-3">Type</th>
                       <th className="text-left p-3">Category</th>
                       <th className="text-right p-3">Amount</th>
-                      <th className="text-center p-3">Tag</th>
+                      <th className="text-center p-3">Work?</th>
                       <th className="p-3 w-10"></th>
                     </tr>
                   </thead>
@@ -842,10 +842,11 @@ export default function ExpenseManager({ expenses, onExpensesChanged, geminiAvai
                                 await saveExpense(updated);
                                 onExpensesChanged();
                               }}
-                                className={`text-xs px-2 py-1 rounded-full transition-colors ${
-                                  e.isWorkExpense ? 'bg-warning/15 text-warning' : 'bg-white/5 text-text-muted hover:bg-white/10'
+                                title={e.isWorkExpense ? 'Work expense (reimbursable) — click to mark personal' : 'Mark as work expense (reimbursable)'}
+                                className={`text-xs px-2.5 py-1 rounded-full transition-colors whitespace-nowrap font-medium ${
+                                  e.isWorkExpense ? 'bg-warning/20 text-warning' : 'bg-white/5 text-text-muted hover:bg-warning/10 hover:text-warning'
                                 }`}>
-                                {e.isWorkExpense ? '💼' : '🏠'}
+                                {e.isWorkExpense ? '💼 Work' : '🏠 Personal'}
                               </button>
                             )}
                           </td>
