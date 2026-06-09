@@ -820,10 +820,15 @@ export default function ExpenseManager({ expenses, onExpensesChanged, geminiAvai
                                     ev.target.value = e.category; // reset visual
                                     return;
                                   }
-                                  const updated = { ...e, category: ev.target.value };
+                                  // Keep the work flag in sync with the category: picking
+                                  // "Work Expenses" (travel_work) IS marking it work, and
+                                  // picking anything else clears work. One concept.
+                                  const newCat = ev.target.value;
+                                  const nextWork = newCat === 'travel_work';
+                                  const updated = { ...e, category: newCat, isWorkExpense: nextWork, reimbursementStatus: nextWork ? 'pending' : (e.isWorkExpense ? 'not_reimbursable' : e.reimbursementStatus) };
                                   await saveExpense(updated);
                                   // Remember this category for future imports of same merchant
-                                  await saveMerchantMapping({ original: e.description, displayName: e.description, category: ev.target.value as ExpenseCategory, isWorkExpense: e.isWorkExpense });
+                                  await saveMerchantMapping({ original: e.description, displayName: e.description, category: newCat as ExpenseCategory, isWorkExpense: nextWork });
                                   onExpensesChanged();
                                 }}
                                 className="bg-transparent border border-transparent group-hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-secondary outline-none focus:border-accent/50">
@@ -838,15 +843,21 @@ export default function ExpenseManager({ expenses, onExpensesChanged, geminiAvai
                           <td className="p-3 text-center">
                             {txType === 'expense' && (
                               <button onClick={async () => {
-                                const updated: Expense = { ...e, isWorkExpense: !e.isWorkExpense, reimbursementStatus: !e.isWorkExpense ? 'pending' : 'not_reimbursable' };
+                                // Work flag and the "Work Expenses" category are ONE concept:
+                                // marking work moves it into travel_work (out of its old
+                                // category); unmarking restores a real category.
+                                const updated: Expense = isWorkExp(e)
+                                  ? { ...e, isWorkExpense: false, category: guessCategory(e.description), reimbursementStatus: 'not_reimbursable' }
+                                  : { ...e, isWorkExpense: true, category: 'travel_work', reimbursementStatus: 'pending' };
                                 await saveExpense(updated);
+                                await saveMerchantMapping({ original: e.description, displayName: e.description, category: updated.category as ExpenseCategory, isWorkExpense: updated.isWorkExpense });
                                 onExpensesChanged();
                               }}
-                                title={e.isWorkExpense ? 'Work expense (reimbursable) — click to mark personal' : 'Mark as work expense (reimbursable)'}
+                                title={isWorkExp(e) ? 'Work expense (reimbursable) — click to make personal' : 'Mark as work expense (reimbursable) — moves it to the Work Expenses category'}
                                 className={`text-xs px-2.5 py-1 rounded-full transition-colors whitespace-nowrap font-medium ${
-                                  e.isWorkExpense ? 'bg-warning/20 text-warning' : 'bg-white/5 text-text-muted hover:bg-warning/10 hover:text-warning'
+                                  isWorkExp(e) ? 'bg-warning/20 text-warning' : 'bg-white/5 text-text-muted hover:bg-warning/10 hover:text-warning'
                                 }`}>
-                                {e.isWorkExpense ? '💼 Work' : '🏠 Personal'}
+                                {isWorkExp(e) ? '💼 Work' : '🏠 Personal'}
                               </button>
                             )}
                           </td>
