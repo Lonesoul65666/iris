@@ -377,9 +377,8 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
       await client.query('COMMIT')
       written = toWrite.length
     } catch (err) {
-      await client.query('ROLLBACK')
+      try { await client.query('ROLLBACK') } catch { /* connection may be dead; finally still releases */ }
       sendJson(res, 500, { ok: false, error: 'write_failed', message: errorMessage(err), batch })
-      client.release()
       return
     } finally {
       client.release()

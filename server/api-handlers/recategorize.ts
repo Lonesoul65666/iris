@@ -87,9 +87,8 @@ export async function handleExpensesRecategorize(req: Req, res: Res): Promise<vo
       await client.query('COMMIT')
       written = updates.length
     } catch (err) {
-      await client.query('ROLLBACK')
+      try { await client.query('ROLLBACK') } catch { /* connection may be dead; finally still releases */ }
       sendJson(res, 500, { ok: false, error: 'write_failed', message: errorMessage(err) })
-      client.release()
       return
     } finally {
       client.release()

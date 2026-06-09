@@ -6,7 +6,8 @@ export interface MonthlySpending {
   month: string; // "2026-01", "2026-02", etc.
   monthLabel: string; // "Jan 2026", "Feb 2026", etc.
   byCategory: Record<string, number>;
-  totalExpenses: number;
+  totalExpenses: number;   // personal spend only — work expenses are excluded
+  totalWork: number;       // reimbursable work spend (flagged OR travel_work)
   totalIncome: number;
   totalTransfers: number;
   totalInvestments: number;
@@ -52,6 +53,7 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
         monthLabel: getMonthLabel(key),
         byCategory: {},
         totalExpenses: 0,
+        totalWork: 0,
         totalIncome: 0,
         totalTransfers: 0,
         totalInvestments: 0,
@@ -69,15 +71,19 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
     if (flow === 'inflow') { m.totalIncome += e.amount; continue; }
     if (txType === 'refund') { m.totalExpenses -= e.amount; continue; }
 
-    // travel_work is reimbursable — track per-category for visibility but
-    // don't roll into totalExpenses, since it would inflate "monthly spend"
-    // with money that comes back in as reimbursement income.
-    if (e.category === 'travel_work') {
+    // Work expenses (manually flagged OR the travel_work category) are
+    // reimbursable — pull them OUT of totalExpenses so they don't inflate
+    // "monthly spend" with money that comes back as reimbursement income.
+    // Tracked separately (totalWork + byCategory['travel_work']) for the
+    // Work Expenses & Reimbursements view. Flag wins over category, so a work
+    // dinner (category food_dining, isWorkExpense=true) leaves food_dining too.
+    if (e.isWorkExpense || e.category === 'travel_work') {
+      m.totalWork += e.amount;
       m.byCategory['travel_work'] = (m.byCategory['travel_work'] || 0) + e.amount;
       continue;
     }
 
-    // Real expense
+    // Real (personal) expense
     m.totalExpenses += e.amount;
     const cat = e.category || 'other';
     m.byCategory[cat] = (m.byCategory[cat] || 0) + e.amount;
