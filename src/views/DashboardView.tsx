@@ -85,7 +85,9 @@ export default function DashboardView() {
   const spendingByCategory = useMemo(() => {
     if (!dashBuckets) return [];
     return dashBuckets
-      .filter((b: { monthlyActual: number; category?: string }) => b.monthlyActual > 0 && b.category !== 'investing')
+      // Exclude investing (synced separately) AND travel_work (reimbursable work
+      // spend — it's tracked in the Work Expenses card, not personal spend).
+      .filter((b: { monthlyActual: number; category?: string }) => b.monthlyActual > 0 && b.category !== 'investing' && b.category !== 'travel_work')
       .sort((a: { monthlyActual: number }, b: { monthlyActual: number }) => b.monthlyActual - a.monthlyActual)
       .slice(0, 6)
       .map((b: { label: string; monthlyActual: number; monthlyBudget: number; icon?: string }) => ({
