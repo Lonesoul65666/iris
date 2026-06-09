@@ -66,7 +66,7 @@ export function classifyBankTransaction(
 
   if (d.includes('venmo')) return { flow: 'outflow', type: 'expense', category: 'personal' };
   if (d.includes('zelle payment to')) return { flow: 'outflow', type: 'expense', category: 'other' };
-  if (d.includes('withdrwl') || d.includes('withdrawal')) return { flow: 'outflow', type: 'expense', category: 'other' };
+  if (d.includes('withdrwl') || d.includes('withdrawal')) return { flow: 'outflow', type: 'expense', category: 'personal' }; // ATM/cash → personal (was 'other')
 
   if (d.includes('residence inn') || d.includes('marriott') || d.includes('hilton') || d.includes('hyatt') || d.includes('hotel')) {
     const isInternational = d.includes('dubai') || d.includes('abu dhabi') || d.includes('doha') || d.includes('london');
@@ -152,8 +152,9 @@ export function guessCategory(desc: string): ExpenseCategory {
 
   if (d.includes('american00') || d.includes('southwes5') || d.includes('united00') || d.includes('delta00') || d.includes('american airlines')) return 'travel_work';
 
-  if (d.includes('marriott') || d.includes('hilton') || d.includes('hyatt') || d.includes('hotel') || d.includes('residence inn') || d.includes('towneplace') || d.includes('clift royal') || d.includes('courtyard') || d.includes('aloft ') || d.includes('kona village') || d.includes('mandalay') || d.includes('admirals club') || d.includes('panasonic avionics')) return 'travel_work';
-  if (d.includes('w yas island') || d.includes('wyas island') || d.includes('element by westin') || d.includes('hotelcom') || d.includes('alwathba') || d.includes('royal atlantis')) return 'travel_personal';
+  if (d.includes('marriott') || d.includes('hilton') || d.includes('hyatt') || d.includes('hotel') || d.includes('residence inn') || d.includes('towneplace') || d.includes('clift royal') || d.includes('courtyard') || d.includes('aloft ') || d.includes('mandalay') || d.includes('admirals club') || d.includes('panasonic avionics')) return 'travel_work';
+  // Hawaii = the family vacation (Kona/Kailua) — personal, NOT work. (Fixes the Kona Village mislabel.)
+  if (d.includes('w yas island') || d.includes('wyas island') || d.includes('element by westin') || d.includes('hotelcom') || d.includes('alwathba') || d.includes('royal atlantis') || d.includes('kona') || d.includes('kailua') || d.includes('kealakekua')) return 'travel_personal';
   if (d.includes('fll trip advisor') || d.includes('shorepoints') || d.includes('ba inflight') || d.includes('qdf sn boutiques')) return 'travel_work';
 
   if (d.includes('dicks sporting') || d.includes('academy sport')) return 'kids';
@@ -165,6 +166,77 @@ export function guessCategory(desc: string): ExpenseCategory {
   if (d.includes('teamlab') || d.includes('castore') || d.includes('dubai') || d.includes('abu dhabi') || d.includes('tawasul') || d.includes('dulsco') || d.includes('muhammad afzal')) return 'travel_personal';
 
   if (d.includes('tx birth death') || d.includes('texas.gov')) return 'other';
+
+  // ── 2026-06-08 pass: merchants that were falling through to 'other' ──
+  // Taxes
+  if (d.includes('us treasury') || d.includes('treasury pmnt') || d.includes('treasury serv')) return 'taxes';
+  // Insurance
+  if (d.includes('liberty mutual')) return 'insurance';
+  // Phone / utilities
+  if (d.includes('vz wireless') || d.includes('vzw webpay') || d.includes('vzw ')) return 'utilities';
+  // Healthcare — clinics, docs, dental, OBGYN
+  if (d.includes('brennan md') || d.includes(' md ') || d.includes('nextcare') || d.includes('urgentcare') || d.includes('urgent care') || d.includes('obgyn') || d.includes('preschool smiles') || d.includes('dental') || d.includes('orthodont')) return 'healthcare';
+  // Pool & home services
+  if (d.includes('pool') || d.includes("leslie's") || d.includes('emerald pool')) return 'home_maintenance';
+  // Auto service / dealership / state inspection
+  if (d.includes('cadillac') || d.includes('acura') || d.includes('sewell') || d.includes('hiley') || d.includes('state inspecti')) return 'car_maintenance';
+  // Gas / convenience fuel
+  if (d.includes('conoco') || d.includes('kwik stop') || /\bqt \d/.test(d)) return 'transportation';
+  // Hotels / airlines / airport / rental not caught above
+  if (d.includes('sheraton') || d.includes('motel') || d.includes('westin') || d.includes('sonesta') || d.includes('mbay front desk') || d.includes('front desk')) return 'travel_work';
+  if (d.includes('etihad') || d.includes('avis') || d.includes('airport') || d.includes('admirals') || d.includes('aa wifi') || d.includes('crowns lax') || d.includes('lax airp') || d.includes('dnc boise') || d.includes('msp hudson') || d.includes('ampersand air') || d.includes('cvg gaslight') || d.includes('phx 12 news')) return 'travel_work';
+  // Salons / nails / tanning / personal care
+  if (d.includes('nail') || d.includes('salon') || d.includes('palm beach tan') || d.includes('beachwaver')) return 'personal';
+  // Clothing / dept stores
+  if (d.includes('ross stores') || d.includes('nordstrom') || d.includes('printerval')) return 'clothing';
+  // Kids / games / hobby / school
+  if (d.includes('urban air') || d.includes('dallascardshow') || d.includes('lazarus games') || d.includes('yearbook') || d.includes('nintendo') || d.includes('school picture') || d.includes('crystal orbs')) return 'kids';
+  // Entertainment / outings
+  if (d.includes('concert merch') || d.includes('tcu concession') || d.includes('choctaw') || d.includes('durant resort')) return 'entertainment';
+  // Crafts / outdoors retail
+  if (d.includes('hobby lobby') || d.includes('bass pro')) return 'personal';
+  // Smoke shop
+  if (d.includes('smoke shop')) return 'personal';
+  // Restaurants / bars that slipped through (Toast 'TST*' POS catches many)
+  if (
+    d.includes('tst*') || d.includes('tst ') || d.includes('resort food') || d.includes('steakho') ||
+    d.includes('brunch') || d.includes('hibachi') || d.includes('razzoo') || d.includes('sickies') ||
+    d.includes('pei wei') || d.includes('mooyah') || d.includes('kekes') || d.includes("domino") ||
+    d.includes('irish pub') || d.includes("friday's") || d.includes('waffle house') || d.includes('us egg') ||
+    d.includes('truck yard') || d.includes("jason's deli") || d.includes('taste of louisiana') ||
+    d.includes('great american cookies') || d.includes('sushi') || d.includes('two rows') ||
+    d.includes('hyderabad') || d.includes('freddys') || d.includes('son of a butcher') || d.includes('hg sply') ||
+    d.includes('bennett groc') || d.includes('firehouse subs') || d.includes('jack in the box') ||
+    d.includes('donut') || d.includes('mooyah') || d.includes('jason') || d.includes('pho ') ||
+    d.includes('grill') || d.includes('kitchen') || d.includes('eatery') || d.includes('bistro')
+  ) return 'food_dining';
+
+  // Misc app subscriptions
+  if (d.includes('anygo') || d.includes('google *any')) return 'subscriptions';
+  // Credit-card interest → debt
+  if (d.includes('interest charge')) return 'debt';
+  // Broader subscriptions (Microsoft variants, Prime Video)
+  if (d.includes('microsoft*') || d.includes('msbill.info') || d.includes('prime video')) return 'subscriptions';
+  // More groceries
+  if (d.includes('albertsons') || d.includes('pavilions') || d.includes('pavillions') || d.includes('sprouts') || d.includes('trader joe')) return 'food_groceries';
+  // More gas / transit
+  if (d.includes('circlek') || d.includes('circle k') || d.includes('dart go pass') || d.includes('valero') || d.includes('murphy')) return 'transportation';
+  // In-flight wifi → travel
+  if (d.includes('inflight') || d.includes('wifionboard') || d.includes('wifi onboard')) return 'travel_work';
+  // More dining
+  if (d.includes('dairy queen') || d.includes("captain d") || d.includes('slappys') || d.includes('dunkin') || d.includes('subway')) return 'food_dining';
+  // Games / kids
+  if (d.includes('gamestop')) return 'kids';
+  // Car wash
+  if (d.includes('cleansmart') || d.includes('car wash')) return 'car_maintenance';
+  // Personal care / beauty
+  if (d.includes('brows') || d.includes('threading') || d.includes('spoiledchild') || d.includes('lash ')) return 'personal';
+  // Online marketplaces (mixed retail, like Amazon) → personal
+  if (d.includes('temu') || d.includes('shein') || d.includes('aliexpress')) return 'personal';
+  // Hotels (Marriott brands)
+  if (d.includes('renaissance')) return 'travel_work';
+  // Government service fees stay 'other'
+  if (d.includes('tx.gov') || d.includes('txdps') || d.includes('servicefee')) return 'other';
 
   return 'other';
 }
