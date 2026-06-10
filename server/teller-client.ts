@@ -180,6 +180,21 @@ export async function fetchAccounts(accessToken: string): Promise<TellerAccount[
   return tellerRequest<TellerAccount[]>(accessToken, '/accounts')
 }
 
+export interface TellerBalance {
+  account_id: string
+  available: string | null   // signed decimal string
+  ledger: string | null      // signed decimal string
+}
+
+/**
+ * Fetch an account's balances (/accounts/:id/balances). Teller returns
+ * `available` and `ledger` as decimal strings. For depository accounts these
+ * are the cash balance; for credit cards `ledger` is the current balance owed.
+ */
+export async function fetchAccountBalance(accessToken: string, accountId: string): Promise<TellerBalance> {
+  return tellerRequest<TellerBalance>(accessToken, `/accounts/${accountId}/balances`)
+}
+
 export interface TellerTransaction {
   id: string
   account_id: string
