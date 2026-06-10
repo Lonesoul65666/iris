@@ -4,12 +4,13 @@ import tailwindcss from '@tailwindcss/vite'
 import { irisApi } from './server/api-plugin.ts'
 
 export default defineConfig(({ mode }) => {
-  // Server-side secrets (Teller mTLS cert paths) live in .env.local without a
-  // VITE_ prefix, so Vite won't expose them to the client. loadEnv with ''
-  // reads ALL keys; we copy only the TELLER_* ones onto process.env so the
-  // API middleware (Node side) can read them. They never reach the browser.
+  // Server-side config in .env.local has no VITE_ prefix, so Vite won't expose
+  // it to the client bundle. loadEnv with '' reads ALL keys; we copy the Node-
+  // side ones onto process.env so the API middleware can read them. DATABASE_URL
+  // lets the plugin auto-connect at boot (de-browser path — no localStorage
+  // paste needed); TELLER_* are the mTLS cert paths + environment.
   const env = loadEnv(mode, process.cwd(), '')
-  for (const key of ['TELLER_CERT_PATH', 'TELLER_KEY_PATH', 'TELLER_ENV']) {
+  for (const key of ['DATABASE_URL', 'IRIS_DATABASE_URL', 'TELLER_CERT_PATH', 'TELLER_KEY_PATH', 'TELLER_ENV']) {
     if (env[key]) process.env[key] = env[key]
   }
 
@@ -17,7 +18,7 @@ export default defineConfig(({ mode }) => {
   plugins: [irisApi(), react(), tailwindcss()],
   server: {
     port: 5173,
-    open: true,
+    open: false,
     proxy: {
       '/api/yf': {
         target: 'https://query1.finance.yahoo.com',

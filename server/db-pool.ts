@@ -8,6 +8,8 @@
 // max: 5 keeps us inside Supabase free-tier connection limits.
 
 import pg from 'pg'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { runMigrations, type MigrationResult } from './schema/runner.ts'
 const { Pool } = pg
 type PgPool = InstanceType<typeof pg.Pool>
@@ -67,6 +69,42 @@ export async function connect(connectionString: string): Promise<void> {
 
   pool = next
   activeConnectionString = connectionString
+}
+
+/**
+ * Auto-connect from a server-side env var instead of a browser localStorage
+ * paste. Reads DATABASE_URL (fallback IRIS_DATABASE_URL). This is the de-browser
+ * path: the standalone server and the Vite dev plugin both call this at startup
+ * so config lives in `.env.local`, not the browser. No-op (returns false) when
+ * the var is unset — callers then fall back to the client POST /api/connect flow.
+ */
+export async function autoConnectFromEnv(): Promise<boolean> {
+  const cs = process.env.DATABASE_URL ?? process.env.IRIS_DATABASE_URL
+  if (!cs) return false
+  await connect(cs)
+  return true
+}
+
+/**
+ * Persist the currently-connected connection string to `.env.local` as
+ * DATABASE_URL, so the standalone server (and the dev plugin) can auto-connect
+ * without a browser localStorage paste. The secret moves from server memory to
+ * a gitignored file — it never returns to the client. Idempotent: replaces an
+ * existing DATABASE_URL line or appends one. Returns false if nothing connected.
+ */
+export function persistConnectionStringToEnvLocal(): { wrote: boolean; reason?: string } {
+  if (!activeConnectionString) return { wrote: false, reason: 'no_active_connection' }
+  const envPath = resolve(process.cwd(), '.env.local')
+  let content = ''
+  try { content = readFileSync(envPath, 'utf8') } catch { /* file may not exist yet */ }
+  const line = `DATABASE_URL=${activeConnectionString}`
+  if (/^DATABASE_URL=.*$/m.test(content)) {
+    content = content.replace(/^DATABASE_URL=.*$/m, line)
+  } else {
+    content = (content.replace(/\s*$/, '') + `\n${line}\n`).replace(/^\n/, '')
+  }
+  writeFileSync(envPath, content, 'utf8')
+  return { wrote: true }
 }
 
 export async function closePool(): Promise<void> {
