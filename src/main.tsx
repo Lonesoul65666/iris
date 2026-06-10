@@ -5,12 +5,17 @@ import App from './App.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import { bootstrapDbConnection } from './lib/db-client.ts'
 import { migrateIndexedDbToPostgres } from './lib/migrate-indexeddb-to-postgres.ts'
+import { migrateBrowserStoresToPostgres } from './lib/migrate-browser-stores.ts'
 
-// Build-D1: expose the IndexedDB->Postgres migration on window so it can be
-// triggered manually from DevTools console. Not auto-invoked — running it is
-// a deliberate user action.
+// Expose the IndexedDB->Postgres migrations on window so they can be triggered
+// manually from DevTools console. Not auto-invoked — running them is a
+// deliberate user action.
+//   __irisMigrate       — Build-D1: budget/income/expenses (one-shot, done)
+//   __irisMigrateStores — 2026-06-10: portfolio + action stores (de-browser)
 ;(window as unknown as { __irisMigrate?: typeof migrateIndexedDbToPostgres }).__irisMigrate =
   migrateIndexedDbToPostgres
+;(window as unknown as { __irisMigrateStores?: typeof migrateBrowserStoresToPostgres }).__irisMigrateStores =
+  migrateBrowserStoresToPostgres
 
 const rootEl = document.getElementById('root')!
 

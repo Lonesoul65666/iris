@@ -1,4 +1,4 @@
-import { openDB, type IDBPDatabase } from 'idb';
+import { listCollection, saveCollection, saveCollectionItem, clearCollection } from '../lib/collectionsClient';
 import type { ActionItem } from '../components/ActionItems/ActionItems';
 import { defaultActionItems } from '../components/ActionItems/ActionItems';
 import { getAllAccounts, saveAccount, getEquityProfile, saveEquityProfile } from './portfolioStore';
@@ -20,59 +20,39 @@ import {
 } from '../utils/actionExecutor';
 import type { InputField } from '../types/actions';
 
-let dbInstance: IDBPDatabase<any> | null = null;
-
-async function getActionDB() {
-  if (dbInstance) return dbInstance;
-  dbInstance = await openDB('iris-actions', 1, {
-    upgrade(db) {
-      db.createObjectStore('items', { keyPath: 'id' });
-      db.createObjectStore('merchantMappings', { keyPath: 'original' });
-    },
-  });
-  return dbInstance;
-}
-
-// ─── Action Items CRUD ───
+// ─── Action Items CRUD (Postgres `collections`, de-browser migration 2026-06-10) ───
+//
+// items -> collection 'actionItems' (key=id); merchant mappings -> collection
+// 'merchantMappings' (key=original). Browser-independent now. Signatures
+// unchanged so the consumers (ActionItems UI, AppDataContext) are untouched.
 
 export async function getActionItems(): Promise<ActionItem[]> {
-  const db = await getActionDB();
-  const items = await db.getAll('items');
+  const items = await listCollection<ActionItem>('actionItems');
   if (items.length === 0) {
-    // Initialize with defaults
-    for (const item of defaultActionItems) await db.put('items', item);
+    // First run / new account: seed the shared defaults into Postgres once.
+    await saveCollection('actionItems', defaultActionItems, (i) => i.id);
     return [...defaultActionItems];
   }
   return items;
 }
 
 export async function saveActionItem(item: ActionItem): Promise<void> {
-  const db = await getActionDB();
-  await db.put('items', item);
+  await saveCollectionItem('actionItems', item, (i) => i.id);
 }
 
 export async function saveAllActionItems(items: ActionItem[]): Promise<void> {
-  const db = await getActionDB();
-  const tx = db.transaction('items', 'readwrite');
-  for (const item of items) await tx.store.put(item);
-  await tx.done;
+  await saveCollection('actionItems', items, (i) => i.id);
 }
 
 export async function clearAllActionData(): Promise<void> {
-  const db = await getActionDB();
-  const tx1 = db.transaction('items', 'readwrite');
-  await tx1.store.clear();
-  await tx1.done;
-  const tx2 = db.transaction('merchantMappings', 'readwrite');
-  await tx2.store.clear();
-  await tx2.done;
+  await clearCollection('actionItems');
+  await clearCollection('merchantMappings');
 }
 
+// Retained as a no-op (Postgres-backed; no IndexedDB handle to close). Kept for
+// sampleData.clearAllUserData(), which still scrubs residual iris-* IDB.
 export function closeActionDB(): void {
-  if (dbInstance) {
-    dbInstance.close();
-    dbInstance = null;
-  }
+  /* no-op */
 }
 
 // ─── Merchant Name Mappings ───
@@ -85,13 +65,11 @@ export interface MerchantMapping {
 }
 
 export async function getMerchantMappings(): Promise<MerchantMapping[]> {
-  const db = await getActionDB();
-  return db.getAll('merchantMappings');
+  return listCollection<MerchantMapping>('merchantMappings');
 }
 
 export async function saveMerchantMapping(mapping: MerchantMapping): Promise<void> {
-  const db = await getActionDB();
-  await db.put('merchantMappings', mapping);
+  await saveCollectionItem('merchantMappings', mapping, (m) => m.original);
 }
 
 // ─── Action Execution Engine ───
