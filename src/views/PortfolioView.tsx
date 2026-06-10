@@ -1168,6 +1168,7 @@ function AddAccountButton({ accounts, setAccounts }: {
   const [name, setName] = useState('');
   const [institution, setInstitution] = useState('');
   const [type, setType] = useState<AccountType>('bank');
+  const [value, setValue] = useState('');
 
   const handleAdd = async () => {
     const n = name.trim();
@@ -1175,13 +1176,36 @@ function AddAccountButton({ accounts, setAccounts }: {
     if (!n || !inst) return;
     const today = new Date().toISOString().split('T')[0];
     const slug = inst.toLowerCase().replace(/\s+/g, '-');
+    const id = `${slug}-${type}-${Date.now()}`;
+    // Optional "current value" → a single balance holding so net worth is right
+    // immediately (saveAccount recomputes totalValue FROM holdings, so an empty
+    // holdings array would zero it out). Detailed ticker-level holdings can be
+    // added later via the account's holdings table; a CSV/Coinbase import will
+    // replace this placeholder with real positions.
+    const val = parseFloat(value) || 0;
+    const assetClass = type === 'crypto' ? 'crypto' : type === 'bank' ? 'cash' : 'mutual_fund';
+    const holdings = val > 0 ? [{
+      id: `${id}-bal`,
+      accountId: id,
+      ticker: 'BAL',
+      name: 'Balance (manual)',
+      assetClass: assetClass as 'crypto' | 'cash' | 'mutual_fund',
+      shares: val,
+      avgCostBasis: 1,
+      currentPrice: 1,
+      currentValue: val,
+      totalGainLoss: 0,
+      totalGainLossPercent: 0,
+      status: 'active' as const,
+      lastUpdated: today,
+    }] : [];
     const newAccount: Account = {
-      id: `${slug}-${type}-${Date.now()}`,
+      id,
       name: n,
       institution: inst,
       type,
-      holdings: [],
-      totalValue: 0,
+      holdings,
+      totalValue: val,
       lastUpdated: today,
       status: 'active',
     };
@@ -1193,6 +1217,7 @@ function AddAccountButton({ accounts, setAccounts }: {
     setName('');
     setInstitution('');
     setType('bank');
+    setValue('');
   };
 
   if (!open) {
@@ -1230,6 +1255,11 @@ function AddAccountButton({ accounts, setAccounts }: {
             </button>
           ))}
         </div>
+      </div>
+      <div>
+        <label className="text-[10px] text-text-muted uppercase tracking-wider block mb-1">Current Value <span className="text-text-muted/60 normal-case">(optional — enter a balance to skip ticker-level entry)</span></label>
+        <input type="number" step="any" inputMode="decimal" placeholder="e.g. 66842" value={value} onChange={e => setValue(e.target.value)}
+          className="w-full bg-surface-2 border border-glass-border rounded-lg px-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted/50 outline-none focus:border-accent/50" />
       </div>
       <div className="flex gap-2">
         <button onClick={handleAdd} disabled={!name.trim() || !institution.trim()}
