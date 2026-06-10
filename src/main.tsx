@@ -6,6 +6,7 @@ import ErrorBoundary from './components/ErrorBoundary.tsx'
 import { bootstrapDbConnection } from './lib/db-client.ts'
 import { migrateIndexedDbToPostgres } from './lib/migrate-indexeddb-to-postgres.ts'
 import { migrateBrowserStoresToPostgres } from './lib/migrate-browser-stores.ts'
+import { syncTellerBalances } from './lib/syncTellerBalances.ts'
 
 // Expose the IndexedDB->Postgres migrations on window so they can be triggered
 // manually from DevTools console. Not auto-invoked — running them is a
@@ -16,6 +17,8 @@ import { migrateBrowserStoresToPostgres } from './lib/migrate-browser-stores.ts'
   migrateIndexedDbToPostgres
 ;(window as unknown as { __irisMigrateStores?: typeof migrateBrowserStoresToPostgres }).__irisMigrateStores =
   migrateBrowserStoresToPostgres
+;(window as unknown as { __irisSyncBalances?: typeof syncTellerBalances }).__irisSyncBalances =
+  syncTellerBalances
 
 const rootEl = document.getElementById('root')!
 

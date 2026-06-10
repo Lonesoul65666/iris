@@ -9,6 +9,7 @@
 // T1 (server-side mTLS + transaction fetch) will read from these rows next.
 
 import { useEffect, useState, useCallback } from 'react'
+import { syncTellerBalances } from '../../lib/syncTellerBalances'
 
 // Public Teller Application ID — fine to live in source per Teller docs.
 const TELLER_APPLICATION_ID = 'app_prt5j01vo1ij37cq5i000'
@@ -185,6 +186,24 @@ export default function ConnectorsPanel() {
     }
   }, [refresh])
 
+  const syncBalances = useCallback(async () => {
+    setStatus(null)
+    setBusy(true)
+    try {
+      const r = await syncTellerBalances()
+      const cash = r.assetsSynced.reduce((s, a) => s + a.balance, 0)
+      const fmt = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+      const liab = r.liabilities.length
+        ? ' · cards owed: ' + r.liabilities.map((l) => `${l.source} ${fmt(l.balanceOwed)}`).join(', ')
+        : ''
+      setStatus(`Synced ${r.assetsSynced.length} cash account(s) — ${fmt(cash)}${liab}. Reload to update net worth.`)
+    } catch (e) {
+      setStatus(`Balance sync failed: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
   const disconnect = useCallback(async (id: string, institution: string) => {
     if (!confirm(`Disconnect ${institution}? The access token will be deleted. You'll need to re-enroll to sync transactions again.`)) return
     try {
@@ -215,6 +234,14 @@ export default function ConnectorsPanel() {
           className="px-4 py-2 bg-accent hover:bg-accent-dim rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50"
         >
           {busy ? 'Opening Teller…' : 'Connect a bank (Teller)'}
+        </button>
+        <button
+          onClick={() => void syncBalances()}
+          disabled={busy || items.length === 0}
+          className="px-4 py-2 bg-surface-3 hover:bg-surface-4 rounded-lg text-sm font-medium text-text-secondary transition-colors disabled:opacity-50"
+          title="Pull current cash balances from connected banks into your portfolio"
+        >
+          {busy ? 'Syncing…' : 'Sync bank balances'}
         </button>
         <button
           onClick={() => void refresh()}

@@ -9,8 +9,8 @@
 // collected (not fatal) so one revoked enrollment doesn't blank the whole list.
 
 import { sendJson, requireContext, methodNotAllowed, errorMessage, type Req, type Res } from './http-utils.ts'
-import { fetchAccounts, fetchAllTransactions, tellerConfigStatus, TellerApiError, type TellerAccount } from '../teller-client.ts'
-import { tellerTxnToExpense, classifyTellerTxn, type MappedExpense, type SkipReason } from '../teller-map.ts'
+import { fetchAccounts, fetchAccountBalance, fetchAllTransactions, tellerConfigStatus, TellerApiError, type TellerAccount } from '../teller-client.ts'
+import { tellerTxnToExpense, classifyTellerTxn, mapAccountSource, type MappedExpense, type SkipReason } from '../teller-map.ts'
 
 export async function handleTellerStatus(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
@@ -86,6 +86,97 @@ export async function handleTellerAccounts(req: Req, res: Res): Promise<void> {
   }
 
   sendJson(res, 200, { ok: true, accounts, errors })
+}
+
+interface BalanceRow {
+  accountId: string
+  source: string
+  name: string
+  institution: string
+  type: string
+  subtype: string
+  lastFour: string
+  currency: string
+  ledger: number | null
+  available: number | null
+  /** asset = depository (cash); liability = credit card (balance owed) */
+  kind: 'asset' | 'liability'
+}
+
+/**
+ * READ-ONLY account balances across all connected Teller accounts.
+ *   GET /api/teller/balances
+ * Returns one row per account with its ledger/available balance, mapped to the
+ * Iris source taxonomy (credit_card_1, bofa_checking, …) so the client can build
+ * cash accounts AND confirm every "pool" is reporting. Frugal: one /accounts
+ * call per connector + one /balances call per account. No writes.
+ */
+export async function handleTellerBalances(req: Req, res: Res): Promise<void> {
+  if (req.method !== 'GET') return methodNotAllowed(res)
+  const ctx = requireContext(res)
+  if (!ctx) return
+
+  const cfg = tellerConfigStatus()
+  if (!cfg.configured || !cfg.certReadable || !cfg.keyReadable) {
+    sendJson(res, 503, { ok: false, error: 'teller_not_configured', status: cfg })
+    return
+  }
+
+  let rows: ConnectorTokenRow[]
+  try {
+    const r = await ctx.pool.query<ConnectorTokenRow>(
+      `SELECT id, institution, access_token, provider_enrollment_id
+         FROM connectors
+        WHERE user_id = $1 AND provider = 'teller' AND status = 'active'
+        ORDER BY created_at DESC`,
+      [ctx.userId],
+    )
+    rows = r.rows
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) })
+    return
+  }
+
+  const balances: BalanceRow[] = []
+  const errors: ConnectorFetchError[] = []
+
+  for (const row of rows) {
+    try {
+      const accs = await fetchAccounts(row.access_token)
+      for (const a of accs) {
+        let ledger: number | null = null
+        let available: number | null = null
+        try {
+          const bal = await fetchAccountBalance(row.access_token, a.id)
+          ledger = bal.ledger !== null ? Number(bal.ledger) : null
+          available = bal.available !== null ? Number(bal.available) : null
+        } catch {
+          /* leave nulls — account still listed so the pool is visible */
+        }
+        balances.push({
+          accountId: a.id,
+          source: mapAccountSource(a),
+          name: a.name,
+          institution: a.institution?.name ?? row.institution,
+          type: a.type,
+          subtype: a.subtype,
+          lastFour: a.last_four,
+          currency: a.currency,
+          ledger,
+          available,
+          kind: a.subtype === 'credit_card' ? 'liability' : 'asset',
+        })
+      }
+    } catch (err) {
+      if (err instanceof TellerApiError) {
+        errors.push({ connectorId: row.id, institution: row.institution, status: err.status, code: err.code, message: err.message })
+      } else {
+        errors.push({ connectorId: row.id, institution: row.institution, status: null, code: 'request_failed', message: errorMessage(err) })
+      }
+    }
+  }
+
+  sendJson(res, 200, { ok: true, balances, errors })
 }
 
 /**
