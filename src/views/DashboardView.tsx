@@ -7,6 +7,8 @@ import { useAppData, formatCurrency } from '../context/AppDataContext';
 import { useHasRealData } from '../hooks/useHasRealData';
 import { useEnabledModules } from '../hooks/useEnabledModules';
 import SetupChecklist, { isDefaultPortfolio } from '../components/Dashboard/SetupChecklist';
+import AccountBreakdown from '../components/Dashboard/AccountBreakdown';
+import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -361,6 +363,9 @@ export default function DashboardView() {
         </DataCard>
       )}
 
+      {/* ════ SPEND BY ACCOUNT ══════════════════════════════════════════ */}
+      <AccountBreakdown />
+
       {/* ════ RECENT ACTIVITY + EQUITY/WEALTH STACK ═════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {recentTx.length > 0 && (
@@ -574,27 +579,4 @@ function CashFlowSegment({ color, label, value, positive, negative, solid }: { c
       <div className={`text-lg font-bold tabular-nums ${valueClass}`}>{formatCurrency(Math.abs(value))}</div>
     </div>
   );
-}
-
-// ─── Tiny helpers for the activity feed ─────────────────────────────────
-
-function categoryEmoji(cat?: string): string {
-  if (!cat) return '🧾';
-  const map: Record<string, string> = {
-    food_groceries: '🛒', food_dining: '🍽️', housing: '🏠', utilities: '💡',
-    transportation: '🚗', entertainment: '🎬', subscriptions: '📺', shopping: '🛍️',
-    travel_work: '✈️', travel_personal: '🏖️', amazon: '📦', kids: '👶',
-    health: '⚕️', insurance: '🛡️', investing: '📈', other: '🧾',
-  };
-  return map[cat] || '🧾';
-}
-
-function formatRelDate(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
