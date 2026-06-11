@@ -19,6 +19,7 @@ import { setupLLMRouter, getRouter, hasRouter } from '../services/llm';
 import type { LLMRoutingPreference } from '../types/llm';
 import { refreshAllPrices, applyPricesToAccounts } from '../services/marketDataApi';
 import { defaultPaycheck, defaultBudgetBuckets, defaultSinkingFunds, defaultFunMoney, calculateBudgetSummary } from '../stores/budgetDefaults';
+import { isOverBudget } from '../utils/budgetLanes';
 import type { ActionItem } from '../components/ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, clearAllActionData } from '../stores/actionStore';
 import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getPaycheck, getExpenses, getCustomCategories, clearAllExpenses, clearExpensesBySource, clearAllBudgetData } from '../stores/budgetStore';
@@ -504,7 +505,9 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
   const overallScore = calculateOverallScore(healthMetrics);
   const retirement = profile ? getRetirementProjection(totalLiquid + equityValue, profile.monthlyInvestment, profile.retirementAge - profile.age) : null;
   const budgetSummary = calculateBudgetSummary(dashBuckets, dashPaycheck, monthlyInv?.amount);
-  const budgetOverBudget = dashBuckets.filter(b => b.monthlyActual > b.monthlyBudget && b.monthlyBudget > 0);
+  // Lane-aware "over": reserves never count (lumpy), fixed bills only past their
+  // tolerance, flex the moment they exceed budget — matches the Budget tab.
+  const budgetOverBudget = dashBuckets.filter(b => isOverBudget(b.category, b.monthlyActual, b.monthlyBudget));
 
   // Available months from transaction data for waterfall navigation
   const availableMonths = useMemo(() => {

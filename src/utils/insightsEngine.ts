@@ -6,6 +6,7 @@ import type {
   FunMoney,
 } from '../types/budget';
 import { computeMonthlySpending, computeCategoryTrends } from './transactionAnalysis';
+import { laneOf } from './budgetLanes';
 
 // ─── Types ───
 
@@ -105,6 +106,10 @@ function detectOverBudgetCategories(buckets: BudgetBucket[]): Insight[] {
   const insights: Insight[] = [];
 
   for (const b of buckets) {
+    // Over-budget alarms are a Flexible-lane concept: a fixed bill (mortgage,
+    // daycare) running high means "adjust the target," not "you overspent," and
+    // reserves (taxes/travel) are lumpy by design. Only flex categories alarm.
+    if (laneOf(b.category) !== 'flexible') continue;
     if (b.monthlyBudget <= 0 || b.monthlyActual <= 0) continue;
     const overBy = b.monthlyActual - b.monthlyBudget;
     const overPct = (overBy / b.monthlyBudget) * 100;
@@ -475,9 +480,12 @@ export function generateInsights(params: {
   const totalExpenses = monthly.reduce((s, m) => s + m.totalExpenses, 0);
   const avgMonthlyExpenses = totalExpenses / monthCount;
 
-  // Total actual from buckets (excluding work travel which is reimbursed)
+  // Operating spend = bucket actuals EXCLUDING reserve lanes. Taxes/travel are
+  // lumpy/annual and funded from surplus; counting them makes the monthly deficit
+  // check false-alarm ("spending exceeds income"). (travel_work is a reserve too,
+  // so it stays excluded.) This is the number compared against take-home.
   const totalActualFromBuckets = buckets
-    .filter(b => b.category !== 'travel_work')
+    .filter(b => laneOf(b.category) !== 'reserve')
     .reduce((s, b) => s + b.monthlyActual, 0);
 
   // Use whichever expense total is more meaningful
