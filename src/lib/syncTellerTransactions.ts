@@ -82,6 +82,11 @@ export async function syncTellerTransactions(opts?: { force?: boolean }): Promis
     }
   }
   await saveSetting(LAST_ATTEMPT_KEY, new Date().toISOString());
+  // A FAILED attempt must not arm the debounce — otherwise a transient error
+  // (e.g. the dev server mid-reload) is followed by a lying "Already up to
+  // date ✓" for five minutes. Only real syncs and genuine 429 back-offs keep
+  // the attempt timestamp.
+  const disarmDebounce = () => saveSetting(LAST_ATTEMPT_KEY, last ?? '1970-01-01T00:00:00.000Z');
 
   // Window: at least DELTA_DAYS, but ALWAYS reaching back past the last clean
   // sync (with 2 days of overlap). Anchoring to "now - 14d" alone meant any
@@ -102,10 +107,16 @@ export async function syncTellerTransactions(opts?: { force?: boolean }): Promis
   };
 
   // ── Transactions ──────────────────────────────────────────────
-  const txRes = await fetch(`/api/teller/import?since=${since}`, { method: 'POST' });
+  let txRes: Response;
+  try {
+    txRes = await fetch(`/api/teller/import?since=${since}`, { method: 'POST' });
+  } catch (err) {
+    await disarmDebounce();
+    throw err;
+  }
   if (txRes.status === 429) return { ok: false, rateLimited: true, error: 'rate_limited' };
   const tx = await txRes.json().catch(() => null);
-  if (!tx?.ok) return { ok: false, error: tx?.error || 'transaction_import_failed' };
+  if (!tx?.ok) { await disarmDebounce(); return { ok: false, error: tx?.error || 'transaction_import_failed' }; }
   const txNew: number = tx.inserted ?? 0;
   const txUpdated: number = tx.updated ?? 0;
   let through: string = tx.through ?? '';
