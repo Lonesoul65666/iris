@@ -10,6 +10,7 @@ import SetupChecklist, { isDefaultPortfolio } from '../components/Dashboard/Setu
 import AccountBreakdown from '../components/Dashboard/AccountBreakdown';
 import SavingsScorecard from '../components/Dashboard/SavingsScorecard';
 import SyncStatus from '../components/Dashboard/SyncStatus';
+import { laneOf, isOverBudget } from '../utils/budgetLanes';
 import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -89,17 +90,18 @@ export default function DashboardView() {
   const spendingByCategory = useMemo(() => {
     if (!dashBuckets) return [];
     return dashBuckets
-      // Exclude investing (synced separately) AND travel_work (reimbursable work
-      // spend — it's tracked in the Work Expenses card, not personal spend).
-      .filter((b: { monthlyActual: number; category?: string }) => b.monthlyActual > 0 && b.category !== 'investing' && b.category !== 'travel_work')
+      // Operating spend only: exclude investing (synced separately) AND reserve
+      // lanes (taxes/travel — lumpy/annual, shown in the budget's Reserves lane,
+      // not counted as monthly overspend here).
+      .filter((b: { monthlyActual: number; category?: string }) => b.monthlyActual > 0 && b.category !== 'investing' && laneOf(b.category ?? '') !== 'reserve')
       .sort((a: { monthlyActual: number }, b: { monthlyActual: number }) => b.monthlyActual - a.monthlyActual)
       .slice(0, 6)
-      .map((b: { label: string; monthlyActual: number; monthlyBudget: number; icon?: string }) => ({
+      .map((b: { label: string; monthlyActual: number; monthlyBudget: number; icon?: string; category?: string }) => ({
         name: b.label.split('(')[0].trim(),
         value: b.monthlyActual,
         budget: b.monthlyBudget,
         icon: b.icon,
-        over: b.monthlyActual > b.monthlyBudget,
+        over: isOverBudget(b.category ?? '', b.monthlyActual, b.monthlyBudget),
       }));
   }, [dashBuckets]);
   const totalSpending = spendingByCategory.reduce((s: number, c: { value: number }) => s + c.value, 0);

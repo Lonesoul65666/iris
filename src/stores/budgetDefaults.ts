@@ -1,4 +1,5 @@
 import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown, BudgetScenario } from '../types/budget';
+import { laneOf } from '../utils/budgetLanes';
 
 // ─── SAMPLE DATA (Scott's actual numbers) ─────────────────────────────────
 // These are loaded by Settings → "Load sample data" so a new user can poke
@@ -362,9 +363,11 @@ export const defaultScenarios: BudgetScenario[] = [];   // user creates their ow
 export function calculateBudgetSummary(buckets: BudgetBucket[], paycheck: PaycheckBreakdown, monthlyInvestmentAmount?: number) {
   const totalBudgeted = buckets.reduce((s, b) => s + b.monthlyBudget, 0);
   const totalActual = buckets.reduce((s, b) => s + b.monthlyActual, 0);
-  // Exclude work travel (reimbursed) from real spending
+  // Real spending = operating buckets only. Reserve lanes (taxes/travel, incl.
+  // reimbursed work travel) are lumpy/annual and funded from surplus — counting
+  // them here understates surplus and triggers a false "over income" alarm.
   const realActual = buckets
-    .filter(b => b.category !== 'travel_work')
+    .filter(b => laneOf(b.category) !== 'reserve')
     .reduce((s, b) => s + b.monthlyActual, 0);
   // Investing is now a bucket in the array — pull the actual from it, fall back to
   // the Settings amount, then 0. Never inject a hardcoded number for fresh users.
