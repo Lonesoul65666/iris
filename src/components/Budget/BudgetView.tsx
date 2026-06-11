@@ -6,6 +6,7 @@ import type { Expense } from '../../types/budget';
 import { defaultBudgetBuckets, defaultSinkingFunds, defaultFunMoney, defaultPaycheck, calculateBudgetSummary } from '../../stores/budgetDefaults';
 import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, getCustomCategories } from '../../stores/budgetStore';
 import { getMonthlyInvestments } from '../../stores/portfolioStore';
+import { computeGuaranteedBase } from '../../utils/savingsScorecard';
 import { isGeminiInitialized } from '../../services/gemini';
 import ExpenseManager from './ExpenseManager';
 import RecurringBills from './RecurringBills';
@@ -294,28 +295,22 @@ export default function BudgetView() {
         setBuckets(updatedBuckets);
         await saveBudgetBuckets(updatedBuckets);
 
-        // Auto-derive paycheck from detected monthly income when user hasn't
-        // set it yet. netTakeHome is the average of full-month inflows (which
-        // are already net for direct-deposit). grossMonthly is estimated at
-        // ~28% combined deductions (federal + state + FICA + benefits/401k);
-        // user can override in Settings.
+        // Auto-derive paycheck from the GUARANTEED BASE income when the user
+        // hasn't set it — NOT the blended average. Variable/RSU/OT is surplus,
+        // not part of the monthly budget target (locked architecture:
+        // variable = surplus). Base = steady paycheck(s) you can always count on
+        // (~$15.8k = 2 × ~$7.9k). netTakeHome is net (direct deposits are net);
+        // grossMonthly grosses up at ~28% deductions. User can override in Settings.
         if (loadedPaycheck.grossMonthly === 0 && loadedPaycheck.netTakeHome === 0) {
-          const fullMonthEntries = monthly.filter(m => m.transactionCount > 10);
-          // Average only months that actually had a paycheck — a current/partial
-          // month with transactions but no deposit yet would otherwise drag the
-          // figure down (reimbursements are already excluded from totalIncome).
-          const incomeMonths = fullMonthEntries.filter(m => m.totalIncome > 0);
-          if (incomeMonths.length > 0) {
-            const avgIncome = incomeMonths.reduce((s, m) => s + m.totalIncome, 0) / incomeMonths.length;
-            if (avgIncome > 0) {
-              const derived = {
-                ...loadedPaycheck,
-                netTakeHome: Math.round(avgIncome),
-                grossMonthly: Math.round(avgIncome / 0.72),
-              };
-              setPaycheck(derived);
-              await savePaycheck(derived);
-            }
+          const base = computeGuaranteedBase(realExpenses);
+          if (base > 0) {
+            const derived = {
+              ...loadedPaycheck,
+              netTakeHome: Math.round(base),
+              grossMonthly: Math.round(base / 0.72),
+            };
+            setPaycheck(derived);
+            await savePaycheck(derived);
           }
         }
       }
