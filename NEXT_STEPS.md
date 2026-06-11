@@ -1,4 +1,13 @@
-# Iris — Next Steps (as of 2026-06-11, evening session)
+# Iris — Next Steps (as of 2026-06-11, late session)
+
+## ✅ LATE-SESSION ADDITIONS (after the three phases)
+- **Overview shows the in-progress month by default** with an IN PROGRESS badge (`56c8f06`) — "a budget is run during the month."
+- **Live trending in Budget Pulse** (`4a849c4`): headline "trending to ~$X vs watermark" (fixed counts once, flex projects linearly) + per-category "→ $X at today's pace"; lane-aware pacing (fixed bills stop false-PACING); TriggerCenter fed true MTD buckets. Pulse renders only for the live month.
+- **Sync debounce fix** (`02b698e`): failed attempts no longer block retries with a lying "Already up to date."
+- **STASH SYSTEM SHIPPED** (`d1b43a5`, design: `docs/stashes-design.md`): derived balances (contributions − linked-category draws, nothing stored but intent), stash categories = the reserve lane (dynamic registry, legacy defaults until configured), Safe-to-Spend subtracts Σ contributions, StashesCard on the daily Overview, Taxes/$1,500 + Trips&Travel/$1,000 auto-seeded from this month. 97/97 tests.
+- **Scott's next stash moves (no code)**: set real opening balances (what's actually sitting in savings per pot), link more lumpy categories (gifts_holidays, home_maintenance, car_maintenance — and decide on insurance, whose semi-annual premium is the May false-alarm), give Holidays/Emergency pots contributions, hit "Start auto-tracking" on the legacy pots.
+- **Stash follow-ups (code, later)**: recurring-detection-driven stash suggestions (needs the >180-day lookback fix), insurance premium split (monthly part fixed-lane, premium stash-drawn), stash history sparkline.
+
 
 Working branch: **`overnight-polish-2026-06-11`** (NOT merged to `master` — review & merge first).
 Review: `git log master..overnight-polish-2026-06-11` and `git diff master...overnight-polish-2026-06-11`.
