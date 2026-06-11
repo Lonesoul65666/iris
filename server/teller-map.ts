@@ -93,6 +93,7 @@ export type SkipReason =
   | 'transfer_or_payment'      // checking transfer / card payment / deposit / interest / adjustment
   | 'investment'               // money moved to investments
   | 'non_spending_account'     // savings / secondary transfer-only account
+  | 'pending'                  // not posted yet — imported only once it settles
 
 export interface MapResult {
   keep: boolean
@@ -128,6 +129,11 @@ function isCheckingNonSpend(description: string): boolean {
 }
 
 export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount): MapResult {
+  // Skip pendings entirely: a voided hold (hotel/gas pre-auth) would otherwise
+  // live in the budget forever as phantom spend, and Teller may re-id a pending
+  // when it posts (duplicate risk). The txn imports on the next sync once it
+  // settles — the trailing window guarantees we don't miss it.
+  if (t.status === 'pending') return { keep: false, reason: 'pending' }
   const amt = Number(t.amount)
   const sub = account.subtype
 
@@ -159,7 +165,7 @@ export interface MappedExpense {
   description: string
   category: string
   reimbursementStatus: 'not_reimbursable'
-  isWorkExpense: false
+  isWorkExpense: boolean   // false from the classifier; user merchant mappings can override at import
   recurring: false
   flow: 'outflow'
   transactionType: 'expense'
@@ -208,6 +214,10 @@ export function tellerTxnToExpense(
 // Abnormal stream into base vs variable downstream.
 
 const INCOME_EMPLOYER = /ABNORMAL/i
+// Employer-agnostic ACH payroll markers, so the NEXT employer's paychecks keep
+// importing without a code change. (/ABNORMAL/-only meant a job change would
+// silently stop income imports — found by the 2026-06-11 audit, and timely.)
+const PAYROLL_MARKER = /PAYROLL|DIR(?:ECT)?\s+DEP|DES:\s*PAYROLL|\bSALARY\b|-OSV\b/i
 const REIMBURSEMENT_HINT = /COUPA|ABNORMAL\s*AI/i
 
 export type IncomeSkipReason =
@@ -216,6 +226,7 @@ export type IncomeSkipReason =
   | 'transfer_or_internal'
   | 'interest'
   | 'not_employer'
+  | 'pending'
 
 export interface IncomeMapResult {
   keep: boolean
@@ -225,6 +236,7 @@ export interface IncomeMapResult {
 }
 
 export function classifyTellerInflow(t: TellerTransaction, account: TellerAccount): IncomeMapResult {
+  if (t.status === 'pending') return { keep: false, reason: 'pending' }
   const amt = Number(t.amount)
   if (account.subtype === 'credit_card') return { keep: false, reason: 'credit_card_account' }
   if (amt <= 0) return { keep: false, reason: 'not_inflow' }
@@ -232,7 +244,7 @@ export function classifyTellerInflow(t: TellerTransaction, account: TellerAccoun
   // Transfers / Zelle / card-payment reversals / brokerage moves → not income.
   if (isCheckingNonSpend(desc)) return { keep: false, reason: 'transfer_or_internal' }
   if (t.type === 'interest') return { keep: false, reason: 'interest' }
-  if (!INCOME_EMPLOYER.test(desc)) return { keep: false, reason: 'not_employer' }
+  if (!INCOME_EMPLOYER.test(desc) && !PAYROLL_MARKER.test(desc)) return { keep: false, reason: 'not_employer' }
   const transactionType: 'income' | 'reimbursement' = REIMBURSEMENT_HINT.test(desc) ? 'reimbursement' : 'income'
   return { keep: true, amount: amt, transactionType }
 }

@@ -138,6 +138,18 @@ export async function handleExpensesDelete(req: Req, res: Res): Promise<void> {
         'DELETE FROM expenses WHERE user_id = $1 AND id = ANY($2::text[])',
         [ctx.userId, ids],
       )
+      // Tombstone deleted Teller rows so the sync's trailing window doesn't
+      // resurrect them two days later. Only for targeted deletes — bulk clears
+      // (all/source/batch) precede re-imports, where resurrection is the point.
+      const tellerIds = ids.filter(id => id.startsWith('teller_'))
+      for (const id of tellerIds) {
+        await ctx.pool.query(
+          `INSERT INTO collections (user_id, name, key, data, updated_at)
+           VALUES ($1, 'deletedTellerIds', $2, '{}'::jsonb, now())
+           ON CONFLICT (user_id, name, key) DO NOTHING`,
+          [ctx.userId, id],
+        )
+      }
     }
     sendJson(res, 200, { ok: true, deleted: r.rowCount ?? 0 })
   } catch (err) {
