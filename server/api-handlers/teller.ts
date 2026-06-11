@@ -418,6 +418,17 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
       accs = await fetchAccounts(row.access_token)
     } catch (err) {
       errors.push({ connectorId: row.id, institution: row.institution, status: err instanceof TellerApiError ? err.status : null, code: err instanceof TellerApiError ? err.code : 'request_failed', message: errorMessage(err) })
+      // A dead token never comes back — mark the connector so the next sync
+      // stops retrying it (and the permanent "needs reconnect" alarm clears
+      // once the bank is re-enrolled). Best effort.
+      if (err instanceof TellerApiError && (err.status === 401 || err.status === 403)) {
+        try {
+          await ctx.pool.query(
+            `UPDATE connectors SET status = 'disconnected', updated_at = now() WHERE user_id = $1 AND id = $2`,
+            [ctx.userId, row.id],
+          )
+        } catch { /* best effort */ }
+      }
       continue
     }
     for (const a of accs) {
@@ -449,6 +460,42 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
         errors.push({ connectorId: row.id, institution: `${row.institution}/${a.name}`, status: err instanceof TellerApiError ? err.status : null, code: err instanceof TellerApiError ? err.code : 'request_failed', message: errorMessage(err) })
       }
     }
+  }
+
+  // User merchant mappings are the user's explicit intent for a merchant —
+  // apply them to NEW imports so corrections don't have to be redone after
+  // every sync. (Existing rows keep their data via the edit-preserving upsert.)
+  let skippedTombstoned = 0
+  try {
+    const mapRows = await ctx.pool.query<{ key: string; data: { category?: string; isWorkExpense?: boolean } }>(
+      `SELECT key, data FROM collections WHERE user_id = $1 AND name = 'merchantMappings'`,
+      [ctx.userId],
+    )
+    const mappings = new Map(mapRows.rows.map(r => [r.key.toLowerCase(), r.data]))
+    for (const e of toWrite) {
+      const m = mappings.get(e.description.toLowerCase())
+      if (!m) continue
+      if (m.category) e.category = m.category
+      if (typeof m.isWorkExpense === 'boolean') e.isWorkExpense = m.isWorkExpense
+    }
+
+    // Tombstones: rows the user deleted in the UI must not resurrect when the
+    // trailing sync window re-pulls them.
+    const tombRows = await ctx.pool.query<{ key: string }>(
+      `SELECT key FROM collections WHERE user_id = $1 AND name = 'deletedTellerIds'`,
+      [ctx.userId],
+    )
+    if (tombRows.rows.length > 0) {
+      const tombs = new Set(tombRows.rows.map(r => r.key))
+      const before = toWrite.length
+      for (let i = toWrite.length - 1; i >= 0; i--) {
+        if (tombs.has(toWrite[i].id)) toWrite.splice(i, 1)
+      }
+      skippedTombstoned = before - toWrite.length
+    }
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: 'mapping_lookup_failed', message: errorMessage(err) })
+    return
   }
 
   let written = 0
@@ -509,6 +556,7 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
     written,
     inserted,
     updated,
+    skippedTombstoned,
     through,
     perAccount,
     errors,
@@ -569,7 +617,18 @@ export async function handleTellerImportIncome(req: Req, res: Res): Promise<void
   for (const row of rows) {
     let accs: TellerAccount[]
     try { accs = await fetchAccounts(row.access_token) }
-    catch (err) { errors.push({ connectorId: row.id, institution: row.institution, status: err instanceof TellerApiError ? err.status : null, code: err instanceof TellerApiError ? err.code : 'request_failed', message: errorMessage(err) }); continue }
+    catch (err) {
+      errors.push({ connectorId: row.id, institution: row.institution, status: err instanceof TellerApiError ? err.status : null, code: err instanceof TellerApiError ? err.code : 'request_failed', message: errorMessage(err) })
+      if (err instanceof TellerApiError && (err.status === 401 || err.status === 403)) {
+        try {
+          await ctx.pool.query(
+            `UPDATE connectors SET status = 'disconnected', updated_at = now() WHERE user_id = $1 AND id = $2`,
+            [ctx.userId, row.id],
+          )
+        } catch { /* best effort */ }
+      }
+      continue
+    }
     for (const a of accs) {
       if (a.subtype === 'credit_card') continue   // income never lands on a card; stay frugal
       try {

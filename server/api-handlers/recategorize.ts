@@ -51,10 +51,24 @@ export async function handleExpensesRecategorize(req: Req, res: Res): Promise<vo
   const updates: Array<{ id: string; data: Record<string, unknown> }> = []
   const samples: Array<{ desc: string; from: string; to: string }> = []
 
+  let guarded = 0
   for (const row of rows) {
     const data = row.data || {}
     const oldCat = (data.category as string) || 'other'
     before[oldCat] = (before[oldCat] ?? 0) + 1
+
+    // GUARD: only outflow EXPENSES are eligible. This endpoint force-classifies
+    // through the outflow merchant rules and writes back flow/transactionType —
+    // run unguarded with ?all=1 it would flip every imported paycheck (~$188k
+    // of income rows) into expenses in one POST. Income/transfer/refund/
+    // investment rows pass through untouched, whatever the query params say.
+    const rowFlow = (data.flow as string) || 'outflow'
+    const rowType = (data.transactionType as string) || 'expense'
+    if (rowFlow !== 'outflow' || rowType !== 'expense') {
+      guarded++
+      after[oldCat] = (after[oldCat] ?? 0) + 1
+      continue
+    }
 
     const desc = String(data.description ?? '')
     const amt = Number(row.amount) || 0
@@ -104,6 +118,7 @@ export async function handleExpensesRecategorize(req: Req, res: Res): Promise<vo
     mode: all ? 'all' : 'other_only',
     total: rows.length,
     changed: updates.length,
+    guarded, // non-expense rows (income/transfer/refund) skipped by the safety guard
     written,
     before: sortCounts(before),
     after: sortCounts(after),

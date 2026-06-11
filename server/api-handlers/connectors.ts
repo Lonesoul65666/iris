@@ -95,20 +95,41 @@ export async function handleConnectorsSave(req: Req, res: Res): Promise<void> {
   const enrollmentId = typeof c.provider_enrollment_id === 'string' ? c.provider_enrollment_id : null
 
   try {
-    await ctx.pool.query(
-      `INSERT INTO connectors
-         (id, user_id, provider, institution, provider_enrollment_id, access_token, status, data, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, now())
-       ON CONFLICT (user_id, id) DO UPDATE
-         SET provider               = EXCLUDED.provider,
-             institution            = EXCLUDED.institution,
-             provider_enrollment_id = EXCLUDED.provider_enrollment_id,
-             access_token           = EXCLUDED.access_token,
-             status                 = EXCLUDED.status,
-             data                   = EXCLUDED.data,
-             updated_at             = now()`,
-      [c.id, ctx.userId, c.provider, c.institution, enrollmentId, c.access_token, status, JSON.stringify(data)],
-    )
+    const client = await ctx.pool.connect()
+    try {
+      await client.query('BEGIN')
+      // Re-enrollment retires the old connector for the same institution.
+      // Without this, every reconnect left a zombie 'active' row whose dead
+      // token 401'd on every sync — a permanent "needs reconnect" alarm and
+      // a wasted Teller call per sync.
+      if (status === 'active') {
+        await client.query(
+          `UPDATE connectors SET status = 'replaced', updated_at = now()
+            WHERE user_id = $1 AND provider = $2 AND institution = $3 AND id <> $4 AND status = 'active'`,
+          [ctx.userId, c.provider, c.institution, c.id],
+        )
+      }
+      await client.query(
+        `INSERT INTO connectors
+           (id, user_id, provider, institution, provider_enrollment_id, access_token, status, data, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, now())
+         ON CONFLICT (user_id, id) DO UPDATE
+           SET provider               = EXCLUDED.provider,
+               institution            = EXCLUDED.institution,
+               provider_enrollment_id = EXCLUDED.provider_enrollment_id,
+               access_token           = EXCLUDED.access_token,
+               status                 = EXCLUDED.status,
+               data                   = EXCLUDED.data,
+               updated_at             = now()`,
+        [c.id, ctx.userId, c.provider, c.institution, enrollmentId, c.access_token, status, JSON.stringify(data)],
+      )
+      await client.query('COMMIT')
+    } catch (err) {
+      try { await client.query('ROLLBACK') } catch { /* connection may be dead */ }
+      throw err
+    } finally {
+      client.release()
+    }
     sendJson(res, 200, { ok: true, id: c.id })
   } catch (err) {
     sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) })

@@ -53,17 +53,19 @@ export default function SyncStatus() {
       const r = await syncTellerTransactions();
       if (r.rateLimited) { setPhase('ratelimited'); setNote('Banks are busy — try again in a few minutes.'); return; }
       if (!r.ok || !r.summary) { setPhase('error'); setNote('Couldn’t refresh. Try again shortly.'); return; }
-      setLastSync(r.summary.syncedAt);
+      if (!r.summary.partial) setLastSync(r.summary.syncedAt);
       setSummary(r.summary);
-      setPhase('done');
-      if (r.skipped) { setNote('Already up to date ✓'); return; }
-      const broken = r.summary.brokenBanks.length
-        ? ` — ${r.summary.brokenBanks.join(', ')} needs Scott to reconnect`
-        : '';
-      setNote(`✓ ${describe(r.summary)}${broken}`);
-      // Let them read the summary, then refresh the numbers. Don't auto-reload if a
-      // bank needs reconnecting — keep that message on screen.
-      if (!r.summary.brokenBanks.length) setTimeout(() => window.location.reload(), 2600);
+      setPhase(r.summary.partial ? 'error' : 'done');
+      if (r.skipped) { setPhase('done'); setNote('Already up to date ✓'); return; }
+      const issues: string[] = [];
+      if (r.summary.brokenBanks.length) issues.push(`${r.summary.brokenBanks.join(', ')} needs reconnecting`);
+      if (r.summary.failedBanks.length) issues.push(`${r.summary.failedBanks.join(', ')} didn't respond — data may be incomplete`);
+      setNote(`${r.summary.partial ? '⚠ Partial sync: ' : '✓ '}${describe(r.summary)}${issues.length ? ` — ${issues.join('; ')}` : ''}`);
+      // Let them read the summary, then refresh the numbers — whenever anything
+      // actually changed, even on a partial sync (imported data must show up;
+      // the warning re-renders from the persisted summary after reload).
+      const changed = r.summary.txNew + r.summary.txUpdated + r.summary.incomeNew > 0;
+      if (changed) setTimeout(() => window.location.reload(), r.summary.partial ? 5000 : 2600);
     } catch {
       setPhase('error');
       setNote('Couldn’t refresh. Try again shortly.');
