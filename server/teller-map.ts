@@ -15,6 +15,7 @@
 // the user re-categorizes in the UI and the classifier refines. Not precious.
 
 import type { TellerTransaction, TellerAccount } from './teller-client.ts'
+import { classifyBankTransaction } from '../src/utils/transactionCategorize.ts'
 
 // Teller category slug -> Iris ExpenseCategory. Unknowns fall through to 'other'.
 const CATEGORY_MAP: Record<string, string> = {
@@ -53,6 +54,19 @@ export function mapTellerCategory(tellerCat: string | null | undefined, descript
   if (d.includes('AMAZON') || d.includes('AMZN')) return 'amazon'
   if (tellerCat && CATEGORY_MAP[tellerCat]) return CATEGORY_MAP[tellerCat]
   return 'other'
+}
+
+// Best-effort category for an imported transaction. Runs the merchant-tuned
+// classifier FIRST (it knows the real merchants — EXXON→transportation,
+// H-E-B→groceries, hotels→travel — and is the same logic /api/expenses/
+// recategorize uses), then falls back to Teller's own category slug, then 'other'.
+// classifyBankTransaction treats a positive amount as an inflow, so we pass a
+// negative to force the outflow merchant-rule path. This is why a fresh sync now
+// lands correct instead of trusting Teller's frequently-wrong category.
+function bestCategory(description: string, amount: number, tellerCat: string | null | undefined): string {
+  const { category } = classifyBankTransaction(description || '', -Math.abs(amount))
+  if (category && category !== 'other') return category
+  return mapTellerCategory(tellerCat, description)
 }
 
 // Map a Teller account to Iris's existing TransactionSource taxonomy so the
@@ -119,7 +133,7 @@ export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount):
 
   if (sub === 'credit_card') {
     // Purchases are positive on cards; negatives are payments/refunds.
-    if (amt > 0) return { keep: true, amount: amt, category: mapTellerCategory(t.details?.category, t.description) }
+    if (amt > 0) return { keep: true, amount: amt, category: bestCategory(t.description, amt, t.details?.category) }
     return { keep: false, reason: 'card_payment_or_refund' }
   }
 
@@ -131,7 +145,7 @@ export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount):
     if (t.details?.category === 'investment') return { keep: false, reason: 'investment' }
     // Card payments / brokerage transfers that Teller typed as plain `ach`.
     if (isCheckingNonSpend(t.description)) return { keep: false, reason: 'transfer_or_payment' }
-    return { keep: true, amount: Math.abs(amt), category: mapTellerCategory(t.details?.category, t.description) }
+    return { keep: true, amount: Math.abs(amt), category: bestCategory(t.description, amt, t.details?.category) }
   }
 
   // savings + anything else: not a spending account
