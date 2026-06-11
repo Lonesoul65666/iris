@@ -6,6 +6,7 @@ import ConnectorsPanel from '../components/Settings/ConnectorsPanel';
 import NudgeManagementPanel from '../components/Settings/NudgeManagementPanel';
 import LLMBudgetPanel from '../components/Settings/LLMBudgetPanel';
 import HouseholdEarners from '../components/Settings/HouseholdEarners';
+import PaycheckPanel from '../components/Settings/PaycheckPanel';
 import NotificationSettings from '../components/Settings/NotificationSettings';
 import SampleDataPanel from '../components/Settings/SampleDataPanel';
 import UserManagementPanel from '../components/Settings/UserManagementPanel';
@@ -368,6 +369,9 @@ export default function SettingsView() {
 
       {/* Household earners — multi-earner cold-start profile (5 questions per earner) */}
       <HouseholdEarners />
+
+      {/* Paycheck & watermark — net take-home, gross, 401k/HSA + re-derive */}
+      <PaycheckPanel />
 
       {/* Notification tier preferences */}
       <NotificationSettings />
