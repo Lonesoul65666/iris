@@ -8,6 +8,7 @@ import { useHasRealData } from '../hooks/useHasRealData';
 import { useEnabledModules } from '../hooks/useEnabledModules';
 import SetupChecklist, { isDefaultPortfolio } from '../components/Dashboard/SetupChecklist';
 import AccountBreakdown from '../components/Dashboard/AccountBreakdown';
+import SavingsScorecard from '../components/Dashboard/SavingsScorecard';
 import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -362,6 +363,9 @@ export default function DashboardView() {
           />
         </DataCard>
       )}
+
+      {/* ════ LIVING UNDER THE GUARANTEE (savings scorecard) ════════════ */}
+      <SavingsScorecard />
 
       {/* ════ SPEND BY ACCOUNT ══════════════════════════════════════════ */}
       <AccountBreakdown />
