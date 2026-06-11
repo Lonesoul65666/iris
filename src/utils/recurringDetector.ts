@@ -62,8 +62,16 @@ export function normalizeMerchant(desc: string | null | undefined): string {
   // Collapse runs of whitespace / punctuation
   s = s.replace(/[^a-z0-9]+/g, ' ').trim();
 
-  // Drop tail tokens that are just noise (all-digit)
-  const tokens = s.split(' ').filter(t => t && !/^\d+$/.test(t));
+  // Drop noise tokens so the SAME merchant doesn't fragment into many lines:
+  //  - all-digit tokens, and
+  //  - transaction-id-like tokens (2+ digits mixed with letters), e.g. Peacock's
+  //    "1f674", Oculus "wvr6j5zda2", Prime Video "b03q60vi0". Single-digit brand
+  //    tokens survive (e.g. "7eleven", "level3"); "365" is caught by all-digit.
+  const tokens = s.split(' ').filter(t => {
+    if (!t || /^\d+$/.test(t)) return false;
+    if ((t.match(/\d/g) || []).length >= 2) return false;
+    return true;
+  });
 
   // Keep the first 2–3 meaningful tokens — that's almost always the merchant brand
   return tokens.slice(0, 3).join(' ');
