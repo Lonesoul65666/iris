@@ -44,8 +44,6 @@ interface AppDataContextValue {
   setMonthlyInv: React.Dispatch<React.SetStateAction<MonthlyInvestment | undefined>>;
   chatMessages: ChatMessage[];
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
-  chatInput: string;
-  setChatInput: React.Dispatch<React.SetStateAction<string>>;
   chatLoading: boolean;
   apiKey: string;
   apiKeyInput: string;
@@ -82,7 +80,7 @@ interface AppDataContextValue {
   monthToDate: MonthlySpending | null;
   safeToSpend: SafeToSpend | null;
   // Callbacks
-  sendMessage: (imageData?: { data: string; mimeType: string }) => Promise<void>;
+  sendMessage: (text: string, imageData?: { data: string; mimeType: string }) => Promise<void>;
   handleImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
   handleActionItemsChange: (items: ActionItem[]) => Promise<void>;
   saveApiKey: () => Promise<void>;
@@ -112,7 +110,6 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
   const [profile, setProfile] = useState<UserProfile | undefined>();
   const [monthlyInv, setMonthlyInv] = useState<MonthlyInvestment | undefined>();
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -521,8 +518,11 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
   }, [rawExpenses, dashBuckets, dashPaycheck.netTakeHome]);
 
   // Chat handler
-  const sendMessage = useCallback(async (imageData?: { data: string; mimeType: string }) => {
-    const text = chatInput.trim();
+  // Takes the message text as an argument — the input box state lives locally
+  // in ChatView now, so a chat keystroke no longer re-renders every context
+  // consumer (it used to re-render all ~20 per keypress).
+  const sendMessage = useCallback(async (rawText: string, imageData?: { data: string; mimeType: string }) => {
+    const text = rawText.trim();
     if (!text && !imageData) return;
 
     // Decide route. The native Gemini path has Google Search grounding, so it's the
@@ -558,7 +558,6 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
     const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: text || '(screenshot uploaded)', timestamp: new Date().toISOString() };
     setChatMessages(prev => [...prev, userMsg]);
     await saveChatMessage(userMsg);
-    setChatInput('');
     setChatLoading(true);
 
     try {
@@ -608,7 +607,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
       setChatMessages(prev => [...prev, errMsg]);
     }
     setChatLoading(false);
-  }, [chatInput, chatMessages, accounts, equity, profile, actionItems, spendingSummary, insights, setView]);
+  }, [chatMessages, accounts, equity, profile, actionItems, spendingSummary, insights, setView]);
 
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -616,7 +615,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
     const reader = new FileReader();
     reader.onload = async () => {
       const base64 = (reader.result as string).split(',')[1];
-      await sendMessage({ data: base64, mimeType: file.type });
+      await sendMessage('', { data: base64, mimeType: file.type });
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -674,7 +673,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
 
   const value: AppDataContextValue = {
     accounts, setAccounts, equity, profile, setProfile, monthlyInv, setMonthlyInv,
-    chatMessages, setChatMessages, chatInput, setChatInput, chatLoading,
+    chatMessages, setChatMessages, chatLoading,
     apiKey, apiKeyInput, setApiKeyInput,
     actionItems, dashBuckets, dashPaycheck, dashSinkingFunds,
     spendingSummary, monthComparison, rawExpenses,

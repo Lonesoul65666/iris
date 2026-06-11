@@ -4,19 +4,11 @@ import './index.css'
 import App from './App.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import { bootstrapDbConnection } from './lib/db-client.ts'
-import { migrateIndexedDbToPostgres } from './lib/migrate-indexeddb-to-postgres.ts'
-import { migrateBrowserStoresToPostgres } from './lib/migrate-browser-stores.ts'
 import { syncTellerBalances } from './lib/syncTellerBalances.ts'
 
-// Expose the IndexedDB->Postgres migrations on window so they can be triggered
-// manually from DevTools console. Not auto-invoked — running them is a
-// deliberate user action.
-//   __irisMigrate       — Build-D1: budget/income/expenses (one-shot, done)
-//   __irisMigrateStores — 2026-06-10: portfolio + action stores (de-browser)
-;(window as unknown as { __irisMigrate?: typeof migrateIndexedDbToPostgres }).__irisMigrate =
-  migrateIndexedDbToPostgres
-;(window as unknown as { __irisMigrateStores?: typeof migrateBrowserStoresToPostgres }).__irisMigrateStores =
-  migrateBrowserStoresToPostgres
+// (The one-shot IndexedDB->Postgres migrations — Build-D1 2026-05-05 and the
+// store de-browsering 2026-06-10 — completed long ago and were deleted
+// 2026-06-11. They live in git history if ever needed.)
 ;(window as unknown as { __irisSyncBalances?: typeof syncTellerBalances }).__irisSyncBalances =
   syncTellerBalances
 

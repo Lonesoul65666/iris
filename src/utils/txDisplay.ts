@@ -79,9 +79,13 @@ export function categoryEmoji(cat?: string): string {
   if (!cat) return '🧾';
   const map: Record<string, string> = {
     food_groceries: '🛒', food_dining: '🍽️', housing: '🏠', utilities: '💡',
-    transportation: '🚗', entertainment: '🎬', subscriptions: '📺', shopping: '🛍️',
-    travel_work: '✈️', travel_personal: '🏖️', amazon: '📦', kids: '👶',
-    health: '⚕️', insurance: '🛡️', investing: '📈', other: '🧾',
+    transportation: '🚗', entertainment: '🎟️', subscriptions: '📱', shopping: '🛍️',
+    travel_work: '💼', travel_personal: '✈️', amazon: '📦', kids: '🎒',
+    healthcare: '🏥', insurance: '🛡️', investing: '📈', other: '🧾',
+    childcare: '👶', clothing: '👕', gifts_holidays: '🎁', home_maintenance: '🔧',
+    car_maintenance: '🔩', personal: '💇', charity: '💛', alcohol: '🍷',
+    electronics: '🖥️', education: '📚', pets: '🐾', savings: '🏦', debt: '💳',
+    taxes: '🏛️', fun_scott: '🎮', fun_wife: '💅', income: '💵', reimbursement: '↩️',
   };
   return map[cat] || '🧾';
 }
