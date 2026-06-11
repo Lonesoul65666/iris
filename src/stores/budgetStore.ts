@@ -78,6 +78,22 @@ async function deleteCollectionKey(name: string, key: string): Promise<void> {
   })
 }
 
+// REPLACE semantics: upsert rows AND delete rows whose keys are gone.
+// saveCollection alone is upsert-only — a row deleted in the UI survived in
+// Postgres and resurrected on the next load (2026-06-11 pre-paint audit).
+// Also covers deleting the LAST row, which the empty-early-return never sent.
+async function replaceCollection<T extends Record<string, unknown>>(
+  name: string,
+  rows: T[],
+  keyOf: (row: T) => string,
+): Promise<void> {
+  const existing = await api<ListItemEnvelope<CollectionItem<unknown>>>(`/api/collections/${encodeURIComponent(name)}/list`)
+  const keep = new Set(rows.map(keyOf))
+  const stale = existing.items.map((i) => i.key).filter((k) => !keep.has(k))
+  if (rows.length > 0) await saveCollection(name, rows, keyOf)
+  for (const k of stale) await deleteCollectionKey(name, k)
+}
+
 async function clearCollection(name: string): Promise<void> {
   await api<DeleteEnvelope>(`/api/collections/${encodeURIComponent(name)}/delete`, {
     method: 'POST',
@@ -87,8 +103,11 @@ async function clearCollection(name: string): Promise<void> {
 
 // ─── Buckets / SinkingFunds / FunMoney / Paycheck / CustomCategories ─────
 
+// Buckets and stashes use REPLACE semantics — both have delete-in-UI flows
+// (Edit Budget bucket removal, StashesCard delete), and upsert-only saves let
+// deleted rows resurrect from Postgres on the next load.
 export async function saveBudgetBuckets(buckets: BudgetBucket[]): Promise<void> {
-  await saveCollection('buckets', buckets as unknown as Array<Record<string, unknown>>, (b) => String((b as unknown as BudgetBucket).category))
+  await replaceCollection('buckets', buckets as unknown as Array<Record<string, unknown>>, (b) => String((b as unknown as BudgetBucket).category))
 }
 
 export async function getBudgetBuckets(): Promise<BudgetBucket[]> {
@@ -96,7 +115,7 @@ export async function getBudgetBuckets(): Promise<BudgetBucket[]> {
 }
 
 export async function saveSinkingFunds(funds: SinkingFund[]): Promise<void> {
-  await saveCollection('sinkingFunds', funds as unknown as Array<Record<string, unknown>>, (f) => String((f as unknown as SinkingFund).id))
+  await replaceCollection('sinkingFunds', funds as unknown as Array<Record<string, unknown>>, (f) => String((f as unknown as SinkingFund).id))
 }
 
 export async function getSinkingFunds(): Promise<SinkingFund[]> {
