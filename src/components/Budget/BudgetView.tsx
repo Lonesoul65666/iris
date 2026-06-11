@@ -1595,7 +1595,11 @@ export default function BudgetView() {
       {/* Trigger Center — pace warnings, surplus available, etc. Fed TRUE
           month-to-date buckets (the audit found it judging calendar pace
           against multi-month averages — incoherent). */}
-      <TriggerCenter expenses={expenses} buckets={overviewInProgress ? applyMonthToBuckets(buckets, overviewInProgress) : buckets} />
+      <TriggerCenter
+        expenses={expenses}
+        buckets={overviewInProgress ? applyMonthToBuckets(buckets, overviewInProgress) : buckets}
+        onViewCategory={(cat) => setDrilldownCategory(cat)}
+      />
 
       {/* Inflow questions — one-tap classification for ambiguous deposits */}
       <InflowQuestions expenses={expenses} />

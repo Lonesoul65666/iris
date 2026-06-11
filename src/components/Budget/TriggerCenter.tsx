@@ -2,17 +2,32 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Expense, BudgetBucket, IncomeSource, NotificationPreferences } from '../../types/budget';
 import { defaultNotificationPreferences } from '../../types/budget';
 import { detectTriggers, type Trigger, type TriggerAction } from '../../utils/triggerDetector';
-import { getSetting } from '../../stores/portfolioStore';
+import { getSetting, saveSetting } from '../../stores/portfolioStore';
 import { getIncomeSources } from '../../stores/budgetStore';
 import { notificationPrefsStoreKey } from '../Settings/NotificationSettings';
+import { currentMonthKey } from '../../utils/transactionAnalysis';
 
 interface Props {
   expenses: Expense[];
   buckets: BudgetBucket[];
   /** Compact variant for Dashboard. */
   compact?: boolean;
-  /** Optional handler when actions fire — UI binds, e.g. navigate to budget category. */
-  onAction?: (trigger: Trigger, action: TriggerAction) => void;
+  /** Wires "See breakdown" to the category drilldown. */
+  onViewCategory?: (category: string) => void;
+}
+
+// Dismissals persist (keyed by trigger id → month dismissed) so an
+// acknowledged alert stays gone for the rest of that month instead of
+// resurrecting on every page load. A new month re-evaluates honestly.
+const DISMISSALS_KEY = 'trigger_dismissals';
+
+/** Only render actions that actually DO something. "Sweep now" and "Classify
+ *  now" had no handlers anywhere — a button that does nothing on click is how
+ *  users learn to distrust the whole app. They return when the features exist. */
+function isActionable(a: TriggerAction, onViewCategory?: (c: string) => void): boolean {
+  if (a.kind === 'acknowledge' || a.kind === 'snooze') return true;
+  if (a.kind === 'view_breakdown') return Boolean(onViewCategory && typeof a.payload?.category === 'string');
+  return false;
 }
 
 const SEVERITY_STYLES: Record<Trigger['severity'], string> = {
@@ -29,17 +44,19 @@ const SEVERITY_ICON: Record<Trigger['severity'], string> = {
   success: '✓',
 };
 
-export default function TriggerCenter({ expenses, buckets, compact = false, onAction }: Props) {
+export default function TriggerCenter({ expenses, buckets, compact = false, onViewCategory }: Props) {
   const [prefs, setPrefs] = useState<NotificationPreferences>(defaultNotificationPreferences);
   const [sources, setSources] = useState<IncomeSource[]>([]);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [dismissed, setDismissed] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     (async () => {
       const stored = await getSetting<NotificationPreferences>(notificationPrefsStoreKey);
       const incomeSources = await getIncomeSources();
+      const storedDismissals = await getSetting<Record<string, string>>(DISMISSALS_KEY);
       if (stored) setPrefs({ ...defaultNotificationPreferences, ...stored });
+      if (storedDismissals) setDismissed(storedDismissals);
       setSources(incomeSources);
       setLoaded(true);
     })();
@@ -47,11 +64,12 @@ export default function TriggerCenter({ expenses, buckets, compact = false, onAc
 
   const triggers: Trigger[] = useMemo(() => {
     if (!loaded) return [];
+    const thisMonth = currentMonthKey();
     return detectTriggers(
       { expenses, buckets, incomeSources: sources },
       { prefs },
     )
-      .filter(t => !dismissed.has(t.id))
+      .filter(t => dismissed[t.id] !== thisMonth)
       // Bucket-level pace alerts are now surfaced by BudgetPulse. Keep group-level
       // (id contains "-group-") and all non-pace triggers (surplus, classify, etc).
       .filter(t => {
@@ -63,9 +81,14 @@ export default function TriggerCenter({ expenses, buckets, compact = false, onAc
 
   const handleAction = (t: Trigger, a: TriggerAction) => {
     if (a.kind === 'acknowledge' || a.kind === 'snooze') {
-      setDismissed(prev => new Set(prev).add(t.id));
+      const next = { ...dismissed, [t.id]: currentMonthKey() };
+      setDismissed(next);
+      void saveSetting(DISMISSALS_KEY, next);
+      return;
     }
-    onAction?.(t, a);
+    if (a.kind === 'view_breakdown' && typeof a.payload?.category === 'string') {
+      onViewCategory?.(a.payload.category);
+    }
   };
 
   if (!loaded || triggers.length === 0) return null;
@@ -87,7 +110,7 @@ export default function TriggerCenter({ expenses, buckets, compact = false, onAc
                 <div className="text-sm font-semibold text-text-primary">{t.title}</div>
                 {t.detail && <div className="text-xs text-text-muted mt-0.5">{t.detail}</div>}
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {t.actions.map((a, i) => (
+                  {t.actions.filter(a => isActionable(a, onViewCategory)).map((a, i) => (
                     <button
                       key={i}
                       onClick={() => handleAction(t, a)}

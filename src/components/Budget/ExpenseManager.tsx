@@ -480,9 +480,12 @@ export default function ExpenseManager({ expenses, onExpensesChanged }: ExpenseM
     e.target.value = '';
   }, [expenses]);
 
-  // Save imported transactions and merchant mappings
-  const handleSaveImported = useCallback(async () => {
-    const selected = parsedTransactions.filter(t => t.selected);
+  // Save imported transactions and merchant mappings. Accepts an explicit list
+  // so "Quick Import All" can pass the freshly-selected rows directly — the old
+  // setState + setTimeout(handleSaveImported) pattern invoked a STALE closure
+  // and silently dropped any row that wasn't selected at click time.
+  const handleSaveImported = useCallback(async (override?: typeof parsedTransactions) => {
+    const selected = (override ?? parsedTransactions).filter(t => t.selected);
     for (const t of selected) {
       const expense: Expense = {
         id: t.id,
@@ -1113,11 +1116,15 @@ export default function ExpenseManager({ expenses, onExpensesChanged }: ExpenseM
                 <div className="flex gap-2">
                   <button onClick={() => { setParsedTransactions([]); setImportWarnings(null); setTab('list'); }}
                     className="px-4 py-2 bg-surface-3 hover:bg-surface-4 rounded-lg text-sm text-text-secondary transition-colors">Cancel</button>
-                  <button onClick={() => { setParsedTransactions(prev => prev.map(t => ({ ...t, selected: true }))); setTimeout(() => handleSaveImported(), 100); }}
+                  <button onClick={() => {
+                      const all = parsedTransactions.map(t => ({ ...t, selected: true }));
+                      setParsedTransactions(all);
+                      void handleSaveImported(all);
+                    }}
                     className="px-4 py-2 bg-positive/80 hover:bg-positive rounded-lg text-sm font-medium text-white transition-colors">
                     Quick Import All
                   </button>
-                  <button onClick={handleSaveImported}
+                  <button onClick={() => void handleSaveImported()}
                     className="px-4 py-2 bg-accent hover:bg-accent-dim rounded-lg text-sm font-medium text-white transition-colors">
                     Save {parsedTransactions.filter(t => t.selected).length} Selected
                   </button>
