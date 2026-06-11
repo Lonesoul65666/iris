@@ -320,19 +320,26 @@ export default function BudgetView() {
     load();
   }, []);
 
-  // Available months for overview navigation — CALENDAR-complete months only
-  // (the in-progress month is never "latest"; its real-time story lives in
-  // Safe-to-Spend and the dashboard month-to-date numbers)
+  // Available months for overview navigation: calendar-complete months PLUS
+  // the in-progress month (clearly labeled). "Latest" = the current month —
+  // opening the budget mid-month should show the month you're living in.
+  // Completeness only governs the MATH (averages, verdicts, scorecard), never
+  // visibility.
   const fullMonths = monthlyData.filter(m => isCompleteMonth(m.month));
-  const availMonths = fullMonths.map(m => m.month).sort();
+  const overviewInProgress = monthlyData.find(m => m.month === currentMonthKey()) ?? null;
+  const availMonths = [
+    ...fullMonths.map(m => m.month),
+    ...(overviewInProgress ? [overviewInProgress.month] : []),
+  ].sort();
   const resolvedOverviewMonth = overviewMonth === 'latest' && availMonths.length > 0
     ? availMonths[availMonths.length - 1]
     : overviewMonth;
+  const overviewIsInProgress = overviewInProgress !== null && resolvedOverviewMonth === overviewInProgress.month;
 
   // Per-month buckets for overview
   const overviewBuckets = (() => {
-    if (resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest' || fullMonths.length === 0) return buckets;
-    const monthData = fullMonths.find(m => m.month === resolvedOverviewMonth);
+    if (resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest' || availMonths.length === 0) return buckets;
+    const monthData = monthlyData.find(m => m.month === resolvedOverviewMonth);
     if (!monthData) return buckets;
     return applyMonthToBuckets(buckets, monthData);
   })();
@@ -872,6 +879,7 @@ export default function BudgetView() {
               <button onClick={() => setOverviewMonth(resolved === 'avg' ? 'latest' : 'avg')}
                 className="px-4 py-1.5 rounded-lg bg-surface-2 border border-glass-border hover:bg-surface-3 text-sm text-text-primary font-semibold transition-colors min-w-[160px]">
                 {resolved === 'avg' ? `Average (${fullMonths.length} months)` : monthLabel(resolved)}
+                {overviewIsInProgress && <span className="ml-2 px-1.5 py-0.5 rounded-full bg-accent/15 text-accent text-[9px] font-bold uppercase tracking-wider align-middle">In progress</span>}
               </button>
               <button onClick={() => { if (idx < availMonths.length - 1) setOverviewMonth(availMonths[idx + 1]); }}
                 disabled={idx >= availMonths.length - 1 || resolved === 'avg'}
@@ -880,7 +888,9 @@ export default function BudgetView() {
               </button>
             </div>
             <span className="text-xs text-text-muted">
-              {resolved === 'avg' ? 'Showing averaged data across all months' : 'Showing actual spending for this month'}
+              {resolved === 'avg' ? 'Showing averaged data across complete months'
+                : overviewIsInProgress ? 'Month in progress — spending so far'
+                : 'Showing actual spending for this month'}
             </span>
           </div>
         );
@@ -946,17 +956,21 @@ export default function BudgetView() {
             {formatCurrency(investingAmt)} investing + {formatCurrency(paycheck.retirement401k)} 401k + {formatCurrency(paycheck.hsaContribution)} HSA
           </div>
         </div>
-        {/* Saved vs watermark — green under, red over (your "total saved / total spent") */}
+        {/* Saved vs watermark — green under, red over (your "total saved / total spent").
+            For the in-progress month this is "left", not "saved" — the month isn't done. */}
         {(() => {
           const saved = summary.netIncome - totalBucketSpend;
+          const label = saved < 0 ? 'Over Watermark' : overviewIsInProgress ? 'Left This Month' : 'Saved This Month';
           return (
             <div className="glass-card p-4">
-              <div className="term-label">{saved >= 0 ? 'Saved This Month' : 'Over Watermark'}</div>
+              <div className="term-label">{label}</div>
               <div className={`text-3xl font-black mt-1 mono-num ${saved >= 0 ? 'text-positive' : 'text-negative'}`}>
                 {saved >= 0 ? '+' : ''}{formatCurrency(saved)}
               </div>
               <div className="text-text-secondary text-xs mt-0.5">
-                {saved >= 0 ? 'Under your watermark — fund reserves + savings' : 'Spending above take-home this month'}
+                {saved < 0 ? 'Spending above take-home this month'
+                  : overviewIsInProgress ? 'Take-home minus spend so far — month in progress'
+                  : 'Under your watermark — fund reserves + savings'}
               </div>
             </div>
           );
