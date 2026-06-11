@@ -357,7 +357,7 @@ export default function BudgetView() {
   // Budget health score
   const savingsScore = summary.savingsRate >= 20 ? 90 : summary.savingsRate >= 15 ? 70 : summary.savingsRate >= 10 ? 50 : 25;
   const overageScore = totalOverage === 0 ? 95 : totalOverage < 500 ? 65 : totalOverage < 1000 ? 40 : 20;
-  const housingRatio = (buckets.find(b => b.category === 'housing')?.monthlyActual || 0) / paycheck.grossMonthly * 100;
+  const housingRatio = paycheck.grossMonthly > 0 ? (buckets.find(b => b.category === 'housing')?.monthlyActual || 0) / paycheck.grossMonthly * 100 : 0;
   const housingScore = housingRatio <= 28 ? 90 : housingRatio <= 33 ? 65 : 30;
   const surplusScore = summary.surplus > 1000 ? 90 : summary.surplus > 0 ? 60 : 20;
   const overallBudgetScore = Math.round((savingsScore + overageScore + housingScore + surplusScore) / 4);

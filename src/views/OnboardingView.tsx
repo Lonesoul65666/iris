@@ -431,7 +431,7 @@ export default function OnboardingView() {
                   Setup takes about 90 seconds. Pinky promise.
                 </p>
                 <div className="text-xs text-text-muted p-3 rounded-lg bg-white/[0.03] border border-glass-border">
-                  <span className="text-accent-light font-semibold">🔒 Private by default.</span> Everything lives in your browser. We literally can't see your data — even if we wanted to. (We don't.)
+                  <span className="text-accent-light font-semibold">🔒 Private by default.</span> Everything lives in your own private database that only you control — nobody else can see it. Not us, not anyone.
                 </div>
               </div>
 

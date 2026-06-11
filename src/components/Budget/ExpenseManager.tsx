@@ -143,7 +143,8 @@ interface ExpenseManagerProps {
   onAnalyzeWithGemini?: (text: string) => Promise<string>;
 }
 
-export default function ExpenseManager({ expenses, onExpensesChanged, geminiAvailable }: ExpenseManagerProps) {
+// geminiAvailable prop retained in the type for when screenshot-import lands; unused for now.
+export default function ExpenseManager({ expenses, onExpensesChanged }: ExpenseManagerProps) {
   const [tab, setTab] = useState<'list' | 'add' | 'import'>('list');
   const [parsedTransactions, setParsedTransactions] = useState<ParsedTransaction[]>([]);
   const [importWarnings, setImportWarnings] = useState<{ warnings: string[]; dupCount: number; doubleChargeCount: number; totalParsed: number } | null>(null);
@@ -947,10 +948,10 @@ export default function ExpenseManager({ expenses, onExpensesChanged, geminiAvai
                 </button>
                 <input type="file" ref={screenshotInputRef} accept="image/*" className="hidden"
                   onChange={() => { /* TODO: Gemini screenshot analysis */ }} />
-                <button onClick={() => screenshotInputRef.current?.click()}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${geminiAvailable ? 'bg-surface-3 hover:bg-surface-4 text-text-secondary' : 'bg-surface-3 text-text-muted opacity-50 cursor-not-allowed'}`}
-                  disabled={!geminiAvailable}>
-                  📸 Upload Screenshot {!geminiAvailable && '(needs API key)'}
+                <button
+                  className="px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-surface-3 text-text-muted opacity-50 cursor-not-allowed"
+                  disabled title="Screenshot import isn't built yet">
+                  📸 Upload Screenshot (coming soon)
                 </button>
               </div>
               <div className="text-xs text-text-muted space-y-1">
