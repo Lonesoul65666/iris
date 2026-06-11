@@ -114,7 +114,7 @@ export default function SettingsView() {
                 <li><span className="text-accent-light font-medium">OpenAI</span> — pay-as-you-go. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-accent hover:underline">Get a key</a></li>
                 <li><span className="text-accent-light font-medium">Ollama</span> — fully local, no key needed. Set preference to <em>local-only</em>.</li>
               </ul>
-              <p className="text-xs text-text-muted">Keys are stored in your browser only. Nothing leaves your device except calls to the provider you chose.</p>
+              <p className="text-xs text-text-muted">Keys are stored in your own private database. Nothing leaves it except calls to the provider you chose.</p>
             </div>
           </div>
         </div>
@@ -150,7 +150,7 @@ export default function SettingsView() {
           </p>
           <p className="text-[10px] text-text-muted mt-2 p-2 rounded bg-white/[0.03] border border-glass-border leading-relaxed">
             💡 <span className="text-text-secondary font-medium">Your data stays yours.</span> All Iris data
-            (accounts, holdings, chats) lives in your browser's IndexedDB and never leaves your device
+            (accounts, holdings, chats) lives in your own private database and never leaves it
             except when you query an LLM provider. Iris never proxies your calls — each provider charges
             your key directly. Each provider has its own data-retention policy, so review their links
             before saving. <span className="text-positive">For absolute privacy, use Ollama (below) — runs
@@ -479,7 +479,7 @@ export default function SettingsView() {
       <div className="glass-card p-6 space-y-5">
         <div>
           <h3 className="font-semibold text-text-primary mb-1">Data Management</h3>
-          <p className="text-xs text-text-muted">All data is stored locally in your browser (IndexedDB). Nothing leaves your machine except Gemini API queries.</p>
+          <p className="text-xs text-text-muted">All data is stored in your own private database that only you control. Nothing leaves it except Gemini API queries.</p>
         </div>
 
         {/* Transactions / Expenses */}
