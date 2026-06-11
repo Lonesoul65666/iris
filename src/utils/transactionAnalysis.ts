@@ -8,7 +8,8 @@ export interface MonthlySpending {
   byCategory: Record<string, number>;
   totalExpenses: number;   // personal spend only — work expenses are excluded
   totalWork: number;       // reimbursable work spend (flagged OR travel_work)
-  totalIncome: number;
+  totalIncome: number;     // real earned income only (excludes reimbursements)
+  totalReimbursement: number; // work-expense payback (e.g. Coupa) — offsets totalWork, NOT income
   totalTransfers: number;
   totalInvestments: number;
   transactionCount: number;
@@ -55,6 +56,7 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
         totalExpenses: 0,
         totalWork: 0,
         totalIncome: 0,
+        totalReimbursement: 0,
         totalTransfers: 0,
         totalInvestments: 0,
         transactionCount: 0,
@@ -68,7 +70,13 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
 
     if (txType === 'transfer') { m.totalTransfers += e.amount; continue; }
     if (txType === 'investment') { m.totalInvestments += e.amount; continue; }
-    if (flow === 'inflow') { m.totalIncome += e.amount; continue; }
+    if (flow === 'inflow') {
+      // Reimbursements (e.g. Coupa) are work-expense payback, NOT earned income —
+      // they offset work spend, so they must not inflate totalIncome / grossMonthly.
+      if (txType === 'reimbursement') { m.totalReimbursement += e.amount; continue; }
+      m.totalIncome += e.amount;
+      continue;
+    }
     if (txType === 'refund') { m.totalExpenses -= e.amount; continue; }
 
     // Work expenses (manually flagged OR the travel_work category) are
