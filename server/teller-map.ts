@@ -183,3 +183,88 @@ export function tellerTxnToExpense(
     tellerInstitution: account.institution?.name ?? '',
   }
 }
+
+// ─── Income-inflow mapping (Phase-1 budget: real income) ────────────────────
+//
+// Single-income household — the employer is Abnormal. On a DEPOSITORY account,
+// a positive (inflow) deposit from the employer is income; the Coupa / "Abnormal
+// AI Inc" deposits are work-expense REIMBURSEMENTS, not salary. Everything else
+// (transfers, Zelle, internal moves, interest, non-employer deposits) is skipped
+// so we don't pollute income with transfers. The income detector then splits the
+// Abnormal stream into base vs variable downstream.
+
+const INCOME_EMPLOYER = /ABNORMAL/i
+const REIMBURSEMENT_HINT = /COUPA|ABNORMAL\s*AI/i
+
+export type IncomeSkipReason =
+  | 'not_inflow'
+  | 'credit_card_account'
+  | 'transfer_or_internal'
+  | 'interest'
+  | 'not_employer'
+
+export interface IncomeMapResult {
+  keep: boolean
+  amount?: number
+  transactionType?: 'income' | 'reimbursement'
+  reason?: IncomeSkipReason
+}
+
+export function classifyTellerInflow(t: TellerTransaction, account: TellerAccount): IncomeMapResult {
+  const amt = Number(t.amount)
+  if (account.subtype === 'credit_card') return { keep: false, reason: 'credit_card_account' }
+  if (amt <= 0) return { keep: false, reason: 'not_inflow' }
+  const desc = t.description || ''
+  // Transfers / Zelle / card-payment reversals / brokerage moves → not income.
+  if (isCheckingNonSpend(desc)) return { keep: false, reason: 'transfer_or_internal' }
+  if (t.type === 'interest') return { keep: false, reason: 'interest' }
+  if (!INCOME_EMPLOYER.test(desc)) return { keep: false, reason: 'not_employer' }
+  const transactionType: 'income' | 'reimbursement' = REIMBURSEMENT_HINT.test(desc) ? 'reimbursement' : 'income'
+  return { keep: true, amount: amt, transactionType }
+}
+
+export interface MappedIncome {
+  id: string
+  date: string
+  amount: number
+  description: string
+  category: string
+  reimbursementStatus: 'not_reimbursable'
+  isWorkExpense: false
+  recurring: false
+  flow: 'inflow'
+  transactionType: 'income' | 'reimbursement'
+  source: string
+  importBatch: string
+  tellerTxnId: string
+  tellerAccountId: string
+  tellerCategory: string | null
+  tellerInstitution: string
+}
+
+export function tellerTxnToIncome(
+  t: TellerTransaction,
+  account: TellerAccount,
+  batch: string,
+): MappedIncome | null {
+  const r = classifyTellerInflow(t, account)
+  if (!r.keep || r.amount === undefined || !r.transactionType) return null
+  return {
+    id: `teller_${t.id}`,
+    date: t.date,
+    amount: r.amount,
+    description: t.description || account.name,
+    category: r.transactionType === 'reimbursement' ? 'reimbursement' : 'income',
+    reimbursementStatus: 'not_reimbursable',
+    isWorkExpense: false,
+    recurring: false,
+    flow: 'inflow',
+    transactionType: r.transactionType,
+    source: mapAccountSource(account),
+    importBatch: batch,
+    tellerTxnId: t.id,
+    tellerAccountId: account.id,
+    tellerCategory: t.details?.category ?? null,
+    tellerInstitution: account.institution?.name ?? '',
+  }
+}

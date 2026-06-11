@@ -10,7 +10,7 @@
 
 import { sendJson, requireContext, methodNotAllowed, errorMessage, type Req, type Res } from './http-utils.ts'
 import { fetchAccounts, fetchAccountBalance, fetchAllTransactions, tellerConfigStatus, TellerApiError, type TellerAccount } from '../teller-client.ts'
-import { tellerTxnToExpense, classifyTellerTxn, mapAccountSource, type MappedExpense, type SkipReason } from '../teller-map.ts'
+import { tellerTxnToExpense, classifyTellerTxn, mapAccountSource, tellerTxnToIncome, type MappedExpense, type MappedIncome, type SkipReason } from '../teller-map.ts'
 
 export async function handleTellerStatus(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
@@ -489,4 +489,104 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
     perAccount,
     errors,
   })
+}
+
+interface IncomeImportSummary {
+  institution: string
+  accountName: string
+  subtype: string
+  lastFour: string
+  source: string
+  fetched: number
+  income: number
+  incomeAmount: number
+  reimbursement: number
+  reimbursementAmount: number
+  sample: { date: string; amount: number; description: string; type: string }[]
+}
+
+/**
+ * Import income INFLOWS from Teller (Phase-1 budget: real income).
+ *   POST /api/teller/import-income?since=YYYY-MM-DD&dryRun=1
+ * Depository accounts only (income lands in checking/savings, never cards).
+ * Keeps employer (Abnormal) deposits as income, Coupa/AI-Inc as reimbursement;
+ * skips transfers/interest/non-employer (see classifyTellerInflow). Idempotent
+ * (teller_<txnId>), reversible via the batch tag. Dry-run first to inspect.
+ */
+export async function handleTellerImportIncome(req: Req, res: Res): Promise<void> {
+  if (req.method !== 'POST') return methodNotAllowed(res)
+  const ctx = requireContext(res)
+  if (!ctx) return
+  const cfg = tellerConfigStatus()
+  if (!cfg.configured || !cfg.certReadable || !cfg.keyReadable) {
+    sendJson(res, 503, { ok: false, error: 'teller_not_configured', status: cfg })
+    return
+  }
+  const url = new URL(req.url ?? '', 'http://localhost')
+  const since = url.searchParams.get('since') ?? '2025-09-01'
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) { sendJson(res, 400, { ok: false, error: 'invalid_since', expected: 'YYYY-MM-DD' }); return }
+  const dryRun = url.searchParams.get('dryRun') === '1'
+  const batch = `teller-income-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}`
+
+  let rows: ConnectorTokenRow[]
+  try {
+    const r = await ctx.pool.query<ConnectorTokenRow>(
+      `SELECT id, institution, access_token, provider_enrollment_id
+         FROM connectors WHERE user_id = $1 AND provider = 'teller' AND status = 'active'`,
+      [ctx.userId],
+    )
+    rows = r.rows
+  } catch (err) { sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) }); return }
+
+  const perAccount: IncomeImportSummary[] = []
+  const errors: ConnectorFetchError[] = []
+  const toWrite: MappedIncome[] = []
+
+  for (const row of rows) {
+    let accs: TellerAccount[]
+    try { accs = await fetchAccounts(row.access_token) }
+    catch (err) { errors.push({ connectorId: row.id, institution: row.institution, status: err instanceof TellerApiError ? err.status : null, code: err instanceof TellerApiError ? err.code : 'request_failed', message: errorMessage(err) }); continue }
+    for (const a of accs) {
+      if (a.subtype === 'credit_card') continue   // income never lands on a card; stay frugal
+      try {
+        const { transactions } = await fetchAllTransactions(row.access_token, a.id, { sinceDate: since })
+        const summary: IncomeImportSummary = { institution: row.institution, accountName: a.name, subtype: a.subtype, lastFour: a.last_four, source: mapAccountSource(a), fetched: transactions.length, income: 0, incomeAmount: 0, reimbursement: 0, reimbursementAmount: 0, sample: [] }
+        for (const t of transactions) {
+          const inc = tellerTxnToIncome(t, a, batch)
+          if (!inc) continue
+          if (inc.transactionType === 'reimbursement') { summary.reimbursement++; summary.reimbursementAmount = Math.round((summary.reimbursementAmount + inc.amount) * 100) / 100 }
+          else { summary.income++; summary.incomeAmount = Math.round((summary.incomeAmount + inc.amount) * 100) / 100 }
+          if (summary.sample.length < 8) summary.sample.push({ date: inc.date, amount: inc.amount, description: inc.description.slice(0, 40), type: inc.transactionType })
+          toWrite.push(inc)
+        }
+        perAccount.push(summary)
+      } catch (err) { errors.push({ connectorId: row.id, institution: `${row.institution}/${a.name}`, status: err instanceof TellerApiError ? err.status : null, code: err instanceof TellerApiError ? err.code : 'request_failed', message: errorMessage(err) }) }
+    }
+  }
+
+  let written = 0
+  if (!dryRun && toWrite.length > 0) {
+    const client = await ctx.pool.connect()
+    try {
+      await client.query('BEGIN')
+      for (const e of toWrite) {
+        await client.query(
+          `INSERT INTO expenses (id, user_id, date, amount, data, updated_at)
+           VALUES ($1, $2, $3, $4, $5::jsonb, now())
+           ON CONFLICT (user_id, id) DO UPDATE
+             SET date = EXCLUDED.date, amount = EXCLUDED.amount, data = EXCLUDED.data, updated_at = now()`,
+          [e.id, ctx.userId, e.date, e.amount, JSON.stringify(e)],
+        )
+      }
+      await client.query('COMMIT')
+      written = toWrite.length
+    } catch (err) {
+      try { await client.query('ROLLBACK') } catch { /* connection may be dead; finally still releases */ }
+      sendJson(res, 500, { ok: false, error: 'write_failed', message: errorMessage(err), batch }); return
+    } finally { client.release() }
+  }
+
+  const totalIncome = Math.round(perAccount.reduce((s, a) => s + a.incomeAmount, 0) * 100) / 100
+  const totalReimbursement = Math.round(perAccount.reduce((s, a) => s + a.reimbursementAmount, 0) * 100) / 100
+  sendJson(res, 200, { ok: true, dryRun, batch, since, totalIncome, totalReimbursement, written, perAccount, errors })
 }
