@@ -1125,11 +1125,14 @@ export default function BudgetView() {
         </div>
       )}
 
-      {/* Budget Pulse — single immutable read of how the month is going. Sits high
-          on the page so the read of "where am I right now" is the first signal. */}
-      {filteredBuckets.filter(b => b.monthlyActual > 0 || b.monthlyBudget > 0).length > 0 && (
+      {/* Budget Pulse — the LIVE read: how the month is going + where it's
+          trending. Pace ticks and projections only make sense for the month
+          you're living in, so it renders only when viewing the in-progress
+          month (a budget runs DURING the month — Scott). */}
+      {overviewIsInProgress && filteredBuckets.filter(b => b.monthlyActual > 0 || b.monthlyBudget > 0).length > 0 && (
         <BudgetPulse
           buckets={filteredBuckets.filter(b => b.monthlyActual > 0 || b.monthlyBudget > 0)}
+          watermark={paycheck.netTakeHome}
           onCategoryClick={(cat) => setDrilldownCategory(cat)}
         />
       )}
@@ -1617,8 +1620,10 @@ export default function BudgetView() {
         </details>
       )}
 
-      {/* Trigger Center — pace warnings, surplus available, etc */}
-      <TriggerCenter expenses={expenses} buckets={buckets} />
+      {/* Trigger Center — pace warnings, surplus available, etc. Fed TRUE
+          month-to-date buckets (the audit found it judging calendar pace
+          against multi-month averages — incoherent). */}
+      <TriggerCenter expenses={expenses} buckets={overviewInProgress ? applyMonthToBuckets(buckets, overviewInProgress) : buckets} />
 
       {/* Inflow questions — one-tap classification for ambiguous deposits */}
       <InflowQuestions expenses={expenses} />

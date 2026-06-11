@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { BudgetBucket } from '../../types/budget';
 import { formatCurrency } from '../../utils/format';
+import { laneOf, FIXED_OVER_TOLERANCE } from '../../utils/budgetLanes';
 
 interface Props {
   buckets: BudgetBucket[];
@@ -8,6 +9,8 @@ interface Props {
   now?: Date;
   /** Click a row to drill into the category. */
   onCategoryClick?: (category: string) => void;
+  /** Net take-home — enables the "on pace for $X vs watermark" projection. */
+  watermark?: number;
 }
 
 type Status = 'over' | 'pacing' | 'ontrack' | 'untouched' | 'nobudget';
@@ -26,6 +29,12 @@ const ALL_STATUSES: Status[] = ['over', 'pacing', 'ontrack', 'untouched', 'nobud
 function classify(b: BudgetBucket, monthFraction: number): Status {
   if (b.monthlyBudget <= 0) return 'nobudget';
   if (b.monthlyActual <= 0) return 'untouched';
+  // FIXED-lane bills land once at (about) their full amount — daily-pace logic
+  // is pure noise there (a mortgage paid on the 1st is not "pacing", it's the
+  // bill landing as expected). Same tolerance the lane model uses everywhere.
+  if (laneOf(b.category) === 'fixed') {
+    return b.monthlyActual > b.monthlyBudget * FIXED_OVER_TOLERANCE ? 'over' : 'ontrack';
+  }
   if (b.monthlyActual > b.monthlyBudget) return 'over';
   // Exactly at budget = capped (fixed deposits like investing, autopay bills hit
   // their full amount and won't overshoot). PACING is only meaningful when
@@ -40,10 +49,28 @@ function classify(b: BudgetBucket, monthFraction: number): Status {
   return 'ontrack';
 }
 
-export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick }: Props) {
+export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick, watermark }: Props) {
   const dayOfMonth = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const monthFraction = dayOfMonth / daysInMonth;
+
+  // Month-end projection — the "how am I TRENDING" number. Fixed bills count
+  // once at max(budget, actual) — housing paid on the 1st must not project
+  // ×2.7. Flexible spend projects linearly at the current daily pace. Reserve
+  // lanes are excluded (lumpy by design, funded by set-asides).
+  const projection = useMemo(() => {
+    if (!watermark || watermark <= 0 || monthFraction >= 1) return null;
+    let fixed = 0;
+    let flexActual = 0;
+    for (const b of buckets) {
+      const lane = laneOf(b.category);
+      if (lane === 'reserve') continue;
+      if (lane === 'fixed') fixed += Math.max(b.monthlyBudget, b.monthlyActual);
+      else flexActual += Math.max(0, b.monthlyActual);
+    }
+    const projected = fixed + flexActual / Math.max(monthFraction, 0.03);
+    return { projected, under: projected <= watermark, delta: Math.abs(watermark - projected) };
+  }, [buckets, watermark, monthFraction]);
 
   const [activeFilters, setActiveFilters] = useState<Set<Status>>(new Set());
 
@@ -102,6 +129,11 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
           <div className="mono-num text-sm text-text-secondary mt-0.5">
             {formatCurrency(totalActual)} <span className="text-text-muted">/ {formatCurrency(totalBudget)}</span>
           </div>
+          {projection && (
+            <div className={`text-[11px] mt-0.5 mono-num font-medium ${projection.under ? 'text-positive' : 'text-negative'}`}>
+              trending to ~{formatCurrency(projection.projected)} · {projection.under ? `${formatCurrency(projection.delta)} under` : `${formatCurrency(projection.delta)} OVER`} your watermark
+            </div>
+          )}
         </div>
       </div>
 
@@ -147,6 +179,13 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
           const pct = b.monthlyBudget > 0 ? Math.min(100, (b.monthlyActual / b.monthlyBudget) * 100) : 0;
           const expectedPct = monthFraction * 100;
           const m = STATUS_META[status];
+          // Where this category LANDS at the current daily pace — flexible
+          // lanes only (fixed bills land once; reserves are lumpy by design).
+          // Suppressed in the first ~3 days (one coffee would project wildly).
+          const trendTo = laneOf(b.category) === 'flexible' && b.monthlyActual > 0 && b.monthlyBudget > 0
+            && monthFraction >= 0.1 && monthFraction < 0.97
+            ? b.monthlyActual / monthFraction
+            : null;
           return (
             <button
               key={b.category}
@@ -159,6 +198,12 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
               <span className="mono-num text-xs text-text-primary w-36 text-right whitespace-nowrap flex-shrink-0">
                 {formatCurrency(b.monthlyActual)}
                 <span className="text-text-muted"> / {b.monthlyBudget > 0 ? formatCurrency(b.monthlyBudget) : '—'}</span>
+              </span>
+              <span
+                className={`mono-num text-[10px] w-24 text-right whitespace-nowrap flex-shrink-0 ${trendTo !== null && trendTo > b.monthlyBudget ? 'text-negative' : 'text-text-muted'}`}
+                title={trendTo !== null ? `At today's pace this lands at ${formatCurrency(trendTo)} by month end` : undefined}
+              >
+                {trendTo !== null ? `→ ${formatCurrency(trendTo)}` : ''}
               </span>
               <div className="flex-1 bg-white/5 rounded-full h-2 relative overflow-hidden min-w-[60px]">
                 {b.monthlyBudget > 0 && (
@@ -201,6 +246,7 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
       <div className="mt-3 flex items-center gap-3 text-[10px] text-text-muted">
         <span className="flex items-center gap-1"><span className="w-px h-2.5 bg-white/40 inline-block" /> calendar pace tick</span>
         <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warning" /> over pace OR ≥85% of cap</span>
+        <span className="flex items-center gap-1"><span className="mono-num">→</span> where it lands at today's pace (flexible spending)</span>
       </div>
     </div>
   );
