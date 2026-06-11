@@ -52,11 +52,12 @@ export default function DashboardView() {
   const {
     accounts, equity, totalLiquid, equityValue, totalNetWorth,
     allocations, overallScore,
-    budgetSummary, budgetOverBudget, actionItems,
+    budgetSummary, actionItems,
     insights,
     netWorthSnapshots,
     dashBuckets,
     rawExpenses,
+    monthToDate, safeToSpend,
     setView,
     profile,
   } = useAppData();
@@ -86,26 +87,37 @@ export default function DashboardView() {
   const trendPct = netWorthTrend.length >= 2 && netWorthTrend[0].value > 0
     ? (trendDelta / netWorthTrend[0].value) * 100 : 0;
 
-  // ── Spending breakdown by category ───────────────────────────────────
-  const spendingByCategory = useMemo(() => {
-    if (!dashBuckets) return [];
-    return dashBuckets
-      // Operating spend only: exclude investing (synced separately) AND reserve
-      // lanes (taxes/travel — lumpy/annual, shown in the budget's Reserves lane,
-      // not counted as monthly overspend here).
-      .filter((b: { monthlyActual: number; category?: string }) => b.monthlyActual > 0 && b.category !== 'investing' && laneOf(b.category ?? '') !== 'reserve')
-      .sort((a: { monthlyActual: number }, b: { monthlyActual: number }) => b.monthlyActual - a.monthlyActual)
-      .slice(0, 6)
-      .map((b: { label: string; monthlyActual: number; monthlyBudget: number; icon?: string; category?: string }) => ({
-        name: b.label.split('(')[0].trim(),
-        value: b.monthlyActual,
-        budget: b.monthlyBudget,
-        icon: b.icon,
-        over: isOverBudget(b.category ?? '', b.monthlyActual, b.monthlyBudget),
-      }));
-  }, [dashBuckets]);
-  const totalSpending = spendingByCategory.reduce((s: number, c: { value: number }) => s + c.value, 0);
-  const totalBudget = spendingByCategory.reduce((s: number, c: { budget: number }) => s + c.budget, 0);
+  // ── Spending breakdown by category — TRUE month-to-date ──────────────
+  // Reads this month's actual transactions (monthToDate), not the multi-month
+  // bucket averages the old version showed under a "this month" label.
+  const { spendingByCategory, totalSpending, totalBudget } = useMemo(() => {
+    if (!monthToDate || !dashBuckets) return { spendingByCategory: [], totalSpending: 0, totalBudget: 0 };
+    const bucketMeta = new Map(dashBuckets.map((b: { category: string }) => [b.category, b]));
+    const rows = Object.entries(monthToDate.byCategory)
+      // Operating only: no investing (synced separately), no reserve lanes
+      // (taxes/travel — lumpy/annual), no work (nets out via reimbursement).
+      .filter(([cat, amt]) => amt > 0 && cat !== 'investing' && cat !== 'travel_work' && laneOf(cat) !== 'reserve')
+      .map(([cat, amt]) => {
+        const b = bucketMeta.get(cat) as { label?: string; monthlyBudget?: number; icon?: string } | undefined;
+        return {
+          name: (b?.label || cat).split('(')[0].trim(),
+          value: Math.round(amt),
+          budget: b?.monthlyBudget || 0,
+          icon: b?.icon,
+          over: isOverBudget(cat, amt, b?.monthlyBudget || 0),
+        };
+      })
+      .sort((a, b) => b.value - a.value);
+    // Totals span ALL operating categories — the donut shows top 6 + "Everything else"
+    const total = rows.reduce((s, r) => s + r.value, 0);
+    const budgetTotal = dashBuckets
+      .filter((b: { category: string }) => b.category !== 'investing' && laneOf(b.category) !== 'reserve')
+      .reduce((s: number, b: { monthlyBudget: number }) => s + b.monthlyBudget, 0);
+    const top = rows.slice(0, 6);
+    const rest = total - top.reduce((s, r) => s + r.value, 0);
+    if (rest > 0) top.push({ name: 'Everything else', value: Math.round(rest), budget: 0, icon: '🧾', over: false });
+    return { spendingByCategory: top, totalSpending: total, totalBudget: budgetTotal };
+  }, [monthToDate, dashBuckets]);
   const spentPctOfBudget = totalBudget > 0 ? Math.min(999, Math.round((totalSpending / totalBudget) * 100)) : 0;
 
   // ── Recent transactions ─────────────────────────────────────────────
@@ -177,21 +189,23 @@ export default function DashboardView() {
               </div>
             </div>
 
-            {/* This-month pulse */}
-            <div className="flex items-stretch gap-4">
-              <div className="hidden lg:block w-px bg-gradient-to-b from-transparent via-cyber-cyan/40 to-transparent" />
-              <div className="cursor-pointer" onClick={() => setView('budget')}>
-                <div className="term-label">Cycle · this month</div>
-                <div className={`text-3xl md:text-4xl font-black mt-2 leading-none mono-num ${budgetSummary.surplus >= 0 ? 'text-positive' : 'text-negative'}`}>
-                  {budgetSummary.surplus >= 0 ? '+' : '−'}{formatCurrency(Math.abs(budgetSummary.surplus))}
-                </div>
-                <div className="text-xs text-text-muted mt-2">
-                  {budgetSummary.surplus >= 0
-                    ? `${budgetSummary.savingsRate.toFixed(0)}% savings rate`
-                    : `${budgetOverBudget.length} categor${budgetOverBudget.length === 1 ? 'y' : 'ies'} over`}
+            {/* Safe to Spend — the number that answers "can I buy this?" */}
+            {safeToSpend && (
+              <div className="flex items-stretch gap-4">
+                <div className="hidden lg:block w-px bg-gradient-to-b from-transparent via-cyber-cyan/40 to-transparent" />
+                <div className="cursor-pointer" onClick={() => setView('budget')}>
+                  <div className="term-label">Safe to spend · this month</div>
+                  <div className={`text-3xl md:text-4xl font-black mt-2 leading-none mono-num ${safeToSpend.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
+                    {safeToSpend.amount >= 0 ? '' : '−'}{formatCurrency(Math.abs(safeToSpend.amount))}
+                  </div>
+                  <div className="text-xs text-text-muted mt-2">
+                    {safeToSpend.amount >= 0
+                      ? `≈ ${formatCurrency(safeToSpend.perDay)}/day for ${safeToSpend.daysLeft} more days`
+                      : 'Over the watermark — flexible spending is tapped out'}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Net worth area chart */}
@@ -296,7 +310,7 @@ export default function DashboardView() {
                 centerTone={spentPctOfBudget > 100 ? 'negative' : spentPctOfBudget > 90 ? 'warning' : 'positive'}
               />
               <div className="space-y-1.5">
-                {spendingByCategory.slice(0, 6).map((c: { name: string; value: number; budget: number; icon?: string; over: boolean }, i: number) => (
+                {spendingByCategory.map((c: { name: string; value: number; budget: number; icon?: string; over: boolean }, i: number) => (
                   <div key={i} className="flex items-center gap-2 text-xs">
                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: SECTOR_COLORS[i % SECTOR_COLORS.length] }} />
                     {c.icon && <span className="text-sm">{c.icon}</span>}
@@ -344,25 +358,34 @@ export default function DashboardView() {
         ) : null}
       </div>
 
-      {/* ════ CASH FLOW BAR ═════════════════════════════════════════════ */}
-      {(budgetSummary.netIncome > 0 || budgetSummary.realActual > 0) && (
-        <DataCard
-          title="Cash flow this month"
-          subtitle={budgetSummary.surplus >= 0
-            ? `${formatCurrency(budgetSummary.surplus)} surplus`
-            : `${formatCurrency(Math.abs(budgetSummary.surplus))} over income`}
-          icon="💸"
-          cta="Open Budget →"
-          onClick={() => setView('budget')}
-          tone={budgetSummary.surplus >= 0 ? 'default' : 'warning'}
-        >
-          <CashFlowBar
-            income={budgetSummary.netIncome}
-            spent={budgetSummary.realActual}
-            investing={budgetSummary.investing}
-          />
-        </DataCard>
-      )}
+      {/* ════ CASH FLOW BAR — true month-to-date ════════════════════════ */}
+      {(() => {
+        if (budgetSummary.netIncome <= 0 && !monthToDate) return null;
+        // Month-to-date operating spend from real transactions. Investing is a
+        // separate segment (synced from Settings, not in bank transactions), so
+        // it is NOT inside `spent` — the old version double-subtracted it.
+        const mtdSpent = Math.max(0, Math.round(monthToDate?.totalOperating ?? 0));
+        const investing = budgetSummary.investing;
+        const mtdSurplus = budgetSummary.netIncome - mtdSpent - investing;
+        return (
+          <DataCard
+            title="Cash flow this month"
+            subtitle={mtdSurplus >= 0
+              ? `${formatCurrency(mtdSurplus)} left this month`
+              : `${formatCurrency(Math.abs(mtdSurplus))} over income`}
+            icon="💸"
+            cta="Open Budget →"
+            onClick={() => setView('budget')}
+            tone={mtdSurplus >= 0 ? 'default' : 'warning'}
+          >
+            <CashFlowBar
+              income={budgetSummary.netIncome}
+              spent={mtdSpent}
+              investing={investing}
+            />
+          </DataCard>
+        );
+      })()}
 
       {/* ════ LIVING UNDER THE GUARANTEE (savings scorecard) ════════════ */}
       <SavingsScorecard />
@@ -564,7 +587,7 @@ function CashFlowBar({ income, spent, investing }: { income: number; spent: numb
         <CashFlowSegment color="from-violet-500 to-indigo-500" label="Investing" value={investing} />
         {overage > 0
           ? <CashFlowSegment color="bg-negative" label="Over income" value={overage} negative solid />
-          : <CashFlowSegment color="from-emerald-500 to-teal-500" label="Surplus" value={surplus} positive />
+          : <CashFlowSegment color="from-emerald-500 to-teal-500" label="Left" value={surplus} positive />
         }
       </div>
     </div>

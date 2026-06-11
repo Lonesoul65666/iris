@@ -375,7 +375,9 @@ export function calculateBudgetSummary(buckets: BudgetBucket[], paycheck: Payche
   const investing = investingBucket?.monthlyActual || investingBucket?.monthlyBudget || monthlyInvestmentAmount || 0;
   // Surplus = income minus all real spending (investing is already included in realActual via bucket)
   const surplus = paycheck.netTakeHome - realActual;
-  const savingsRate = ((investing + paycheck.retirement401k + paycheck.hsaContribution) / paycheck.grossMonthly) * 100;
+  const savingsRate = paycheck.grossMonthly > 0
+    ? ((investing + paycheck.retirement401k + paycheck.hsaContribution) / paycheck.grossMonthly) * 100
+    : 0;
 
   return {
     grossIncome: paycheck.grossMonthly,

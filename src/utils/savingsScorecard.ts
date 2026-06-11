@@ -11,7 +11,7 @@
 // Plus a cumulative "banked since" running total. Pure function — no React/IO.
 
 import type { Expense } from '../types/budget';
-import { computeMonthlySpending } from './transactionAnalysis';
+import { computeMonthlySpending, isCompleteMonth } from './transactionAnalysis';
 
 function monthKey(date: string | undefined): string {
   if (!date) return '';
@@ -56,10 +56,11 @@ export interface ScorecardMonth {
   month: string;          // 'YYYY-MM'
   label: string;          // 'May 2026'
   income: number;         // real earned income that month (excludes reimbursements)
-  spend: number;          // personal spend (excludes work + reimbursements)
-  surplusVsBase: number;  // base - spend  (+ = lived under the guarantee)
-  banked: number;         // income - spend (actual net cash banked that month)
-  partial: boolean;       // current/partial month (don't count in trend/cumulative)
+  spend: number;          // OPERATING spend (excludes work, reimbursements, AND reserve lanes)
+  reserveSpend: number;   // reserve-lane outflows that month (taxes/travel — lumpy, pre-funded)
+  surplusVsBase: number;  // base - operating spend  (+ = lived under the guarantee)
+  banked: number;         // income - ALL personal spend (the honest cash number; reserves included)
+  partial: boolean;       // current/in-progress month (don't count in trend/cumulative)
 }
 
 export interface Scorecard {
@@ -86,11 +87,18 @@ export function computeScorecard(expenses: Expense[], opts: { since?: string } =
     month: m.month,
     label: m.monthLabel,
     income: Math.round(m.totalIncome),
-    spend: Math.round(m.totalExpenses),
-    surplusVsBase: Math.round(base - m.totalExpenses),
+    // Discipline number judges OPERATING spend only — a $13k April tax payment
+    // is a planned reserve withdrawal, not "blew the base by $13k" (the lane
+    // model's whole point). banked stays cash-honest: income minus EVERYTHING
+    // personal (operating + reserve), so taxes still reduce what you banked.
+    spend: Math.round(m.totalOperating),
+    reserveSpend: Math.round(m.totalReserve),
+    surplusVsBase: Math.round(base - m.totalOperating),
     banked: Math.round(m.totalIncome - m.totalExpenses),
-    // Heuristic: a month with very few transactions OR no income yet is partial.
-    partial: m.transactionCount <= 10 || m.totalIncome === 0,
+    // CALENDAR check — the in-progress month is partial no matter how many
+    // transactions it has. (income===0 guards data-edge months, e.g. an import
+    // that started mid-month.)
+    partial: !isCompleteMonth(m.month) || m.totalIncome === 0,
   }));
 
   const full = months.filter((m) => !m.partial);

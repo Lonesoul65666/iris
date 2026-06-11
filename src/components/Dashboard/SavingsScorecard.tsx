@@ -49,7 +49,7 @@ export default function SavingsScorecard() {
             <div
               key={m.month}
               className="flex-1 flex flex-col items-center justify-end relative group"
-              title={`${m.label}: spent ${formatCurrency(m.spend)} — ${under ? 'under' : 'over'} base by ${formatCurrency(Math.abs(m.surplusVsBase))}`}
+              title={`${m.label}: spent ${formatCurrency(m.spend)}${m.reserveSpend > 0 ? ` (+${formatCurrency(m.reserveSpend)} from reserves)` : ''} — ${under ? 'under' : 'over'} base by ${formatCurrency(Math.abs(m.surplusVsBase))}${m.partial ? ' · in progress' : ''}`}
             >
               <div
                 className={`w-full rounded-t transition-all ${m.partial ? 'opacity-40' : ''} ${under ? 'bg-positive' : 'bg-negative'}`}

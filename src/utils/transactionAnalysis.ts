@@ -1,4 +1,31 @@
 import type { Expense, ExpenseCategory, BudgetBucket, CustomCategory } from '../types/budget';
+import { laneOf } from './budgetLanes';
+
+// ─── Canonical month axis ───
+//
+// A month is COMPLETE when the calendar has moved past it — never by counting
+// transactions. (The old >10-transaction heuristic marked the in-progress month
+// "full" within 2–3 days at this household's volume, polluting every average.)
+
+export function currentMonthKey(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function isCompleteMonth(ym: string, now: Date = new Date()): boolean {
+  return /^\d{4}-\d{2}$/.test(ym) && ym < currentMonthKey(now);
+}
+
+// ─── Canonical "what counts" predicates ───
+
+/** A real spending transaction: outflow, expense-typed (not transfer/investment/refund). */
+export function isRealExpense(e: Expense): boolean {
+  return (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense';
+}
+
+/** Reimbursable work spend: the manual flag OR the travel_work category. ONE definition. */
+export function isWorkSpend(e: Expense): boolean {
+  return !!e.isWorkExpense || e.category === 'travel_work';
+}
 
 // ─── Monthly spending aggregation ───
 
@@ -7,6 +34,8 @@ export interface MonthlySpending {
   monthLabel: string; // "Jan 2026", "Feb 2026", etc.
   byCategory: Record<string, number>;
   totalExpenses: number;   // personal spend only — work expenses are excluded
+  totalOperating: number;  // totalExpenses minus reserve lanes (taxes/travel) — THE operating-spend number
+  totalReserve: number;    // personal reserve-lane outflows (taxes, travel_personal) — lumpy by design
   totalWork: number;       // reimbursable work spend (flagged OR travel_work)
   totalIncome: number;     // real earned income only (excludes reimbursements)
   totalReimbursement: number; // work-expense payback (e.g. Coupa) — offsets totalWork, NOT income
@@ -54,6 +83,8 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
         monthLabel: getMonthLabel(key),
         byCategory: {},
         totalExpenses: 0,
+        totalOperating: 0,
+        totalReserve: 0,
         totalWork: 0,
         totalIncome: 0,
         totalReimbursement: 0,
@@ -70,6 +101,25 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
 
     if (txType === 'transfer') { m.totalTransfers += e.amount; continue; }
     if (txType === 'investment') { m.totalInvestments += e.amount; continue; }
+
+    // Refunds NET AGAINST SPEND — they are not income, and they credit back the
+    // category they refund (an Amazon return shrinks the Amazon bar). Checked
+    // before the inflow branch: refunds arrive as inflows, and the old order
+    // booked them as income while the spend they offset stayed on the books.
+    if (txType === 'refund') {
+      if (isWorkSpend(e)) {
+        m.totalWork -= e.amount;
+        m.byCategory['travel_work'] = (m.byCategory['travel_work'] || 0) - e.amount;
+        continue;
+      }
+      const cat = e.category || 'other';
+      m.totalExpenses -= e.amount;
+      if (laneOf(cat) === 'reserve') m.totalReserve -= e.amount;
+      else m.totalOperating -= e.amount;
+      m.byCategory[cat] = (m.byCategory[cat] || 0) - e.amount;
+      continue;
+    }
+
     if (flow === 'inflow') {
       // Reimbursements (e.g. Coupa) are work-expense payback, NOT earned income —
       // they offset work spend, so they must not inflate totalIncome / grossMonthly.
@@ -77,7 +127,6 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
       m.totalIncome += e.amount;
       continue;
     }
-    if (txType === 'refund') { m.totalExpenses -= e.amount; continue; }
 
     // Work expenses (manually flagged OR the travel_work category) are
     // reimbursable — pull them OUT of totalExpenses so they don't inflate
@@ -85,15 +134,17 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
     // Tracked separately (totalWork + byCategory['travel_work']) for the
     // Work Expenses & Reimbursements view. Flag wins over category, so a work
     // dinner (category food_dining, isWorkExpense=true) leaves food_dining too.
-    if (e.isWorkExpense || e.category === 'travel_work') {
+    if (isWorkSpend(e)) {
       m.totalWork += e.amount;
       m.byCategory['travel_work'] = (m.byCategory['travel_work'] || 0) + e.amount;
       continue;
     }
 
-    // Real (personal) expense
-    m.totalExpenses += e.amount;
+    // Real (personal) expense — split into operating vs reserve lanes
     const cat = e.category || 'other';
+    m.totalExpenses += e.amount;
+    if (laneOf(cat) === 'reserve') m.totalReserve += e.amount;
+    else m.totalOperating += e.amount;
     m.byCategory[cat] = (m.byCategory[cat] || 0) + e.amount;
   }
 
@@ -102,13 +153,16 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
     .map(([, v]) => v);
 }
 
-// Compute the average monthly actual for each budget category from transaction data
+// Compute the average monthly actual for each budget category from transaction
+// data. CALENDAR-complete months only — the in-progress month is excluded from
+// both numerator and denominator (it used to sit in both, understating every
+// average early in the month and overstating surplus).
 export function computeCategoryAverages(
   expenses: Expense[],
-  months?: number // override month count (e.g., if partial month)
+  now: Date = new Date()
 ): Record<ExpenseCategory, number> {
-  const monthly = computeMonthlySpending(expenses);
-  const numMonths = months || Math.max(monthly.length, 1);
+  const monthly = computeMonthlySpending(expenses).filter(m => isCompleteMonth(m.month, now));
+  const numMonths = Math.max(monthly.length, 1);
 
   const totals: Record<string, number> = {};
   for (const m of monthly) {
@@ -128,10 +182,9 @@ export function computeCategoryAverages(
 // Update budget bucket "monthlyActual" fields from imported transaction data
 export function applyTransactionsToBuckets(
   buckets: BudgetBucket[],
-  expenses: Expense[],
-  months?: number
+  expenses: Expense[]
 ): BudgetBucket[] {
-  const averages = computeCategoryAverages(expenses, months);
+  const averages = computeCategoryAverages(expenses);
 
   return buckets.map(bucket => {
     const actual = averages[bucket.category];
@@ -157,15 +210,15 @@ export function applyMonthToBuckets(
   });
 }
 
-/** Get work expense totals for a specific month */
+/** Get work expense totals for a specific month. Uses the ONE work definition
+ *  (flag OR travel_work) — auto-categorized work travel used to be invisible here. */
 export function computeWorkExpenses(expenses: Expense[], monthKey?: string): { work: number; personal: number } {
   const real = expenses.filter(e =>
-    (e.flow || 'outflow') === 'outflow' &&
-    (e.transactionType || 'expense') === 'expense' &&
+    isRealExpense(e) &&
     (!monthKey || getMonthKey(e.date) === monthKey)
   );
-  const work = real.filter(e => e.isWorkExpense).reduce((s, e) => s + e.amount, 0);
-  const personal = real.filter(e => !e.isWorkExpense).reduce((s, e) => s + e.amount, 0);
+  const work = real.filter(isWorkSpend).reduce((s, e) => s + e.amount, 0);
+  const personal = real.filter(e => !isWorkSpend(e)).reduce((s, e) => s + e.amount, 0);
   return { work: Math.round(work), personal: Math.round(personal) };
 }
 
@@ -230,12 +283,13 @@ export function computeCategoryTrends(expenses: Expense[]): CategoryTrend[] {
     const total = monthData.reduce((s, m) => s + m.amount, 0);
     const avg = total / monthly.length;
 
-    // Trend: compare last full month to the one before
+    // Trend: compare the last two CALENDAR-complete months
     let trend: 'up' | 'down' | 'flat' = 'flat';
     let trendPct = 0;
-    if (monthly.length >= 2) {
-      const last = monthly[monthly.length - 2].byCategory[cat] || 0; // last FULL month
-      const prev = monthly.length >= 3 ? (monthly[monthly.length - 3].byCategory[cat] || 0) : avg;
+    const complete = monthly.filter(m => isCompleteMonth(m.month));
+    if (complete.length >= 2) {
+      const last = complete[complete.length - 1].byCategory[cat] || 0;
+      const prev = complete[complete.length - 2].byCategory[cat] || 0;
       if (prev > 0) {
         trendPct = ((last - prev) / prev) * 100;
         trend = trendPct > 10 ? 'up' : trendPct < -10 ? 'down' : 'flat';
@@ -271,14 +325,11 @@ export interface SpendingSummary {
 
 export function computeSpendingSummary(expenses: Expense[]): SpendingSummary {
   const monthly = computeMonthlySpending(expenses);
-  const realExpenses = expenses.filter(e =>
-    (e.flow || 'outflow') === 'outflow' &&
-    (e.transactionType || 'expense') === 'expense'
-  );
+  const realExpenses = expenses.filter(isRealExpense);
 
-  // Only average over "full" months (10+ transactions) — partial months like a
-  // 2-transaction December or mid-month April skew the averages badly
-  const fullMonths = monthly.filter(m => m.transactionCount >= 10);
+  // Average over CALENDAR-complete months only — the in-progress month would
+  // drag every average down for the first three weeks of the month.
+  const fullMonths = monthly.filter(m => isCompleteMonth(m.month));
   const avgMonths = fullMonths.length > 0 ? fullMonths : monthly; // fallback if all partial
 
   const totalExpenses = monthly.reduce((s, m) => s + m.totalExpenses, 0);
@@ -327,17 +378,13 @@ export interface MonthComparison {
 }
 
 export function computeMonthComparison(expenses: Expense[]): MonthComparison | null {
-  const monthly = computeMonthlySpending(expenses);
-  // Need at least 2 months (skip current partial month if we have 3+)
+  // Compare the last two CALENDAR-complete months (the in-progress month is
+  // excluded by date, not by guessing from position/transaction count).
+  const monthly = computeMonthlySpending(expenses).filter(m => isCompleteMonth(m.month));
   if (monthly.length < 2) return null;
 
-  // Last entry might be a partial month — use second-to-last as "current" if we have 3+
-  const currentIdx = monthly.length >= 3 ? monthly.length - 2 : monthly.length - 1;
-  const priorIdx = currentIdx - 1;
-  if (priorIdx < 0) return null;
-
-  const current = monthly[currentIdx];
-  const prior = monthly[priorIdx];
+  const current = monthly[monthly.length - 1];
+  const prior = monthly[monthly.length - 2];
 
   const expenseChange = current.totalExpenses - prior.totalExpenses;
   const expenseChangePct = prior.totalExpenses > 0 ? (expenseChange / prior.totalExpenses) * 100 : 0;
