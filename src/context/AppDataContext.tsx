@@ -23,8 +23,9 @@ import { isOverBudget } from '../utils/budgetLanes';
 import type { ActionItem } from '../components/ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, clearAllActionData } from '../stores/actionStore';
 import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getPaycheck, getExpenses, getCustomCategories, clearAllExpenses, clearExpensesBySource, clearAllBudgetData } from '../stores/budgetStore';
-import { applyTransactionsToBuckets, computeCategoryAverages, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories } from '../utils/transactionAnalysis';
-import type { SpendingSummary, MonthComparison } from '../utils/transactionAnalysis';
+import { applyTransactionsToBuckets, computeCategoryAverages, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, currentMonthKey } from '../utils/transactionAnalysis';
+import type { SpendingSummary, MonthComparison, MonthlySpending } from '../utils/transactionAnalysis';
+import { computeSafeToSpend, type SafeToSpend } from '../utils/safeToSpend';
 import { generateInsights } from '../utils/insightsEngine';
 import type { Insight } from '../utils/insightsEngine';
 import { reconcileActionItems } from '../utils/dynamicActions';
@@ -56,8 +57,6 @@ interface AppDataContextValue {
   spendingSummary: SpendingSummary | null;
   monthComparison: MonthComparison | null;
   rawExpenses: any[];
-  waterfallMonth: string;
-  setWaterfallMonth: React.Dispatch<React.SetStateAction<string>>;
   insights: Insight[];
   insightsExpanded: boolean;
   setInsightsExpanded: React.Dispatch<React.SetStateAction<boolean>>;
@@ -79,9 +78,9 @@ interface AppDataContextValue {
   retirement: ReturnType<typeof getRetirementProjection> | null;
   budgetSummary: ReturnType<typeof calculateBudgetSummary>;
   budgetOverBudget: any[];
-  availableMonths: string[];
-  activeWaterfallMonth: string;
-  waterfallBuckets: any[];
+  /** This month so far (calendar month-to-date) — null until transactions exist for it. */
+  monthToDate: MonthlySpending | null;
+  safeToSpend: SafeToSpend | null;
   // Callbacks
   sendMessage: (imageData?: { data: string; mimeType: string }) => Promise<void>;
   handleImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
@@ -124,7 +123,6 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
   const [spendingSummary, setSpendingSummary] = useState<SpendingSummary | null>(null);
   const [monthComparison, setMonthComparison] = useState<MonthComparison | null>(null);
   const [rawExpenses, setRawExpenses] = useState<any[]>([]);
-  const [waterfallMonth, setWaterfallMonth] = useState<string>('latest');
   const [insights, setInsights] = useState<Insight[]>([]);
   const [insightsExpanded, setInsightsExpanded] = useState(false);
   const [netWorthSnapshots, setNetWorthSnapshots] = useState<PortfolioSnapshot[]>([]);
@@ -325,17 +323,15 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
         const realExpenses = allExpenses.filter((e: any) =>
           (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense'
         );
-        const monthly = computeMonthlySpending(allExpenses);
-        const fullMonths = monthly.filter(m => m.transactionCount > 10).length || 1;
         const baseBuckets = loadedBuckets.length > 0 ? loadedBuckets : defaultBudgetBuckets;
-        const updatedBuckets = syncInvestingBucket(applyTransactionsToBuckets(baseBuckets, realExpenses, fullMonths));
+        const updatedBuckets = syncInvestingBucket(applyTransactionsToBuckets(baseBuckets, realExpenses));
         setDashBuckets(updatedBuckets);
         setSpendingSummary(computeSpendingSummary(allExpenses));
         setMonthComparison(computeMonthComparison(allExpenses));
         // Auto-compute fun money spent from transaction data
         const loadedFM = await getFunMoney();
         const fm = loadedFM.length > 0 ? loadedFM : defaultFunMoney;
-        const catAvgs = computeCategoryAverages(realExpenses, fullMonths);
+        const catAvgs = computeCategoryAverages(realExpenses);
         const updatedFM = fm.map(f => {
           const catKey = f.person === 'Scott' ? 'fun_scott' : f.person === 'Claire' ? 'fun_wife' : null;
           if (catKey && catAvgs[catKey] !== undefined) {
@@ -456,17 +452,15 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
         const realExpenses = allExpenses.filter((e: any) =>
           (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense'
         );
-        const monthly = computeMonthlySpending(allExpenses);
-        const fullMonths = monthly.filter(m => m.transactionCount > 10).length || 1;
         const baseBuckets = b.length > 0 ? b : defaultBudgetBuckets;
-        const updatedBuckets = syncInv(applyTransactionsToBuckets(baseBuckets, realExpenses, fullMonths));
+        const updatedBuckets = syncInv(applyTransactionsToBuckets(baseBuckets, realExpenses));
         setDashBuckets(updatedBuckets);
         setSpendingSummary(computeSpendingSummary(allExpenses));
         setMonthComparison(computeMonthComparison(allExpenses));
         // Auto-compute fun money spent & generate insights
         const loadedFM = await getFunMoney();
         const fm = loadedFM.length > 0 ? loadedFM : defaultFunMoney;
-        const catAvgs = computeCategoryAverages(realExpenses, fullMonths);
+        const catAvgs = computeCategoryAverages(realExpenses);
         const updatedFM = fm.map(f => {
           const catKey = f.person === 'Scott' ? 'fun_scott' : f.person === 'Claire' ? 'fun_wife' : null;
           if (catKey && catAvgs[catKey] !== undefined) {
@@ -509,60 +503,22 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
   // tolerance, flex the moment they exceed budget — matches the Budget tab.
   const budgetOverBudget = dashBuckets.filter(b => isOverBudget(b.category, b.monthlyActual, b.monthlyBudget));
 
-  // Available months from transaction data for waterfall navigation
-  const availableMonths = useMemo(() => {
-    if (rawExpenses.length === 0) return [];
-    const months = new Set<string>();
-    for (const e of rawExpenses) {
-      if (e.date) {
-        let ym = '';
-        if (e.date.includes('/')) {
-          const [m, , y] = e.date.split('/');
-          ym = `${y}-${m.padStart(2, '0')}`;
-        } else {
-          ym = e.date.slice(0, 7);
-        }
-        if (ym.length === 7) months.add(ym);
-      }
-    }
-    return Array.from(months).sort();
+  // (Paycheck Waterfall machinery deleted 2026-06-11 — the UI was removed and
+  // nothing consumed availableMonths / waterfallBuckets / waterfallMonth.)
+
+  // ── Month-to-date: the REAL "this month" axis ──────────────────────────
+  // Dashboard "this month" surfaces read these, not the multi-month bucket
+  // averages. Null when the current calendar month has no transactions yet.
+  const monthToDate = useMemo(() => {
+    if (rawExpenses.length === 0) return null;
+    const monthly = computeMonthlySpending(rawExpenses);
+    return monthly.find(m => m.month === currentMonthKey()) ?? null;
   }, [rawExpenses]);
 
-  // Resolve active month for waterfall
-  const activeWaterfallMonth = waterfallMonth === 'latest' && availableMonths.length > 0
-    ? availableMonths[availableMonths.length - 1]
-    : waterfallMonth;
-
-  // Buckets for the selected waterfall month (excludes work expenses)
-  const waterfallBuckets = useMemo(() => {
-    const personalOnly = (exps: any[]) => exps
-      .filter((e: any) => (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense')
-      .filter((e: any) => !e.isWorkExpense);
-
-    if (activeWaterfallMonth === 'avg' || activeWaterfallMonth === 'latest' || rawExpenses.length === 0) {
-      if (rawExpenses.length === 0) return dashBuckets;
-      const personal = personalOnly(rawExpenses);
-      const monthly = computeMonthlySpending(rawExpenses);
-      const fullMonths = monthly.filter(m => m.transactionCount > 10).length || 1;
-      const baseBuckets = dashBuckets.map(b => ({ ...b, monthlyActual: 0 }));
-      return applyTransactionsToBuckets(baseBuckets, personal, fullMonths);
-    }
-    const targetMonth = activeWaterfallMonth;
-    const filtered = rawExpenses.filter(e => {
-      if (!e.date) return false;
-      let ym = '';
-      if (e.date.includes('/')) {
-        const [m, , y] = e.date.split('/');
-        ym = `${y}-${m.padStart(2, '0')}`;
-      } else {
-        ym = e.date.slice(0, 7);
-      }
-      return ym === targetMonth;
-    });
-    const personal = personalOnly(filtered);
-    const baseBuckets = dashBuckets.map(b => ({ ...b, monthlyActual: 0 }));
-    return applyTransactionsToBuckets(baseBuckets, personal, 1);
-  }, [activeWaterfallMonth, rawExpenses, dashBuckets]);
+  const safeToSpend = useMemo(() => {
+    if (dashPaycheck.netTakeHome <= 0) return null;
+    return computeSafeToSpend(rawExpenses, dashBuckets, dashPaycheck.netTakeHome);
+  }, [rawExpenses, dashBuckets, dashPaycheck.netTakeHome]);
 
   // Chat handler
   const sendMessage = useCallback(async (imageData?: { data: string; mimeType: string }) => {
@@ -722,13 +678,13 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
     apiKey, apiKeyInput, setApiKeyInput,
     actionItems, dashBuckets, dashPaycheck, dashSinkingFunds,
     spendingSummary, monthComparison, rawExpenses,
-    waterfallMonth, setWaterfallMonth, insights, insightsExpanded, setInsightsExpanded,
+    insights, insightsExpanded, setInsightsExpanded,
     netWorthSnapshots, priceRefreshing, lastPriceRefresh,
     llmReady, refreshLlmReady,
     chatEndRef, fileInputRef,
     totalLiquid, equityValue, totalNetWorth,
     allocations, healthMetrics, overallScore, retirement,
-    budgetSummary, budgetOverBudget, availableMonths, activeWaterfallMonth, waterfallBuckets,
+    budgetSummary, budgetOverBudget, monthToDate, safeToSpend,
     sendMessage, handleImageUpload, handleActionItemsChange,
     saveApiKey: saveApiKeyFn, handleRefreshPrices,
     view, setView,

@@ -7,6 +7,7 @@ import { defaultBudgetBuckets, defaultSinkingFunds, defaultFunMoney, defaultPayc
 import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, getCustomCategories } from '../../stores/budgetStore';
 import { getMonthlyInvestments } from '../../stores/portfolioStore';
 import { computeGuaranteedBase } from '../../utils/savingsScorecard';
+import { computeSafeToSpend } from '../../utils/safeToSpend';
 import { isGeminiInitialized } from '../../services/gemini';
 import ExpenseManager from './ExpenseManager';
 import RecurringBills from './RecurringBills';
@@ -21,7 +22,7 @@ import { auditBudgetEdit, type BudgetDiff } from '../../stores/auditLogStore';
 import BucketGroupsManager from './BucketGroupsManager';
 import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems } from '../../stores/actionStore';
-import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
+import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, isRealExpense, isCompleteMonth, currentMonthKey, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
 import { formatCurrency } from '../../utils/format';
 import { laneOf, isOverBudget, RESERVE_ALLOCATIONS, FLEX_APPROACHING, type BudgetLane } from '../../utils/budgetLanes';
 import ScoreRing from '../ui/ScoreRing';
@@ -212,16 +213,15 @@ export default function BudgetView() {
     setExpenses(e);
     // Auto-calculate actuals from real transaction data
     if (e.length > 0) {
-      const realExpenses = e.filter((ex: Expense) => (ex.flow || 'outflow') === 'outflow' && (ex.transactionType || 'expense') === 'expense');
+      const realExpenses = e.filter(isRealExpense);
       const monthly = computeMonthlySpending(e);
       setMonthlyData(monthly);
       setCategoryTrends(computeCategoryTrends(realExpenses));
-      // Update budget buckets with real averages
-      const fullMonths = monthly.filter(m => m.transactionCount > 10).length || 1;
+      // Update budget buckets with real averages (calendar-complete months only)
       const invs = await getMonthlyInvestments();
       const invAmt = invs[0]?.amount || 0;
       setBuckets(prev => {
-        let updated = applyTransactionsToBuckets(prev, realExpenses, fullMonths);
+        let updated = applyTransactionsToBuckets(prev, realExpenses);
         // Keep investing bucket synced (no matching transactions for this)
         updated = updated.map(bk => bk.category === 'investing' ? { ...bk, monthlyBudget: invAmt, monthlyActual: invAmt } : bk);
         saveBudgetBuckets(updated);
@@ -285,12 +285,11 @@ export default function BudgetView() {
       const e = await getExpenses();
       setExpenses(e);
       if (e.length > 0) {
-        const realExpenses = e.filter((ex: Expense) => (ex.flow || 'outflow') === 'outflow' && (ex.transactionType || 'expense') === 'expense');
+        const realExpenses = e.filter(isRealExpense);
         const monthly = computeMonthlySpending(e);
         setMonthlyData(monthly);
         setCategoryTrends(computeCategoryTrends(realExpenses));
-        const fullMonths = monthly.filter(m => m.transactionCount > 10).length || 1;
-        let updatedBuckets = applyTransactionsToBuckets(b, realExpenses, fullMonths);
+        let updatedBuckets = applyTransactionsToBuckets(b, realExpenses);
         // Keep investing synced (transaction analysis won't have investing transactions)
         updatedBuckets = updatedBuckets.map(bk => bk.category === 'investing' ? { ...bk, monthlyBudget: investAmt, monthlyActual: investAmt } : bk);
         setBuckets(updatedBuckets);
@@ -319,8 +318,10 @@ export default function BudgetView() {
     load();
   }, []);
 
-  // Available months for overview navigation
-  const fullMonths = monthlyData.filter(m => m.transactionCount >= 10);
+  // Available months for overview navigation — CALENDAR-complete months only
+  // (the in-progress month is never "latest"; its real-time story lives in
+  // Safe-to-Spend and the dashboard month-to-date numbers)
+  const fullMonths = monthlyData.filter(m => isCompleteMonth(m.month));
   const availMonths = fullMonths.map(m => m.month).sort();
   const resolvedOverviewMonth = overviewMonth === 'latest' && availMonths.length > 0
     ? availMonths[availMonths.length - 1]
@@ -367,15 +368,18 @@ export default function BudgetView() {
 
   if (!loaded) return <div className="text-text-muted">Loading budget...</div>;
 
-  // Computed metrics for overview
-  const essentialSpend = overviewBuckets.filter(b => essentialCats.includes(b.category)).reduce((s, b) => s + b.monthlyActual, 0);
-  const discretionarySpend = overviewBuckets.filter(b => !essentialCats.includes(b.category) && b.category !== 'travel_work' && b.monthlyActual > 0).reduce((s, b) => s + b.monthlyActual, 0);
+  // Computed metrics for overview. ONE definition of operating spend everywhere:
+  // exclude work AND all reserve lanes (taxes/travel) — matches summary.realActual,
+  // so the watermark tile, Cash Flow sub-score, and Monthly Spend stat agree.
+  const operatingBuckets = overviewBuckets.filter(b => laneOf(b.category) !== 'reserve');
+  const essentialSpend = operatingBuckets.filter(b => essentialCats.includes(b.category)).reduce((s, b) => s + b.monthlyActual, 0);
+  const discretionarySpend = operatingBuckets.filter(b => !essentialCats.includes(b.category) && b.monthlyActual > 0).reduce((s, b) => s + b.monthlyActual, 0);
   const investingAmt = overviewBuckets.find(b => b.category === 'investing')?.monthlyActual || 0;
   // Intentional savings: investing + 401k + HSA (what you deliberately set aside)
   const intentionalSavings = investingAmt + paycheck.retirement401k + paycheck.hsaContribution;
   const intentionalSavingsRate = paycheck.grossMonthly > 0 ? (intentionalSavings / paycheck.grossMonthly) * 100 : 0;
-  // Actual spend for the Monthly Spend stat
-  const totalBucketSpend = overviewBuckets.filter(b => b.category !== 'travel_work').reduce((s, b) => s + b.monthlyActual, 0);
+  // Actual spend for the Monthly Spend stat — operating only (= summary.realActual)
+  const totalBucketSpend = operatingBuckets.reduce((s, b) => s + b.monthlyActual, 0);
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -473,21 +477,26 @@ export default function BudgetView() {
 
       {/* Monthly Detail Section */}
       {section === 'monthly' && monthlyData.length > 0 && (() => {
-        // Determine which months are "full" (10+ txns) for navigation
-        const fullMonths = monthlyData.filter(m => m.transactionCount >= 10);
-        if (fullMonths.length === 0) return (
+        // Complete months by CALENDAR + the in-progress month as a navigable
+        // entry (clearly labeled, excluded from YTD averages and verdicts).
+        const fullMonths = monthlyData.filter(m => isCompleteMonth(m.month));
+        const inProgressMonth = monthlyData.find(m => m.month === currentMonthKey()) ?? null;
+        const navMonths = inProgressMonth ? [...fullMonths, inProgressMonth] : fullMonths;
+        if (navMonths.length === 0) return (
           <div className="glass-card p-8 text-center text-text-muted">
             <p className="text-lg mb-2">No full months of data yet</p>
             <p className="text-sm">Import at least one full month of transactions to see the monthly breakdown.</p>
           </div>
         );
 
-        // Selected month (default = latest full month)
-        const idx = selectedMonthIdx < 0 || selectedMonthIdx >= fullMonths.length
-          ? fullMonths.length - 1
+        // Selected month (default = latest COMPLETE month; current month reachable via Next)
+        const defaultIdx = fullMonths.length > 0 ? fullMonths.length - 1 : navMonths.length - 1;
+        const idx = selectedMonthIdx < 0 || selectedMonthIdx >= navMonths.length
+          ? defaultIdx
           : selectedMonthIdx;
-        const current = fullMonths[idx];
-        const prior = idx > 0 ? fullMonths[idx - 1] : null;
+        const current = navMonths[idx];
+        const isInProgress = inProgressMonth !== null && current.month === inProgressMonth.month;
+        const prior = idx > 0 ? navMonths[idx - 1] : null;
 
         // Apply this month's data to budget buckets
         const monthBuckets = applyMonthToBuckets(buckets, current);
@@ -529,13 +538,16 @@ export default function BudgetView() {
               ← {prior ? prior.monthLabel : 'Prev'}
             </button>
             <div className="text-center">
-              <h2 className="text-xl font-bold text-text-primary">{current.monthLabel}</h2>
+              <h2 className="text-xl font-bold text-text-primary">
+                {current.monthLabel}
+                {isInProgress && <span className="ml-2 px-2 py-0.5 rounded-full bg-accent/15 text-accent text-[10px] font-bold uppercase tracking-wider align-middle">In progress</span>}
+              </h2>
               <p className="text-xs text-text-muted">{current.transactionCount} transactions</p>
             </div>
-            <button onClick={() => setSelectedMonthIdx(Math.min(idx + 1, fullMonths.length - 1))}
-              disabled={idx >= fullMonths.length - 1}
+            <button onClick={() => setSelectedMonthIdx(Math.min(idx + 1, navMonths.length - 1))}
+              disabled={idx >= navMonths.length - 1}
               className="px-3 py-1.5 rounded-lg bg-surface-2 border border-glass-border text-sm text-text-secondary hover:bg-surface-3 disabled:opacity-20 transition-colors">
-              {idx < fullMonths.length - 2 ? fullMonths[idx + 1].monthLabel : 'Next'} →
+              {idx < navMonths.length - 1 ? navMonths[idx + 1].monthLabel : 'Next'} →
             </button>
           </div>
 
@@ -560,7 +572,7 @@ export default function BudgetView() {
             <div className="glass-card p-4">
               <div className="term-label">Surplus / Deficit</div>
               <div className={`text-3xl font-black mt-1 mono-num ${surplus >= 0 ? 'text-positive' : 'text-negative'}`}>{formatCurrency(surplus)}</div>
-              <div className="text-xs text-text-muted mt-0.5">{surplus >= 0 ? 'Under budget' : 'Over budget'}</div>
+              <div className="text-xs text-text-muted mt-0.5">{isInProgress ? 'Month still in progress' : surplus >= 0 ? 'Under budget' : 'Over budget'}</div>
             </div>
             <div className="glass-card p-4">
               <div className="term-label">Work Expenses</div>
@@ -571,9 +583,13 @@ export default function BudgetView() {
 
           {/* Context Banner */}
           <div className="flex items-center gap-4 px-4 py-2 rounded-lg bg-white/[0.02] border border-glass-border text-xs text-text-muted">
-            <span>📊 Year-to-date avg: <strong className="text-text-secondary">{formatCurrency(ytdSpend)}</strong> spend / <strong className="text-positive">{formatCurrency(ytdIncome)}</strong> income across {fullMonths.length} months</span>
-            {totalSpend > ytdSpend && <span className="text-negative">This month is {formatCurrency(totalSpend - ytdSpend)} above your average</span>}
-            {totalSpend < ytdSpend && <span className="text-positive">This month is {formatCurrency(ytdSpend - totalSpend)} below your average</span>}
+            <span>📊 Year-to-date avg: <strong className="text-text-secondary">{formatCurrency(ytdSpend)}</strong> spend / <strong className="text-positive">{formatCurrency(ytdIncome)}</strong> income across {fullMonths.length} complete months</span>
+            {isInProgress
+              ? <span className="text-text-secondary">Month in progress — averages compare complete months only</span>
+              : <>
+                  {totalSpend > ytdSpend && <span className="text-negative">This month is {formatCurrency(totalSpend - ytdSpend)} above your average</span>}
+                  {totalSpend < ytdSpend && <span className="text-positive">This month is {formatCurrency(ytdSpend - totalSpend)} below your average</span>}
+                </>}
           </div>
 
           {/* Category Breakdown — three lanes, each judged on its own terms */}
@@ -864,6 +880,40 @@ export default function BudgetView() {
             <span className="text-xs text-text-muted">
               {resolved === 'avg' ? 'Showing averaged data across all months' : 'Showing actual spending for this month'}
             </span>
+          </div>
+        );
+      })()}
+
+      {/* Safe to Spend — take-home − fixed bills − reserve set-asides − flexible spent so far */}
+      {(() => {
+        if (paycheck.netTakeHome <= 0) return null;
+        const sts = computeSafeToSpend(expenses, buckets, paycheck.netTakeHome);
+        const pct = sts.takeHome > 0 ? Math.max(0, Math.min(100, (sts.amount / sts.takeHome) * 100)) : 0;
+        return (
+          <div className={`glass-card p-5 cyber-grid cyber-corners ${sts.amount >= 0 ? '' : 'border-negative/40'}`}>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="term-label">Safe to spend · {sts.daysLeft} days left this month</div>
+                <div className={`text-4xl font-black mt-1 mono-num ${sts.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
+                  {sts.amount >= 0 ? '' : '−'}{formatCurrency(Math.abs(sts.amount))}
+                </div>
+                <div className="text-xs text-text-muted mt-1">
+                  {sts.amount >= 0
+                    ? <>≈ <span className="text-text-secondary font-medium">{formatCurrency(sts.perDay)}/day</span> without breaking the watermark</>
+                    : 'Flexible spending is past the watermark for this month'}
+                </div>
+              </div>
+              <div className="text-right text-xs text-text-muted space-y-0.5">
+                <div>{formatCurrency(sts.takeHome)} take-home</div>
+                <div>− {formatCurrency(sts.fixedCommitment)} fixed bills</div>
+                <div>− {formatCurrency(sts.reserveSetAside)} reserve set-asides</div>
+                <div>− {formatCurrency(sts.flexSpent)} flexible spent so far</div>
+              </div>
+            </div>
+            <div className="mt-3 h-2 rounded-full bg-surface-2 overflow-hidden">
+              <div className={`h-2 rounded-full transition-all ${sts.amount >= 0 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-negative'}`}
+                style={{ width: `${pct}%` }} />
+            </div>
           </div>
         );
       })()}
@@ -1575,17 +1625,25 @@ export default function BudgetView() {
       {drilldownCategory && (() => {
         const bucket = filteredBuckets.find(b => b.category === drilldownCategory);
         if (!bucket) return null;
+        // In avg mode the list spans every COMPLETE month, so the comparison
+        // number must be the per-month average — comparing a 9-month total to a
+        // monthly budget (and annualizing it ×12) was a ~9x overstatement.
+        const isAvgMode = resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest';
+        const expMonthKey = (e: Expense) => {
+          if (!e.date) return '';
+          return e.date.includes('/') ? (() => { const [m,,y] = e.date.split('/'); return `${y}-${m.padStart(2,'0')}`; })() : e.date.slice(0,7);
+        };
         const monthFilter = (e: Expense) => {
-          if (resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest') return true;
-          if (!e.date) return false;
-          const d = e.date.includes('/') ? (() => { const [m,,y] = e.date.split('/'); return `${y}-${m.padStart(2,'0')}`; })() : e.date.slice(0,7);
-          return d === resolvedOverviewMonth;
+          if (isAvgMode) return isCompleteMonth(expMonthKey(e));
+          return expMonthKey(e) === resolvedOverviewMonth;
         };
         const catTxns = expenses
-          .filter(e => e.category === drilldownCategory && (e.flow || 'outflow') === 'outflow')
+          .filter(e => e.category === drilldownCategory && isRealExpense(e) && !e.isWorkExpense)
           .filter(monthFilter)
           .sort((a, b) => b.amount - a.amount);
         const total = catTxns.reduce((s, e) => s + e.amount, 0);
+        const monthsSpanned = isAvgMode ? Math.max(fullMonths.length, 1) : 1;
+        const monthlyTotal = total / monthsSpanned;
 
         return createPortal(
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setDrilldownCategory(null)}>
@@ -1595,7 +1653,7 @@ export default function BudgetView() {
                   <span className="text-xl">{bucket.icon}</span>
                   <div>
                     <h3 className="font-semibold text-text-primary">{bucket.label}</h3>
-                    <p className="text-xs text-text-muted">{catTxns.length} transactions · {formatCurrency(total)} total</p>
+                    <p className="text-xs text-text-muted">{catTxns.length} transactions · {formatCurrency(total)} total{isAvgMode && monthsSpanned > 1 ? ` · ${formatCurrency(monthlyTotal)}/mo avg over ${monthsSpanned} months` : ''}</p>
                   </div>
                 </div>
                 <button onClick={() => setDrilldownCategory(null)} className="text-text-muted hover:text-text-primary text-xl font-bold">×</button>
@@ -1613,18 +1671,18 @@ export default function BudgetView() {
                   </div>
                 ))}
               </div>
-              {/* Budget comparison + annualized projection */}
+              {/* Budget comparison + annualized projection — per-MONTH numbers */}
               <div className="border-t border-glass-border">
                 {bucket.monthlyBudget > 0 && (
-                  <div className={`px-4 py-2 text-xs font-medium ${total > bucket.monthlyBudget ? 'bg-negative/10 text-negative' : 'bg-positive/10 text-positive'}`}>
-                    {total > bucket.monthlyBudget
-                      ? `Over budget by ${formatCurrency(total - bucket.monthlyBudget)} (budget: ${formatCurrency(bucket.monthlyBudget)})`
-                      : `Under budget by ${formatCurrency(bucket.monthlyBudget - total)} (budget: ${formatCurrency(bucket.monthlyBudget)})`}
+                  <div className={`px-4 py-2 text-xs font-medium ${monthlyTotal > bucket.monthlyBudget ? 'bg-negative/10 text-negative' : 'bg-positive/10 text-positive'}`}>
+                    {monthlyTotal > bucket.monthlyBudget
+                      ? `Over budget by ${formatCurrency(monthlyTotal - bucket.monthlyBudget)}/mo (budget: ${formatCurrency(bucket.monthlyBudget)})`
+                      : `Under budget by ${formatCurrency(bucket.monthlyBudget - monthlyTotal)}/mo (budget: ${formatCurrency(bucket.monthlyBudget)})`}
                   </div>
                 )}
                 <div className="px-4 py-2 bg-white/[0.02] flex items-center justify-between text-xs">
                   <span className="text-text-muted">Projected annual spend</span>
-                  <span className="font-bold text-text-primary">{formatCurrency(total * 12)}/yr</span>
+                  <span className="font-bold text-text-primary">{formatCurrency(monthlyTotal * 12)}/yr</span>
                 </div>
                 {bucket.monthlyBudget > 0 && (
                   <div className="px-4 py-2 bg-white/[0.02] flex items-center justify-between text-xs border-t border-glass-border/50">
