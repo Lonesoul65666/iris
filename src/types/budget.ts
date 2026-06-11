@@ -232,15 +232,29 @@ export interface BucketGroup {
   isFlex: boolean;            // every bucket has groupFlex=true
 }
 
+// User-visible name: STASH (never "sinking fund"). Type name migrates
+// opportunistically; the `sinkingFunds` collection name stays for data compat.
 export interface SinkingFund {
   id: string;
   name: string;
   targetAmount: number;
+  /** Legacy manual balance. Superseded by the DERIVED balance (stashMath) when
+   *  startMonth is set; kept so old rows render until they're configured. */
   currentBalance: number;
   monthlyContribution: number;
   targetDate?: string;
   color: string;
+  /** Expense categories this stash covers — spend there draws the stash down
+   *  and the categories live in the reserve lane (no monthly over/under alarm). */
+  categories?: string[];
+  /** Month ('YYYY-MM') contributions start accruing. Set => balance is derived. */
+  startMonth?: string;
+  /** What was already set aside when accrual started. User-edited; can be 0. */
+  openingBalance?: number;
 }
+
+/** Preferred alias going forward. */
+export type Stash = SinkingFund;
 
 export interface FunMoney {
   person: string;

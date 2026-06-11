@@ -5,9 +5,11 @@ import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown } from '../
 import type { Expense } from '../../types/budget';
 import { defaultBudgetBuckets, defaultSinkingFunds, defaultFunMoney, defaultPaycheck, calculateBudgetSummary } from '../../stores/budgetDefaults';
 import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, getCustomCategories } from '../../stores/budgetStore';
-import { getMonthlyInvestments } from '../../stores/portfolioStore';
+import { getMonthlyInvestments, getSetting, saveSetting } from '../../stores/portfolioStore';
 import { computeGuaranteedBase } from '../../utils/savingsScorecard';
 import { computeSafeToSpend } from '../../utils/safeToSpend';
+import { applyStashLaneConfig, seedDefaultStashes } from '../../utils/stashMath';
+import StashesCard from './StashesCard';
 import { isGeminiInitialized } from '../../services/gemini';
 import ExpenseManager from './ExpenseManager';
 import RecurringBills from './RecurringBills';
@@ -264,6 +266,15 @@ export default function BudgetView() {
 
       let sf = await getSinkingFunds();
       if (sf.length === 0) { await saveSinkingFunds(defaultSinkingFunds); sf = defaultSinkingFunds; }
+      // One-time Stash seeding (docs/stashes-design.md D5): make sure taxes and
+      // personal travel are covered by real, editable stashes.
+      const seeded = await getSetting('stashes_seeded_v1');
+      if (!seeded) {
+        const withSeeds = seedDefaultStashes(sf);
+        if (withSeeds) { sf = withSeeds; await saveSinkingFunds(sf); }
+        await saveSetting('stashes_seeded_v1', 'true');
+      }
+      applyStashLaneConfig(sf);
       setSinkingFunds(sf);
 
       let fm = await getFunMoney();
@@ -1137,6 +1148,18 @@ export default function BudgetView() {
         />
       )}
 
+      {/* Stashes — daily-visible saving pots with DERIVED balances. Edits save
+          directly and reconfigure the reserve lanes live. */}
+      <StashesCard
+        stashes={sinkingFunds}
+        expenses={expenses}
+        onChange={(next) => {
+          setSinkingFunds(next);
+          applyStashLaneConfig(next);
+          void saveSinkingFunds(next);
+        }}
+      />
+
       {/* Variable Pay — surfaces "above base" overage so user can sweep it instead of spending it. */}
       <VariableSurplusCard expenses={expenses} />
 
@@ -1511,58 +1534,7 @@ export default function BudgetView() {
         </div>
       </div>
 
-      {/* Stashes (formerly "Sinking Funds") */}
-      <div className="glass-card p-6">
-        <h2 className="text-lg font-semibold text-text-primary mb-2">Stashes</h2>
-        <p className="text-xs text-text-muted mb-4">Monthly set-asides for irregular expenses. When the bill hits, it's already funded.</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {sinkingFunds.map((sf, i) => {
-            const pct = sf.targetAmount > 0 ? (sf.currentBalance / sf.targetAmount) * 100 : 0;
-            const updateFund = async (field: string, value: number) => {
-              const updated = sinkingFunds.map((f, idx) => idx === i ? { ...f, [field]: value } : f);
-              setSinkingFunds(updated);
-              await saveSinkingFunds(updated);
-            };
-            return (
-              <div key={i} className="p-4 rounded-xl bg-white/[0.03] border border-glass-border group">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-text-primary">{sf.name}</span>
-                  <div className="flex items-center gap-0.5">
-                    <span className="text-xs text-text-muted">$</span>
-                    <input type="number" step="0.01" value={sf.monthlyContribution}
-                      onChange={e => updateFund('monthlyContribution', Number(e.target.value))}
-                      className="w-16 bg-transparent border border-transparent group-hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50"
-                    />
-                    <span className="text-xs text-text-muted">/mo</span>
-                  </div>
-                </div>
-                <div className="w-full bg-white/10 rounded-full h-2 mb-1">
-                  <div className="h-2 rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%`, background: sf.color }} />
-                </div>
-                <div className="flex justify-between text-xs text-text-muted items-center">
-                  <div className="flex items-center gap-0.5">
-                    <span>$</span>
-                    <input type="number" step="0.01" value={sf.currentBalance}
-                      onChange={e => updateFund('currentBalance', Number(e.target.value))}
-                      className="w-16 bg-transparent border border-transparent group-hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50"
-                    />
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <span>Goal: $</span>
-                    <input type="number" step="0.01" value={sf.targetAmount}
-                      onChange={e => updateFund('targetAmount', Number(e.target.value))}
-                      className="w-20 bg-transparent border border-transparent group-hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50"
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div className="mt-3 text-xs text-text-muted">
-          Total monthly stash contributions: <strong className="text-text-primary">{formatCurrency(sinkingFunds.reduce((s, f) => s + f.monthlyContribution, 0))}</strong>
-        </div>
-      </div>
+      {/* (Stashes moved OUT of edit mode to the daily Overview — StashesCard.) */}
 
       {/* Bucket Groups — opt-in flex budgeting. Configuration, lives in edit mode. */}
       <BucketGroupsManager buckets={buckets} onChange={setBuckets} />

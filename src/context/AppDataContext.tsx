@@ -26,6 +26,7 @@ import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getPayche
 import { applyTransactionsToBuckets, computeCategoryAverages, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, currentMonthKey } from '../utils/transactionAnalysis';
 import type { SpendingSummary, MonthComparison, MonthlySpending } from '../utils/transactionAnalysis';
 import { computeSafeToSpend, type SafeToSpend } from '../utils/safeToSpend';
+import { applyStashLaneConfig } from '../utils/stashMath';
 import { generateInsights } from '../utils/insightsEngine';
 import type { Insight } from '../utils/insightsEngine';
 import { reconcileActionItems } from '../utils/dynamicActions';
@@ -308,6 +309,8 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
       if (loadedPaycheck) setDashPaycheck(loadedPaycheck);
       const loadedSF = await getSinkingFunds();
       if (loadedSF.length > 0) setDashSinkingFunds(loadedSF);
+      // Stash-linked categories drive the reserve lanes (no-op until configured)
+      applyStashLaneConfig(loadedSF);
 
       // Register custom categories so analysis displays proper labels/icons
       const customCats = await getCustomCategories();
@@ -433,6 +436,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
       if (p) setDashPaycheck(p);
       const sf = await getSinkingFunds();
       if (sf.length > 0) setDashSinkingFunds(sf);
+      applyStashLaneConfig(sf);
       // Sync investing bucket to real Settings amount
       const invAmt = monthlyInv?.amount || 0;
       const syncInv = (buckets: typeof defaultBudgetBuckets) =>
@@ -515,7 +519,10 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
   const safeToSpend = useMemo(() => {
     if (dashPaycheck.netTakeHome <= 0) return null;
     return computeSafeToSpend(rawExpenses, dashBuckets, dashPaycheck.netTakeHome);
-  }, [rawExpenses, dashBuckets, dashPaycheck.netTakeHome]);
+    // dashSinkingFunds is a dep because stash contributions feed the reserve
+    // set-aside via the lane registry (applyStashLaneConfig).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawExpenses, dashBuckets, dashPaycheck.netTakeHome, dashSinkingFunds]);
 
   // Chat handler
   // Takes the message text as an argument — the input box state lives locally

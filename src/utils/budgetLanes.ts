@@ -28,18 +28,55 @@ export const FIXED_CATEGORIES = [
 
 // Lumpy / annual. Excluded from monthly over/under; tracked as reserves.
 // (DMV / vehicle registration lands in `taxes` in the data — e.g. Tarrant County MV.)
+// These are the DEFAULTS — once the user configures Stashes, the categories
+// they link become the reserve lane via configureStashLanes() below.
 export const RESERVE_CATEGORIES = [
   'taxes', 'travel_personal', 'travel_work',
 ];
 
-// Monthly set-aside per reserve. Derived from real annual actuals (Scott, 2026-06):
-// taxes ≈ $16–18k/yr → $1,500/mo; travel ad-hoc ~$1,000/mo; work travel is
-// reimbursed (tracked in the Work Expense card), so $0 personal reserve.
+// Default monthly set-aside per reserve, used until Stashes are configured.
+// (Derived from real annual actuals, 2026-06: taxes ≈ $16–18k/yr → $1,500/mo;
+// travel ad-hoc ~$1,000/mo; work travel is reimbursed → $0.)
 export const RESERVE_ALLOCATIONS: Record<string, number> = {
   taxes: 1500,
   travel_personal: 1000,
   travel_work: 0,
 };
+
+// ── Stash-driven reserve registry ────────────────────────────────────────
+// Stashes (user-owned saving pots with linked categories) define the reserve
+// lane at runtime. Same registry pattern as registerCustomCategories: callers
+// of laneOf()/getReserveAllocations() never change. Until configureStashLanes
+// runs, behavior is byte-identical to the historical constants above.
+// travel_work always stays reserve (reimbursed work spend is never a monthly
+// alarm, stash or no stash).
+
+let reserveSet = new Set(RESERVE_CATEGORIES);
+let reserveAllocations: Record<string, number> = { ...RESERVE_ALLOCATIONS };
+let reserveTotalOverride: number | null = null;
+
+export function configureStashLanes(
+  categories: string[],
+  allocations: Record<string, number>,
+  /** Σ of ALL stash contributions — includes pure savings pots (no categories),
+   *  which still come off the top of Safe-to-Spend. */
+  totalSetAside?: number,
+): void {
+  reserveSet = new Set(['travel_work', ...categories]);
+  reserveAllocations = { ...allocations };
+  reserveTotalOverride = typeof totalSetAside === 'number' ? totalSetAside : null;
+}
+
+/** Current per-category monthly set-asides (stash-configured or defaults). */
+export function getReserveAllocations(): Record<string, number> {
+  return reserveAllocations;
+}
+
+/** Σ monthly set-asides — the "reserve set-asides" line in Safe-to-Spend. */
+export function totalReserveSetAside(): number {
+  if (reserveTotalOverride !== null) return reserveTotalOverride;
+  return Object.values(reserveAllocations).reduce((s, v) => s + v, 0);
+}
 
 // A fixed bill is only "over" if it busts budget by more than this factor.
 // Small month-to-month variance on a fixed bill is noise, not a problem.
@@ -50,10 +87,9 @@ export const FIXED_OVER_TOLERANCE = 1.15;
 export const FLEX_APPROACHING = 0.9;
 
 const FIXED = new Set(FIXED_CATEGORIES);
-const RESERVE = new Set(RESERVE_CATEGORIES);
 
 export function laneOf(category: string): BudgetLane {
-  if (RESERVE.has(category)) return 'reserve';
+  if (reserveSet.has(category)) return 'reserve';
   if (FIXED.has(category)) return 'fixed';
   return 'flexible';
 }

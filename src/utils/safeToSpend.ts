@@ -10,7 +10,7 @@
 // Pure function — no React/IO.
 
 import type { Expense, BudgetBucket } from '../types/budget';
-import { laneOf, RESERVE_ALLOCATIONS } from './budgetLanes';
+import { laneOf, totalReserveSetAside } from './budgetLanes';
 import { computeMonthlySpending, currentMonthKey } from './transactionAnalysis';
 
 export interface SafeToSpend {
@@ -41,7 +41,9 @@ export function computeSafeToSpend(
     fixedCommitment += Math.max(b.monthlyBudget, spent);
   }
 
-  const reserveSetAside = Object.values(RESERVE_ALLOCATIONS).reduce((s, v) => s + v, 0);
+  // Stash contributions when configured (set via configureStashLanes at app
+  // load), legacy reserve constants otherwise. One source of truth — D3.
+  const reserveSetAside = totalReserveSetAside();
 
   let flexSpent = 0;
   for (const [cat, amt] of Object.entries(byCat)) {
