@@ -9,6 +9,7 @@ import { useEnabledModules } from '../hooks/useEnabledModules';
 import SetupChecklist, { isDefaultPortfolio } from '../components/Dashboard/SetupChecklist';
 import AccountBreakdown from '../components/Dashboard/AccountBreakdown';
 import SavingsScorecard from '../components/Dashboard/SavingsScorecard';
+import SyncStatus from '../components/Dashboard/SyncStatus';
 import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -134,10 +135,7 @@ export default function DashboardView() {
           {/* HUD top strip — LIVE chip + greeting + timestamp */}
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
-              <span className="cyber-chip" style={{ color: 'var(--color-cyber-cyan)' }}>
-                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--color-cyber-cyan)' }} />
-                LIVE
-              </span>
+              <SyncStatus />
               <span className="text-base">{flavor.icon}</span>
               <span className="text-xs text-text-muted">
                 {flavor.greeting}{greetingNames ? <>, <span className="text-text-secondary font-medium">{greetingNames}</span></> : ''}.

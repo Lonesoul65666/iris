@@ -452,18 +452,38 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
   }
 
   let written = 0
+  let inserted = 0
+  let updated = 0
   if (!dryRun && toWrite.length > 0) {
     const client = await ctx.pool.connect()
     try {
       await client.query('BEGIN')
       for (const e of toWrite) {
-        await client.query(
+        // (xmax = 0) is true for a fresh INSERT, false when ON CONFLICT did an UPDATE —
+        // so we can report "new vs refreshed" without a separate existence check.
+        const w = await client.query<{ inserted: boolean }>(
           `INSERT INTO expenses (id, user_id, date, amount, data, updated_at)
            VALUES ($1, $2, $3, $4, $5::jsonb, now())
            ON CONFLICT (user_id, id) DO UPDATE
-             SET date = EXCLUDED.date, amount = EXCLUDED.amount, data = EXCLUDED.data, updated_at = now()`,
+             SET date = EXCLUDED.date,
+                 amount = EXCLUDED.amount,
+                 -- Refresh bank-sourced fields, but PRESERVE the user's manual edits
+                 -- (category, work flag, reimbursement, notes, recurring, income subtype)
+                 -- so re-syncing the trailing window never clobbers a correction they made.
+                 data = EXCLUDED.data || jsonb_strip_nulls(jsonb_build_object(
+                   'category',            expenses.data->'category',
+                   'isWorkExpense',       expenses.data->'isWorkExpense',
+                   'reimbursementStatus', expenses.data->'reimbursementStatus',
+                   'notes',               expenses.data->'notes',
+                   'recurring',           expenses.data->'recurring',
+                   'incomeSubtype',       expenses.data->'incomeSubtype',
+                   'incomeSourceId',      expenses.data->'incomeSourceId'
+                 )),
+                 updated_at = now()
+           RETURNING (xmax = 0) AS inserted`,
           [e.id, ctx.userId, e.date, e.amount, JSON.stringify(e)],
         )
+        if (w.rows[0]?.inserted) inserted++; else updated++
       }
       await client.query('COMMIT')
       written = toWrite.length
@@ -478,6 +498,7 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
 
   const totalKept = perAccount.reduce((s, a) => s + a.kept, 0)
   const totalAmount = Math.round(perAccount.reduce((s, a) => s + a.keptAmount, 0) * 100) / 100
+  const through = toWrite.reduce((m, e) => (e.date > m ? e.date : m), '')
   sendJson(res, 200, {
     ok: true,
     dryRun,
@@ -486,6 +507,9 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
     totalKept,
     totalAmount,
     written,
+    inserted,
+    updated,
+    through,
     perAccount,
     errors,
   })
@@ -565,18 +589,36 @@ export async function handleTellerImportIncome(req: Req, res: Res): Promise<void
   }
 
   let written = 0
+  let inserted = 0
+  let updated = 0
   if (!dryRun && toWrite.length > 0) {
     const client = await ctx.pool.connect()
     try {
       await client.query('BEGIN')
       for (const e of toWrite) {
-        await client.query(
+        const w = await client.query<{ inserted: boolean }>(
           `INSERT INTO expenses (id, user_id, date, amount, data, updated_at)
            VALUES ($1, $2, $3, $4, $5::jsonb, now())
            ON CONFLICT (user_id, id) DO UPDATE
-             SET date = EXCLUDED.date, amount = EXCLUDED.amount, data = EXCLUDED.data, updated_at = now()`,
+             SET date = EXCLUDED.date,
+                 amount = EXCLUDED.amount,
+                 -- Refresh bank-sourced fields, but PRESERVE the user's manual edits
+                 -- (category, work flag, reimbursement, notes, recurring, income subtype)
+                 -- so re-syncing the trailing window never clobbers a correction they made.
+                 data = EXCLUDED.data || jsonb_strip_nulls(jsonb_build_object(
+                   'category',            expenses.data->'category',
+                   'isWorkExpense',       expenses.data->'isWorkExpense',
+                   'reimbursementStatus', expenses.data->'reimbursementStatus',
+                   'notes',               expenses.data->'notes',
+                   'recurring',           expenses.data->'recurring',
+                   'incomeSubtype',       expenses.data->'incomeSubtype',
+                   'incomeSourceId',      expenses.data->'incomeSourceId'
+                 )),
+                 updated_at = now()
+           RETURNING (xmax = 0) AS inserted`,
           [e.id, ctx.userId, e.date, e.amount, JSON.stringify(e)],
         )
+        if (w.rows[0]?.inserted) inserted++; else updated++
       }
       await client.query('COMMIT')
       written = toWrite.length
@@ -588,5 +630,6 @@ export async function handleTellerImportIncome(req: Req, res: Res): Promise<void
 
   const totalIncome = Math.round(perAccount.reduce((s, a) => s + a.incomeAmount, 0) * 100) / 100
   const totalReimbursement = Math.round(perAccount.reduce((s, a) => s + a.reimbursementAmount, 0) * 100) / 100
-  sendJson(res, 200, { ok: true, dryRun, batch, since, totalIncome, totalReimbursement, written, perAccount, errors })
+  const through = toWrite.reduce((m, e) => (e.date > m ? e.date : m), '')
+  sendJson(res, 200, { ok: true, dryRun, batch, since, totalIncome, totalReimbursement, written, inserted, updated, through, perAccount, errors })
 }
