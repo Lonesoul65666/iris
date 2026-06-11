@@ -8,6 +8,9 @@
 - **Scott's next stash moves (no code)**: set real opening balances (what's actually sitting in savings per pot), link more lumpy categories (gifts_holidays, home_maintenance, car_maintenance — and decide on insurance, whose semi-annual premium is the May false-alarm), give Holidays/Emergency pots contributions, hit "Start auto-tracking" on the legacy pots.
 - **Stash follow-ups (code, later)**: recurring-detection-driven stash suggestions (needs the >180-day lookback fix), insurance premium split (monthly part fixed-lane, premium stash-drawn), stash history sparkline.
 - **PAYCHECK & WATERMARK EDITOR SHIPPED** (Settings, under Household Earners): net take-home / gross / 401k / HSA with Save-Discard + "Re-derive from bank deposits" (for after the job change). **Scott: enter your real 401k + HSA contributions** — they're $0 today, which understates the savings rate.
+- **CARD REFUNDS SHIPPED + BACKFILLED**: Teller import keeps merchant credits as categorized refunds (33 rows / $2,633 over 9 months were silently counted as spend). KEY GOTCHA baked into `server/teller-map.ts`: Teller types EVERY card credit as `payment` — detection is description-only ("ONLINE PAYMENT, THANK YOU" / "CAPITAL ONE MOBILE PYMT").
+- **HONESTY PASS DONE**: TriggerCenter renders only wired actions ("See breakdown" → drilldown; Sweep/Classify removed until built; dismissals persist per-month), NotificationSettings marks unbuilt detectors "coming soon" instead of pretending, Quick Import All stale-closure row-drop fixed.
+- **⭐ THE PRE-UI SHORTLIST IS DONE. Next session = the UI/UX redesign + couples scoreboard.**
 
 
 Working branch: **`overnight-polish-2026-06-11`** (NOT merged to `master` — review & merge first).
