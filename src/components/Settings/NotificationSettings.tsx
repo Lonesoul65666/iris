@@ -9,22 +9,25 @@ interface ToggleRow {
   key: keyof NotificationPreferences;
   label: string;
   helper: string;
+  /** No detector exists yet — render disabled with a "coming soon" tag instead
+   *  of a toggle that saves a preference nothing reads. Honesty over promises. */
+  comingSoon?: boolean;
 }
 
 const HELPFUL_ROWS: ToggleRow[] = [
   { key: 'pace_80',                      label: 'Pace warning at 80%',         helper: 'Heads-up before you blow the budget' },
   { key: 'pace_90',                      label: 'Pace warning at 90%',         helper: 'Last-call warning' },
   { key: 'pace_100',                     label: 'Over-budget alert',           helper: 'You crossed the line' },
-  { key: 'reimbursement_matched',        label: 'Reimbursement matched',       helper: 'When work expenses get paid back' },
+  { key: 'reimbursement_matched',        label: 'Reimbursement matched',       helper: 'When work expenses get paid back', comingSoon: true },
   { key: 'surplus_available',            label: 'Variable surplus ready',      helper: 'When commission/bonus lands and is ready to sweep' },
-  { key: 'subscription_confirmed',       label: 'Recurring bill detected',     helper: 'When a new subscription pattern emerges' },
+  { key: 'subscription_confirmed',       label: 'Recurring bill detected',     helper: 'When a new subscription pattern emerges', comingSoon: true },
   { key: 'income_classification_needed', label: 'Classification needed',       helper: 'When an inflow needs a one-tap label' },
 ];
 
 const NICE_ROWS: ToggleRow[] = [
-  { key: 'weekly_summary', label: 'Weekly summary',           helper: 'Saturday recap of the week' },
-  { key: 'monthly_trends', label: 'Monthly category trends',  helper: 'Where you spent more or less than usual' },
-  { key: 'goal_pace_check', label: 'Goal-pace check-in',      helper: 'Are your stashes on track?' },
+  { key: 'weekly_summary', label: 'Weekly summary',           helper: 'Saturday recap of the week', comingSoon: true },
+  { key: 'monthly_trends', label: 'Monthly category trends',  helper: 'Where you spent more or less than usual', comingSoon: true },
+  { key: 'goal_pace_check', label: 'Goal-pace check-in',      helper: 'Are your stashes on track?', comingSoon: true },
 ];
 
 export default function NotificationSettings() {
@@ -60,11 +63,11 @@ export default function NotificationSettings() {
       </div>
 
       <div className="space-y-5">
-        {/* Critical — always on */}
+        {/* Critical — designed but not built yet. Say so instead of pretending. */}
         <div>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-negative">Critical</span>
-            <span className="text-[10px] text-text-muted">— always on</span>
+            <span className="text-[10px] text-text-muted">— coming soon: these detectors aren't built yet</span>
           </div>
           <div className="space-y-1.5">
             <FixedRow label="Bill won't clear" helper="Cash flow says you'll be short before a bill date" />
@@ -104,6 +107,20 @@ export default function NotificationSettings() {
 }
 
 function ToggleRowEl({ row, active, onToggle }: { row: ToggleRow; active: boolean; onToggle: () => void }) {
+  if (row.comingSoon) {
+    return (
+      <div className="flex items-start gap-3 p-2.5 rounded-lg opacity-50">
+        <input type="checkbox" checked={false} disabled className="mt-0.5 rounded border-glass-border bg-surface-3 w-4 h-4" />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-text-muted">
+            {row.label}
+            <span className="ml-2 px-1.5 py-0.5 rounded-full bg-white/10 text-text-muted text-[9px] font-bold uppercase tracking-wider">Coming soon</span>
+          </div>
+          <div className="text-[11px] text-text-muted mt-0.5">{row.helper}</div>
+        </div>
+      </div>
+    );
+  }
   return (
     <label className="flex items-start gap-3 cursor-pointer p-2.5 rounded-lg hover:bg-surface-2 transition-colors">
       <input

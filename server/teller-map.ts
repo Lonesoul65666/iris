@@ -88,7 +88,7 @@ export function mapAccountSource(account: TellerAccount): string {
 }
 
 export type SkipReason =
-  | 'card_payment_or_refund'   // negative on a card
+  | 'card_payment'             // negative on a card that's a PAYMENT (moving money, not a refund)
   | 'inflow'                   // positive on a depository acct (deposit/transfer-in)
   | 'transfer_or_payment'      // checking transfer / card payment / deposit / interest / adjustment
   | 'investment'               // money moved to investments
@@ -99,7 +99,24 @@ export interface MapResult {
   keep: boolean
   amount?: number              // positive spend magnitude
   category?: string
+  refund?: boolean             // card merchant credit — import as a refund that nets against its category
   reason?: SkipReason
+}
+
+// Negative card amounts are EITHER payments (skip — just moving money from
+// checking, the spend is already each charge) or merchant credits (KEEP as
+// refunds — an Amazon return must net against the Amazon bucket; dropping
+// every credit overstated spend forever).
+//
+// DESCRIPTION is the only reliable signal: verified against the real Teller
+// data 2026-06-11, Teller types EVERY card credit as `payment` — Target
+// returns, Avis credits, dispute credits, the lot — so t.type must not be
+// consulted. The issuers' actual payment descriptors are unmistakable:
+// Citi "ONLINE PAYMENT, THANK YOU", CapOne "CAPITAL ONE MOBILE PYMT".
+const CARD_PAYMENT_DESC = /PAYMENT,?\s*THANK\s*YOU|ONLINE PAYMENT|AUTOPAY|ACH PAYMENT|ELECTRONIC PAYMENT|MOBILE PAYMENT|\bPYMT\b|CARDMEMBER/i
+
+function isCardPayment(t: TellerTransaction): boolean {
+  return CARD_PAYMENT_DESC.test(t.description || '')
 }
 
 const CHECKING_SKIP_TYPES = new Set(['transfer', 'card_payment', 'deposit', 'interest', 'adjustment', 'payment'])
@@ -138,9 +155,12 @@ export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount):
   const sub = account.subtype
 
   if (sub === 'credit_card') {
-    // Purchases are positive on cards; negatives are payments/refunds.
+    // Purchases are positive on cards.
     if (amt > 0) return { keep: true, amount: amt, category: bestCategory(t.description, amt, t.details?.category) }
-    return { keep: false, reason: 'card_payment_or_refund' }
+    // Negatives: payments skip; merchant credits import as refunds, categorized
+    // against the merchant they refund so the netting lands in the right bucket.
+    if (isCardPayment(t)) return { keep: false, reason: 'card_payment' }
+    return { keep: true, refund: true, amount: Math.abs(amt), category: bestCategory(t.description, amt, t.details?.category) }
   }
 
   if (sub === 'checking') {
@@ -167,8 +187,8 @@ export interface MappedExpense {
   reimbursementStatus: 'not_reimbursable'
   isWorkExpense: boolean   // false from the classifier; user merchant mappings can override at import
   recurring: false
-  flow: 'outflow'
-  transactionType: 'expense'
+  flow: 'outflow' | 'inflow'          // refunds are inflows
+  transactionType: 'expense' | 'refund'
   source: string
   importBatch: string
   tellerTxnId: string
@@ -193,8 +213,8 @@ export function tellerTxnToExpense(
     reimbursementStatus: 'not_reimbursable',
     isWorkExpense: false,
     recurring: false,
-    flow: 'outflow',
-    transactionType: 'expense',
+    flow: r.refund ? 'inflow' : 'outflow',
+    transactionType: r.refund ? 'refund' : 'expense',
     source: mapAccountSource(account),
     importBatch: batch,
     tellerTxnId: t.id,
