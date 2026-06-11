@@ -61,6 +61,24 @@ export async function saveCollectionItem<T>(
   })
 }
 
+/** REPLACE a collection: upsert the given rows AND delete rows whose keys are
+ *  gone. saveCollection alone is upsert-only — a row the user deleted in the
+ *  UI would survive in Postgres and resurrect on the next load (found by the
+ *  2026-06-11 pre-paint audit: deleted stashes came back). Also handles
+ *  deleting the LAST row, which saveCollection's empty-early-return never
+ *  reached the API for. */
+export async function replaceCollection<T>(
+  name: string,
+  rows: T[],
+  keyOf: (row: T) => string,
+): Promise<void> {
+  const existing = await api<ListItemEnvelope<CollectionItem<unknown>>>(`/api/collections/${encodeURIComponent(name)}/list`)
+  const keep = new Set(rows.map(keyOf))
+  const stale = existing.items.map((i) => i.key).filter((k) => !keep.has(k))
+  if (rows.length > 0) await saveCollection(name, rows, keyOf)
+  for (const k of stale) await deleteCollectionKey(name, k)
+}
+
 /** Delete one row by key. */
 export async function deleteCollectionKey(name: string, key: string): Promise<void> {
   await api<DeleteEnvelope>(`/api/collections/${encodeURIComponent(name)}/delete`, {
