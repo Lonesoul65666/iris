@@ -336,7 +336,7 @@ export const defaultBudgetBuckets: BudgetBucket[] = [
   { category: 'fun_wife',        label: 'Personal Fun (2)',        icon: '💅', monthlyBudget: 0, monthlyActual: 0, color: '#fb7185', guideline: 'No-judgment spending for the secondary earner.', guidelinePercent: 1.5 },
   { category: 'clothing',        label: 'Clothing',                icon: '👕', monthlyBudget: 0, monthlyActual: 0, color: '#94a3b8', guideline: 'Family clothing.', guidelinePercent: 0.7 },
   { category: 'travel_personal', label: 'Travel / Vacations',      icon: '✈️', monthlyBudget: 0, monthlyActual: 0, color: '#0ea5e9', guideline: 'Stash — set aside monthly for trips.', guidelinePercent: 2 },
-  { category: 'gifts_holidays',  label: 'Gifts / Holidays',        icon: '🎁', monthlyBudget: 0, monthlyActual: 0, color: '#f59e0b', guideline: 'Sinking fund so December does not wreck you.', guidelinePercent: 1 },
+  { category: 'gifts_holidays',  label: 'Gifts / Holidays',        icon: '🎁', monthlyBudget: 0, monthlyActual: 0, color: '#f59e0b', guideline: 'Stash a little monthly so December does not wreck you.', guidelinePercent: 1 },
   { category: 'home_maintenance',label: 'Home Maintenance',        icon: '🔧', monthlyBudget: 0, monthlyActual: 0, color: '#78716c', guideline: 'Rule of thumb: 1% of home value per year.', guidelinePercent: 2 },
   { category: 'car_maintenance', label: 'Car Maintenance',         icon: '🔩', monthlyBudget: 0, monthlyActual: 0, color: '#64748b', guideline: 'Repairs, tires, registrations.', guidelinePercent: 1 },
   { category: 'amazon',          label: 'Amazon',                  icon: '📦', monthlyBudget: 0, monthlyActual: 0, color: '#f97316', guideline: 'Track separately — Amazon is invisible spending.', guidelinePercent: 2 },
