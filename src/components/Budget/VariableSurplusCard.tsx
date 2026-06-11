@@ -3,6 +3,7 @@ import type { Expense, IncomeSource } from '../../types/budget';
 import { formatCurrency } from '../../utils/format';
 import { getIncomeSources } from '../../stores/budgetStore';
 import { getSetting, saveSetting } from '../../stores/portfolioStore';
+import { parseLocalDate } from '../../utils/transactionAnalysis';
 
 interface Props {
   expenses: Expense[];
@@ -121,7 +122,7 @@ export default function VariableSurplusCard({ expenses, now = new Date() }: Prop
 
     const sumAboveFloor = (from: Date) =>
       currentBand.paychecks
-        .filter(e => new Date(e.date) >= from)
+        .filter(e => parseLocalDate(e.date) >= from)
         .reduce((s, e) => s + Math.max(0, e.amount - effectiveFloor), 0);
 
     return {

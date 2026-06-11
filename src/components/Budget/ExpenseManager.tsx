@@ -387,7 +387,8 @@ export default function ExpenseManager({ expenses, onExpensesChanged }: ExpenseM
 
           const mapping = mappingLookup.get(rawDesc.toLowerCase());
           const displayName = mapping?.displayName || cleanMerchantName(rawDesc);
-          if (txType === 'expense') category = mapping?.category as ExpenseCategory || guessCategory(rawDesc);
+          // Refunds get a category too — they net against the bucket they refund
+          if (txType === 'expense' || txType === 'refund') category = mapping?.category as ExpenseCategory || guessCategory(rawDesc);
           const isWork = mapping?.isWorkExpense ?? (txType === 'expense' && guessWorkExpense(rawDesc));
 
           allParsed.push({

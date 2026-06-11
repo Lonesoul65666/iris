@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Expense, IncomeSource } from '../../types/budget';
 import { formatCurrency } from '../../utils/format';
 import { getIncomeSources } from '../../stores/budgetStore';
+import { parseLocalDate } from '../../utils/transactionAnalysis';
 
 interface Props {
   expenses: Expense[];
@@ -68,7 +69,7 @@ export default function WorkReimbursementsCard({ expenses, now = new Date(), onV
     const yearStart = new Date(now.getFullYear(), 0, 1);
 
     const sumFrom = (arr: Expense[], from: Date) =>
-      arr.filter(e => new Date(e.date) >= from).reduce((s, e) => s + e.amount, 0);
+      arr.filter(e => parseLocalDate(e.date) >= from).reduce((s, e) => s + e.amount, 0);
 
     const mkWindow = (label: string, from: Date): WindowStats => {
       const spent = sumFrom(allWork, from);

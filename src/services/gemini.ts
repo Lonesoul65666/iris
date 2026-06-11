@@ -156,7 +156,7 @@ export function buildPortfolioContext(accounts: Account[], equity?: EquityProfil
     }
     if (budget.sinkingFunds) {
       const totalContributions = budget.sinkingFunds.reduce((s, f) => s + f.monthlyContribution, 0);
-      ctx += `- Sinking fund contributions: ${formatCurrency(totalContributions)}/mo\n`;
+      ctx += `- Stash contributions: ${formatCurrency(totalContributions)}/mo\n`;
       for (const sf of budget.sinkingFunds) {
         const pct = sf.targetAmount > 0 ? ((sf.currentBalance / sf.targetAmount) * 100).toFixed(0) : '0';
         ctx += `  - ${sf.name}: ${formatCurrency(sf.currentBalance)}/${formatCurrency(sf.targetAmount)} (${pct}%)\n`;

@@ -15,6 +15,18 @@ export function isCompleteMonth(ym: string, now: Date = new Date()): boolean {
   return /^\d{4}-\d{2}$/.test(ym) && ym < currentMonthKey(now);
 }
 
+/** Parse an expense date string as LOCAL time. `new Date('YYYY-MM-DD')` parses
+ *  as UTC midnight — which is the previous evening in US timezones, so
+ *  1st-of-month paychecks silently fell out of "this month" / YTD windows. */
+export function parseLocalDate(dateStr: string): Date {
+  if (dateStr.includes('/')) {
+    const [m, d, y] = dateStr.split('/').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+  }
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
 // ─── Canonical "what counts" predicates ───
 
 /** A real spending transaction: outflow, expense-typed (not transfer/investment/refund). */

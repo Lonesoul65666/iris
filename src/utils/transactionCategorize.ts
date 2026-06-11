@@ -37,7 +37,11 @@ export function classifyBankTransaction(
       return { flow: 'inflow', type: 'refund', category: 'other' };
     }
     if (d.includes('refund') || d.includes('credit') || d.includes('return')) {
-      return { flow: 'inflow', type: 'refund', category: 'other' };
+      // Categorize the refund against the merchant it refunds (run the outflow
+      // merchant rules on the same description) so it nets out of the right
+      // bucket — an Amazon return should credit Amazon, not vanish into 'other'.
+      const { category } = classifyBankTransaction(desc, -Math.abs(amount) - 1);
+      return { flow: 'inflow', type: 'refund', category };
     }
     return { flow: 'inflow', type: 'income', category: 'other' };
   }
