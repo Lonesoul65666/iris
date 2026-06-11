@@ -7,6 +7,7 @@
 - **STASH SYSTEM SHIPPED** (`d1b43a5`, design: `docs/stashes-design.md`): derived balances (contributions − linked-category draws, nothing stored but intent), stash categories = the reserve lane (dynamic registry, legacy defaults until configured), Safe-to-Spend subtracts Σ contributions, StashesCard on the daily Overview, Taxes/$1,500 + Trips&Travel/$1,000 auto-seeded from this month. 97/97 tests.
 - **Scott's next stash moves (no code)**: set real opening balances (what's actually sitting in savings per pot), link more lumpy categories (gifts_holidays, home_maintenance, car_maintenance — and decide on insurance, whose semi-annual premium is the May false-alarm), give Holidays/Emergency pots contributions, hit "Start auto-tracking" on the legacy pots.
 - **Stash follow-ups (code, later)**: recurring-detection-driven stash suggestions (needs the >180-day lookback fix), insurance premium split (monthly part fixed-lane, premium stash-drawn), stash history sparkline.
+- **PAYCHECK & WATERMARK EDITOR SHIPPED** (Settings, under Household Earners): net take-home / gross / 401k / HSA with Save-Discard + "Re-derive from bank deposits" (for after the job change). **Scott: enter your real 401k + HSA contributions** — they're $0 today, which understates the savings rate.
 
 
 Working branch: **`overnight-polish-2026-06-11`** (NOT merged to `master` — review & merge first).
