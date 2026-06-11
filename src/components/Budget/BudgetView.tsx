@@ -301,8 +301,12 @@ export default function BudgetView() {
         // user can override in Settings.
         if (loadedPaycheck.grossMonthly === 0 && loadedPaycheck.netTakeHome === 0) {
           const fullMonthEntries = monthly.filter(m => m.transactionCount > 10);
-          if (fullMonthEntries.length > 0) {
-            const avgIncome = fullMonthEntries.reduce((s, m) => s + m.totalIncome, 0) / fullMonthEntries.length;
+          // Average only months that actually had a paycheck — a current/partial
+          // month with transactions but no deposit yet would otherwise drag the
+          // figure down (reimbursements are already excluded from totalIncome).
+          const incomeMonths = fullMonthEntries.filter(m => m.totalIncome > 0);
+          if (incomeMonths.length > 0) {
+            const avgIncome = incomeMonths.reduce((s, m) => s + m.totalIncome, 0) / incomeMonths.length;
             if (avgIncome > 0) {
               const derived = {
                 ...loadedPaycheck,
