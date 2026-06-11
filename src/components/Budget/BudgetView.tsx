@@ -220,11 +220,13 @@ export default function BudgetView() {
       // Update budget buckets with real averages (calendar-complete months only)
       const invs = await getMonthlyInvestments();
       const invAmt = invs[0]?.amount || 0;
+      // monthlyActual is DERIVED from transactions — computed in memory, never
+      // persisted. Writing it back on every view was the bucket-clobber
+      // mechanism (and a side effect inside a setState updater, which runs
+      // twice under StrictMode). Budgets persist only when the user edits them.
       setBuckets(prev => {
         let updated = applyTransactionsToBuckets(prev, realExpenses);
-        // Keep investing bucket synced (no matching transactions for this)
         updated = updated.map(bk => bk.category === 'investing' ? { ...bk, monthlyBudget: invAmt, monthlyActual: invAmt } : bk);
-        saveBudgetBuckets(updated);
         return updated;
       });
     }
@@ -293,7 +295,7 @@ export default function BudgetView() {
         // Keep investing synced (transaction analysis won't have investing transactions)
         updatedBuckets = updatedBuckets.map(bk => bk.category === 'investing' ? { ...bk, monthlyBudget: investAmt, monthlyActual: investAmt } : bk);
         setBuckets(updatedBuckets);
-        await saveBudgetBuckets(updatedBuckets);
+        // (no saveBudgetBuckets here — derived actuals stay in memory; see loadExpenses)
 
         // Auto-derive paycheck from the GUARANTEED BASE income when the user
         // hasn't set it — NOT the blended average. Variable/RSU/OT is surplus,

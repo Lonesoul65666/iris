@@ -1,12 +1,20 @@
+import { useState } from 'react';
 import { useAppData } from '../context/AppDataContext';
 import { MarkdownContent } from '../utils/markdown';
 import { Icons } from '../components/ui/Icons';
 
 export default function ChatView() {
   const {
-    chatMessages, setChatInput, chatInput, chatLoading, sendMessage,
+    chatMessages, chatLoading, sendMessage,
     handleImageUpload, fileInputRef, chatEndRef, llmReady, setView,
   } = useAppData();
+  // Input state is LOCAL — typing here must not re-render every context consumer.
+  const [chatInput, setChatInput] = useState('');
+  const submit = (text: string) => {
+    if (!text.trim() || chatLoading) return;
+    void sendMessage(text);
+    setChatInput('');
+  };
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] animate-fadeIn">
@@ -52,7 +60,7 @@ export default function ChatView() {
                 'Explain my ISO situation simply',
                 'What ETFs should I consider for diversification?',
               ].map((q, i) => (
-                <button key={i} onClick={() => { setChatInput(q); setTimeout(() => sendMessage(), 50); }} className="glass-card-sm px-3 py-1.5 text-xs text-accent-light hover:bg-accent/10 transition-colors">
+                <button key={i} onClick={() => submit(q)} className="glass-card-sm px-3 py-1.5 text-xs text-accent-light hover:bg-accent/10 transition-colors">
                   {q}
                 </button>
               ))}
@@ -71,7 +79,7 @@ export default function ChatView() {
             }`}>
               <div className="chat-content"><MarkdownContent text={msg.content.replace('<!-- TRUNCATED -->', '')} /></div>
               {msg.role === 'assistant' && msg.content.includes('<!-- TRUNCATED -->') && (
-                <button onClick={() => { setChatInput('Continue exactly where you left off. Do not repeat anything.'); setTimeout(() => sendMessage(), 100); }}
+                <button onClick={() => submit('Continue exactly where you left off. Do not repeat anything.')}
                   className="mt-3 px-3 py-1.5 rounded-lg bg-accent/15 text-accent text-xs font-medium hover:bg-accent/25 transition-colors">
                   Continue response...
                 </button>
@@ -100,7 +108,7 @@ export default function ChatView() {
           {Icons.image}
         </button>
         <textarea value={chatInput} onChange={e => setChatInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(chatInput); } }}
           placeholder={llmReady ? "Ask about your portfolio, market trends, opportunities..." : "Configure a provider in Settings to start..."}
           disabled={!llmReady}
           rows={1}
@@ -108,7 +116,7 @@ export default function ChatView() {
           style={{ height: 'auto', minHeight: '20px' }}
           onInput={e => { const t = e.target as HTMLTextAreaElement; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 128) + 'px'; }}
         />
-        <button onClick={() => sendMessage()} disabled={chatLoading || !chatInput.trim() || !llmReady}
+        <button onClick={() => submit(chatInput)} disabled={chatLoading || !chatInput.trim() || !llmReady}
           className="p-2 text-accent hover:text-accent-light transition-colors disabled:opacity-30">
           {Icons.send}
         </button>
