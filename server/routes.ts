@@ -23,7 +23,7 @@ import { handleCollectionsList, handleCollectionsSave, handleCollectionsDelete }
 import { handleExportFull } from './api-handlers/export.ts'
 import { handleAuditList, handleAuditAppend, handleAuditDelete } from './api-handlers/audit.ts'
 import { handleConnectorsList, handleConnectorsSave, handleConnectorsDelete } from './api-handlers/connectors.ts'
-import { handleTellerStatus, handleTellerAccounts, handleTellerBalances, handleTellerProbe, handleTellerTransactions, handleTellerImport } from './api-handlers/teller.ts'
+import { handleTellerStatus, handleTellerAccounts, handleTellerBalances, handleTellerProbe, handleTellerTransactions, handleTellerImport, handleTellerImportIncome } from './api-handlers/teller.ts'
 
 type Req = IncomingMessage
 type Res = ServerResponse
@@ -134,6 +134,7 @@ export function registerIrisRoutes(use: UseFn): void {
   use('/api/teller/balances', handleTellerBalances)
   use('/api/teller/probe', handleTellerProbe)
   use('/api/teller/transactions', handleTellerTransactions)
+  use('/api/teller/import-income', handleTellerImportIncome)
   use('/api/teller/import', handleTellerImport)
 
   // /api/collections/:name/{list,save,delete} — req.url after the prefix is
