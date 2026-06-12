@@ -10,6 +10,8 @@ import SetupChecklist, { isDefaultPortfolio } from '../components/Dashboard/Setu
 import AccountBreakdown from '../components/Dashboard/AccountBreakdown';
 import SavingsScorecard from '../components/Dashboard/SavingsScorecard';
 import SyncStatus from '../components/Dashboard/SyncStatus';
+import GoalTracker from '../components/Dashboard/GoalTracker';
+import { computeAllStashes } from '../utils/stashMath';
 import { laneOf, isOverBudget } from '../utils/budgetLanes';
 import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
 
@@ -55,8 +57,8 @@ export default function DashboardView() {
     budgetSummary, actionItems,
     insights,
     netWorthSnapshots,
-    dashBuckets,
-    rawExpenses,
+    dashBuckets, dashSinkingFunds, monthlyInv,
+    rawExpenses, spendingSummary,
     monthToDate, safeToSpend,
     setView,
     profile,
@@ -389,6 +391,30 @@ export default function DashboardView() {
 
       {/* ════ LIVING UNDER THE GUARANTEE (savings scorecard) ════════════ */}
       <SavingsScorecard />
+
+      {/* ════ GOAL TRACKER — stashes with a target, date-pacing math ════ */}
+      {(() => {
+        // Goals = stashes that have a destination (target amount or date),
+        // with balances DERIVED from transactions (stashMath) — the stored
+        // currentBalance is legacy/manual. Targetless pots stay on the
+        // Budget Overview's StashesCard; duplicating them here is noise.
+        const statuses = computeAllStashes(dashSinkingFunds, rawExpenses);
+        const goalFunds = statuses
+          .filter(s => s.stash.targetAmount > 0 || s.stash.targetDate)
+          .map(s => ({ ...s.stash, currentBalance: s.balance }));
+        if (goalFunds.length === 0) return null;
+        const emergencyBalance = accounts
+          .filter(a => a.type === 'bank' && /sav/i.test(a.name))
+          .reduce((s, a) => s + a.totalValue, 0);
+        return (
+          <GoalTracker
+            sinkingFunds={goalFunds}
+            monthlyInvestmentAmount={monthlyInv?.amount || 0}
+            emergencyFundBalance={emergencyBalance}
+            monthlyExpenses={spendingSummary?.avgMonthlyExpenses ?? 0}
+          />
+        );
+      })()}
 
       {/* ════ SPEND BY ACCOUNT ══════════════════════════════════════════ */}
       <AccountBreakdown />
