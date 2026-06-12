@@ -244,8 +244,8 @@ export const sampleSinkingFunds: SinkingFund[] = [
 ];
 
 export const sampleFunMoney: FunMoney[] = [
-  { person: 'Scott', monthlyBudget: 400, monthlySpent: 0 },
-  { person: 'Claire', monthlyBudget: 400, monthlySpent: 0 },
+  { person: 'Scott', earnerId: 'earner-scott', category: 'fun_scott', emoji: '🎮', monthlyBudget: 400, monthlySpent: 0 },
+  { person: 'Claire', earnerId: 'earner-claire', category: 'fun_wife', emoji: '💅', monthlyBudget: 400, monthlySpent: 0 },
 ];
 
 export const sampleScenarios: BudgetScenario[] = [

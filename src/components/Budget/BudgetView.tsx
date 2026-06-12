@@ -1523,9 +1523,9 @@ export default function BudgetView() {
               await saveFunMoney(updated);
             };
             return (
-              <div key={i} className="p-4 rounded-xl bg-white/[0.03] border border-glass-border group">
+              <div key={fm.earnerId ?? fm.person} className="p-4 rounded-xl bg-white/[0.03] border border-glass-border group">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="font-semibold text-text-primary">{fm.person === 'Scott' ? '🎮' : '💅'} {fm.person}</span>
+                  <span className="font-semibold text-text-primary">{fm.emoji ?? '🎯'} {fm.person}</span>
                   <div className="flex items-center gap-0.5">
                     <span className="text-accent font-bold">$</span>
                     <input type="number" step="0.01" value={fm.monthlyBudget}
@@ -1536,17 +1536,11 @@ export default function BudgetView() {
                   </div>
                 </div>
                 <div className="w-full bg-white/10 rounded-full h-2 mb-1">
-                  <div className="h-2 rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-all" style={{ width: `${fm.monthlyBudget > 0 ? (fm.monthlySpent / fm.monthlyBudget) * 100 : 0}%` }} />
+                  <div className="h-2 rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-all" style={{ width: `${fm.monthlyBudget > 0 ? Math.min(100, (fm.monthlySpent / fm.monthlyBudget) * 100) : 0}%` }} />
                 </div>
                 <div className="flex justify-between text-xs text-text-muted items-center">
-                  <div className="flex items-center gap-0.5">
-                    <span>$</span>
-                    <input type="number" step="0.01" value={fm.monthlySpent}
-                      onChange={e => updateFM('monthlySpent', Number(e.target.value))}
-                      className="w-16 bg-transparent border border-transparent group-hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50"
-                    />
-                    <span> spent</span>
-                  </div>
+                  {/* Spent is derived from this month's transactions in the pot's category — not editable */}
+                  <span>{formatCurrency(fm.monthlySpent)} spent this month</span>
                   <span>{formatCurrency(fm.monthlyBudget - fm.monthlySpent)} remaining</span>
                 </div>
               </div>

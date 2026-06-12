@@ -152,7 +152,11 @@ export async function getSinkingFunds(): Promise<SinkingFund[]> {
 }
 
 export async function saveFunMoney(fm: FunMoney[]): Promise<void> {
-  await saveCollection('funMoney', fm as unknown as Array<Record<string, unknown>>, (f) => String((f as unknown as FunMoney).person))
+  // Key by earner id when linked (stable across renames); person for legacy rows.
+  await saveCollection('funMoney', fm as unknown as Array<Record<string, unknown>>, (f) => {
+    const row = f as unknown as FunMoney
+    return String(row.earnerId ?? row.person)
+  })
 }
 
 export async function getFunMoney(): Promise<FunMoney[]> {
