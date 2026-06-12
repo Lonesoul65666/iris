@@ -23,8 +23,9 @@ import { isOverBudget } from '../utils/budgetLanes';
 import type { ActionItem } from '../components/ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, clearAllActionData } from '../stores/actionStore';
 import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getEarners, getPaycheck, getExpenses, getCustomCategories, clearAllExpenses, clearExpensesBySource, clearAllBudgetData } from '../stores/budgetStore';
-import type { Expense, FunMoney } from '../types/budget';
+import type { Expense, FunMoney, Earner } from '../types/budget';
 import { seedFunMoneyFromEarners, linkFunMoneyToEarners, computeFunMoneySpent } from '../utils/funMoney';
+import { setAuditActor } from '../stores/auditLogStore';
 import { applyTransactionsToBuckets, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, currentMonthKey } from '../utils/transactionAnalysis';
 import type { SpendingSummary, MonthComparison, MonthlySpending } from '../utils/transactionAnalysis';
 import { computeSafeToSpend, type SafeToSpend } from '../utils/safeToSpend';
@@ -66,6 +67,12 @@ interface AppDataContextValue {
   lastPriceRefresh: string | null;
   llmReady: boolean;
   refreshLlmReady: () => Promise<void>;
+  // Identity (couples model) — who is using the app right now
+  activeUser: string;
+  /** The Earner profile matching activeUser by name — null until earners load
+   *  or when the active user has no profile (e.g. 'You' fallback). */
+  activeEarner: Earner | null;
+  earners: Earner[];
   // Refs
   chatEndRef: React.RefObject<HTMLDivElement | null>;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
@@ -121,7 +128,7 @@ export function useAppData(): AppDataContextValue {
   return ctx;
 }
 
-export function AppDataProvider({ view, setView, setLoading, activeUser: _activeUser, children }: {
+export function AppDataProvider({ view, setView, setLoading, activeUser, children }: {
   view: View;
   setView: React.Dispatch<React.SetStateAction<View>>;
   setLoading: (v: boolean) => void;
@@ -149,8 +156,19 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
   const [priceRefreshing, setPriceRefreshing] = useState(false);
   const [lastPriceRefresh, setLastPriceRefresh] = useState<string | null>(null);
   const [llmReady, setLlmReady] = useState(false);
+  const [earners, setEarners] = useState<Earner[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Identity: stamp audit writes with whoever unlocked the session.
+  useEffect(() => {
+    setAuditActor(activeUser || null);
+  }, [activeUser]);
+
+  const activeEarner = useMemo(() => {
+    const key = activeUser.trim().toLowerCase();
+    return earners.find(e => e.name.trim().toLowerCase() === key) ?? null;
+  }, [earners, activeUser]);
 
   const refreshLlmReady = useCallback(async () => {
     if (!hasRouter()) { setLlmReady(false); return; }
@@ -337,6 +355,9 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
       // Register custom categories so analysis displays proper labels/icons
       const customCats = await getCustomCategories();
       if (customCats.length > 0) registerCustomCategories(customCats);
+
+      // Household earners — the couples model's identity spine
+      setEarners(await getEarners());
 
       // Wire transaction analysis into dashboard
       const allExpenses = await getExpenses();
@@ -689,6 +710,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
     totalLiquid, equityValue, totalNetWorth,
     allocations, healthMetrics, overallScore, retirement,
     budgetSummary, budgetOverBudget, monthToDate, safeToSpend,
+    activeUser, activeEarner, earners,
     sendMessage, handleImageUpload, handleActionItemsChange,
     saveApiKey: saveApiKeyFn, handleRefreshPrices,
     view, setView,
