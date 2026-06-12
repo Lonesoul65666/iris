@@ -257,8 +257,16 @@ export interface SinkingFund {
 export type Stash = SinkingFund;
 
 export interface FunMoney {
-  person: string;
+  person: string;            // display name
+  /** Link to Earner.id — the referential identity (couples model). Legacy rows
+   *  matched on the person string; new rows always carry the id. */
+  earnerId?: string;
+  /** The fun category this pot tracks. Legacy installs encode names in the
+   *  category union (fun_scott / fun_wife); resolved from person when absent. */
+  category?: ExpenseCategory;
+  emoji?: string;            // display emoji — was hardcoded by name in the UI
   monthlyBudget: number;
+  /** DERIVED: current-calendar-month spend in `category`. Never hand-edited. */
   monthlySpent: number;
 }
 

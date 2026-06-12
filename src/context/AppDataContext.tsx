@@ -22,8 +22,10 @@ import { defaultPaycheck, defaultBudgetBuckets, defaultSinkingFunds, defaultFunM
 import { isOverBudget } from '../utils/budgetLanes';
 import type { ActionItem } from '../components/ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, clearAllActionData } from '../stores/actionStore';
-import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getPaycheck, getExpenses, getCustomCategories, clearAllExpenses, clearExpensesBySource, clearAllBudgetData } from '../stores/budgetStore';
-import { applyTransactionsToBuckets, computeCategoryAverages, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, currentMonthKey } from '../utils/transactionAnalysis';
+import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getEarners, getPaycheck, getExpenses, getCustomCategories, clearAllExpenses, clearExpensesBySource, clearAllBudgetData } from '../stores/budgetStore';
+import type { Expense, FunMoney } from '../types/budget';
+import { seedFunMoneyFromEarners, linkFunMoneyToEarners, computeFunMoneySpent } from '../utils/funMoney';
+import { applyTransactionsToBuckets, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, currentMonthKey } from '../utils/transactionAnalysis';
 import type { SpendingSummary, MonthComparison, MonthlySpending } from '../utils/transactionAnalysis';
 import { computeSafeToSpend, type SafeToSpend } from '../utils/safeToSpend';
 import { applyStashLaneConfig } from '../utils/stashMath';
@@ -92,6 +94,26 @@ interface AppDataContextValue {
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
+
+// Fun-money sync — ONE definition for both load paths. Seeds pots from the
+// household's Earner profiles when the collection is empty (pre-wizard
+// installs), backfills identity fields on legacy rows, then derives
+// monthlySpent from THIS calendar month's transactions. The old inline code
+// used computeCategoryAverages — a historical average that never moved with
+// the month — and matched people by hardcoded name.
+async function syncFunMoney(allExpenses: Expense[]): Promise<FunMoney[]> {
+  const [loaded, earners] = await Promise.all([getFunMoney(), getEarners()]);
+  const base = loaded.length > 0 ? linkFunMoneyToEarners(loaded, earners) : seedFunMoneyFromEarners(earners);
+  const updated = computeFunMoneySpent(base, allExpenses);
+  const changed = updated.length !== loaded.length || updated.some((f, i) =>
+    f.monthlySpent !== loaded[i]?.monthlySpent ||
+    f.earnerId !== loaded[i]?.earnerId ||
+    f.category !== loaded[i]?.category ||
+    f.emoji !== loaded[i]?.emoji
+  );
+  if (changed) await saveFunMoney(updated);
+  return updated;
+}
 
 export function useAppData(): AppDataContextValue {
   const ctx = useContext(AppDataContext);
@@ -328,20 +350,8 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
         setDashBuckets(updatedBuckets);
         setSpendingSummary(computeSpendingSummary(allExpenses));
         setMonthComparison(computeMonthComparison(allExpenses));
-        // Auto-compute fun money spent from transaction data
-        const loadedFM = await getFunMoney();
-        const fm = loadedFM.length > 0 ? loadedFM : defaultFunMoney;
-        const catAvgs = computeCategoryAverages(realExpenses);
-        const updatedFM = fm.map(f => {
-          const catKey = f.person === 'Scott' ? 'fun_scott' : f.person === 'Claire' ? 'fun_wife' : null;
-          if (catKey && catAvgs[catKey] !== undefined) {
-            return { ...f, monthlySpent: catAvgs[catKey] };
-          }
-          return f;
-        });
-        if (updatedFM.some((f, i) => f.monthlySpent !== fm[i].monthlySpent)) {
-          await saveFunMoney(updatedFM);
-        }
+        // Fun money: seed/link + derive this-month spent (ONE path, see syncFunMoney)
+        const updatedFM = await syncFunMoney(allExpenses);
 
         // Generate insights on mount
         setInsights(generateInsights({
@@ -458,20 +468,8 @@ export function AppDataProvider({ view, setView, setLoading, activeUser: _active
         setDashBuckets(updatedBuckets);
         setSpendingSummary(computeSpendingSummary(allExpenses));
         setMonthComparison(computeMonthComparison(allExpenses));
-        // Auto-compute fun money spent & generate insights
-        const loadedFM = await getFunMoney();
-        const fm = loadedFM.length > 0 ? loadedFM : defaultFunMoney;
-        const catAvgs = computeCategoryAverages(realExpenses);
-        const updatedFM = fm.map(f => {
-          const catKey = f.person === 'Scott' ? 'fun_scott' : f.person === 'Claire' ? 'fun_wife' : null;
-          if (catKey && catAvgs[catKey] !== undefined) {
-            return { ...f, monthlySpent: catAvgs[catKey] };
-          }
-          return f;
-        });
-        if (updatedFM.some((f, i) => f.monthlySpent !== fm[i].monthlySpent)) {
-          await saveFunMoney(updatedFM);
-        }
+        // Fun money: seed/link + derive this-month spent (ONE path, see syncFunMoney)
+        const updatedFM = await syncFunMoney(allExpenses);
         setInsights(generateInsights({
           expenses: allExpenses,
           buckets: updatedBuckets,
