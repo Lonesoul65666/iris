@@ -209,16 +209,25 @@ export function applyTransactionsToBuckets(
   });
 }
 
-/** Apply a single month's actual spending to budget buckets (for month-by-month view) */
+/** Apply a single month's actual spending to budget buckets (for month-by-month
+ *  view). Pass `targets` (from budgetHistory.targetsForMonth) to judge the month
+ *  against the caps that were in effect THEN — without it, changing a cap today
+ *  silently rewrites every past month's over/under verdicts. */
 export function applyMonthToBuckets(
   buckets: BudgetBucket[],
-  monthData: MonthlySpending
+  monthData: MonthlySpending,
+  targets?: Record<string, number> | null
 ): BudgetBucket[] {
   return buckets.map(bucket => {
-    // Investing bucket keeps its synced value — no bank transactions for this
-    if (bucket.category === 'investing') return bucket;
+    const monthlyBudget = targets && targets[bucket.category] !== undefined
+      ? targets[bucket.category]
+      : bucket.monthlyBudget;
+    // Investing bucket keeps its synced actual — no bank transactions for this
+    if (bucket.category === 'investing') {
+      return targets ? { ...bucket, monthlyBudget } : bucket;
+    }
     const actual = monthData.byCategory[bucket.category];
-    return { ...bucket, monthlyActual: actual !== undefined ? Math.round(actual) : 0 };
+    return { ...bucket, monthlyBudget, monthlyActual: actual !== undefined ? Math.round(actual) : 0 };
   });
 }
 

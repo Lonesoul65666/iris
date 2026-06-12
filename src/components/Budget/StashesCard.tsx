@@ -35,6 +35,9 @@ function monthShort(ym: string): string {
 
 export default function StashesCard({ stashes, expenses, onChange }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Inline two-click delete confirm — window.confirm() is a native dialog that
+  // blocks the whole tab (and froze browser automation mid-session).
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const statuses = useMemo(() => computeAllStashes(stashes, expenses), [stashes, expenses]);
   const totalMonthly = totalStashContributions(stashes);
 
@@ -58,8 +61,14 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
     setExpanded(id);
   };
 
-  const removeStash = (id: string, name: string) => {
-    if (!window.confirm(`Delete the "${name}" stash? (Transactions are untouched — only the pot goes away.)`)) return;
+  const removeStash = (id: string) => {
+    if (confirmingDelete !== id) {
+      setConfirmingDelete(id);
+      setTimeout(() => setConfirmingDelete(prev => (prev === id ? null : prev)), 4000);
+      return;
+    }
+    setConfirmingDelete(null);
+    setExpanded(null);
     onChange(stashes.filter(s => s.id !== id));
   };
 
@@ -180,8 +189,9 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                       ))}
                     </select>
                   </div>
-                  <button onClick={() => removeStash(sf.id, sf.name)} className="text-[10px] text-negative/80 hover:text-negative">
-                    Delete stash
+                  <button onClick={() => removeStash(sf.id)}
+                    className={`text-[10px] ${confirmingDelete === sf.id ? 'px-2 py-0.5 rounded bg-negative/20 border border-negative/50 text-negative font-bold' : 'text-negative/80 hover:text-negative'}`}>
+                    {confirmingDelete === sf.id ? 'Click again to delete — transactions are untouched' : 'Delete stash'}
                   </button>
                 </div>
               )}

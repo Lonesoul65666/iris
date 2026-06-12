@@ -15,6 +15,7 @@
 // continues to exist at iris-budget@v4 as a one-session fallback per ADR-0002.
 
 import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown, CustomCategory, IncomeSource, InflowDecision, Earner, Expense } from '../types/budget'
+import { targetsOf, sameTargets, type BudgetTargetSnapshot } from '../utils/budgetHistory'
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────
 
@@ -103,11 +104,39 @@ async function clearCollection(name: string): Promise<void> {
 
 // ─── Buckets / SinkingFunds / FunMoney / Paycheck / CustomCategories ─────
 
+// ─── Budget-target history (append-only; see src/utils/budgetHistory.ts) ──
+// Every bucket save passes through here, so a target change can never slip by
+// unrecorded. Snapshots are deduped (identical targets append nothing) and a
+// history failure must never break the save itself.
+
+let lastSnapshotTargets: Record<string, number> | null | undefined; // undefined = not loaded yet
+
+export async function getBudgetTargetHistory(): Promise<BudgetTargetSnapshot[]> {
+  const rows = await listCollection<BudgetTargetSnapshot>('budgetTargets')
+  return rows.sort((a, b) => a.takenAt.localeCompare(b.takenAt))
+}
+
+/** Record a snapshot if the targets differ from the last one (or none exist). */
+export async function snapshotBudgetTargets(buckets: BudgetBucket[]): Promise<void> {
+  try {
+    const targets = targetsOf(buckets)
+    if (lastSnapshotTargets === undefined) {
+      const hist = await getBudgetTargetHistory()
+      lastSnapshotTargets = hist.length > 0 ? hist[hist.length - 1].targets : null
+    }
+    if (lastSnapshotTargets !== null && sameTargets(lastSnapshotTargets, targets)) return
+    const snap: BudgetTargetSnapshot = { takenAt: new Date().toISOString(), targets }
+    await saveCollectionItem('budgetTargets', snap as unknown as Record<string, unknown>, (s) => String((s as unknown as BudgetTargetSnapshot).takenAt))
+    lastSnapshotTargets = targets
+  } catch { /* target history is best-effort — never block the save */ }
+}
+
 // Buckets and stashes use REPLACE semantics — both have delete-in-UI flows
 // (Edit Budget bucket removal, StashesCard delete), and upsert-only saves let
 // deleted rows resurrect from Postgres on the next load.
 export async function saveBudgetBuckets(buckets: BudgetBucket[]): Promise<void> {
   await replaceCollection('buckets', buckets as unknown as Array<Record<string, unknown>>, (b) => String((b as unknown as BudgetBucket).category))
+  await snapshotBudgetTargets(buckets)
 }
 
 export async function getBudgetBuckets(): Promise<BudgetBucket[]> {
