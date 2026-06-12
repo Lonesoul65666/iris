@@ -85,6 +85,17 @@ export interface Expense {
   // Inflow-specific (only populated when flow='inflow')
   incomeSubtype?: IncomeSubtype;     // base/variable/bonus/etc — drives detection + sweep logic
   incomeSourceId?: string;           // links to IncomeSource.id when matched/grouped
+  /** Who spent it (couples model): an Earner.id or 'ours'. Absent = inherit
+   *  the account's owner (sourceOwners collection), falling back to 'ours'. */
+  spender?: string;
+}
+
+/** Account-owner mapping for attribution: which person a transaction source
+ *  belongs to by default. A card in one person's name is theirs; the joint
+ *  checking is 'ours'. Per-transaction `spender` overrides this. */
+export interface SourceOwner {
+  source: string;   // TransactionSource value, e.g. 'credit_card_1'
+  owner: string;    // Earner.id | 'ours'
 }
 
 // ─── Income source model (locked 2026-04-24) ──────────────────────────────────

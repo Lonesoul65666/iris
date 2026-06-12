@@ -14,7 +14,7 @@
 // already copied existing data into Postgres. The old IndexedDB store
 // continues to exist at iris-budget@v4 as a one-session fallback per ADR-0002.
 
-import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown, CustomCategory, IncomeSource, InflowDecision, Earner, Expense } from '../types/budget'
+import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown, CustomCategory, IncomeSource, InflowDecision, Earner, Expense, SourceOwner } from '../types/budget'
 import { targetsOf, sameTargets, type BudgetTargetSnapshot } from '../utils/budgetHistory'
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────
@@ -263,6 +263,20 @@ export async function saveEarner(e: Earner): Promise<void> {
 
 export async function deleteEarner(id: string): Promise<void> {
   await deleteCollectionKey('earners', id)
+}
+
+// ─── Source owners (attribution — couples model) ─────────────────────────
+
+export async function getSourceOwners(): Promise<SourceOwner[]> {
+  return listCollection<SourceOwner>('sourceOwners')
+}
+
+export async function saveSourceOwner(row: SourceOwner): Promise<void> {
+  await saveCollectionItem('sourceOwners', row as unknown as Record<string, unknown>, (r) => String((r as unknown as SourceOwner).source))
+}
+
+export async function deleteSourceOwner(source: string): Promise<void> {
+  await deleteCollectionKey('sourceOwners', source)
 }
 
 // ─── Expenses ────────────────────────────────────────────────────────────

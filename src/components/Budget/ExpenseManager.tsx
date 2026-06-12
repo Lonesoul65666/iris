@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { Expense, ExpenseCategory, TransactionFlow, TransactionType, TransactionSource, CustomCategory } from '../../types/budget';
-import { saveExpense, deleteExpense, getCustomCategories, saveCustomCategory, saveBudgetBuckets, getBudgetBuckets } from '../../stores/budgetStore';
+import type { Expense, ExpenseCategory, TransactionFlow, TransactionType, TransactionSource, CustomCategory, Earner } from '../../types/budget';
+import { saveExpense, deleteExpense, getCustomCategories, saveCustomCategory, saveBudgetBuckets, getBudgetBuckets, getEarners, getSourceOwners } from '../../stores/budgetStore';
 import { getMerchantMappings, saveMerchantMapping, type MerchantMapping } from '../../stores/actionStore';
 import { registerCustomCategories } from '../../utils/transactionAnalysis';
 import { classifyBankTransaction, guessCategory } from '../../utils/transactionCategorize';
+import { JOINT, buildOwnerMap, effectiveSpender, spenderName, nextSpender } from '../../utils/attribution';
 
 const DEFAULT_CATEGORY_OPTIONS: { value: ExpenseCategory; label: string; icon: string }[] = [
   { value: 'housing', label: 'Housing', icon: '🏠' },
@@ -161,6 +162,17 @@ export default function ExpenseManager({ expenses, onExpensesChanged }: ExpenseM
 
   // Load custom categories on mount
   useEffect(() => { getCustomCategories().then(setCustomCategories); }, []);
+
+  // Attribution (couples model): earner list + account-owner defaults.
+  const [earners, setEarners] = useState<Earner[]>([]);
+  const [ownerMap, setOwnerMap] = useState<Record<string, string>>({});
+  useEffect(() => {
+    (async () => {
+      const [e, rows] = await Promise.all([getEarners(), getSourceOwners()]);
+      setEarners(e);
+      setOwnerMap(buildOwnerMap(rows));
+    })();
+  }, []);
 
   // Merged category list: defaults + custom
   const CATEGORY_OPTIONS = [
@@ -787,6 +799,7 @@ export default function ExpenseManager({ expenses, onExpensesChanged }: ExpenseM
                       <th className="text-left p-3">Category</th>
                       <th className="text-right p-3">Amount</th>
                       <th className="text-center p-3">Work?</th>
+                      <th className="text-center p-3">Who?</th>
                       <th className="p-3 w-10"></th>
                     </tr>
                   </thead>
@@ -865,6 +878,35 @@ export default function ExpenseManager({ expenses, onExpensesChanged }: ExpenseM
                                 {isWorkExp(e) ? '💼 Work' : '🏠 Personal'}
                               </button>
                             )}
+                          </td>
+                          <td className="p-3 text-center">
+                            {txType === 'expense' && earners.length > 0 && (() => {
+                              // Spender toggle — same one-click pattern as Personal↔Work.
+                              // No override = inherit the account's owner (shown dimmed);
+                              // clicking cycles override through each person, Ours, back to inherit.
+                              const resolved = effectiveSpender(e, ownerMap);
+                              const inherited = e.spender === undefined;
+                              const label = spenderName(resolved, earners);
+                              return (
+                                <button onClick={async () => {
+                                  const updated: Expense = { ...e, spender: nextSpender(e.spender, earners) };
+                                  await saveExpense(updated);
+                                  onExpensesChanged();
+                                }}
+                                  title={inherited
+                                    ? `Inherited from the account's owner (${label}) — click to override who spent this`
+                                    : `Spender set on this transaction (${label}) — click to change`}
+                                  className={`text-xs px-2.5 py-1 rounded-full transition-colors whitespace-nowrap font-medium ${
+                                    inherited
+                                      ? 'bg-white/5 text-text-muted hover:bg-accent/10 hover:text-accent'
+                                      : resolved === JOINT
+                                        ? 'bg-positive/15 text-positive'
+                                        : 'bg-accent/20 text-accent'
+                                  }`}>
+                                  {resolved === JOINT ? '👫' : '🧍'} {label}
+                                </button>
+                              );
+                            })()}
                           </td>
                           <td className="p-3">
                             <button onClick={async () => {
