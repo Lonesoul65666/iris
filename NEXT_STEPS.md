@@ -10,7 +10,9 @@
 - **PAYCHECK & WATERMARK EDITOR SHIPPED** (Settings, under Household Earners): net take-home / gross / 401k / HSA with Save-Discard + "Re-derive from bank deposits" (for after the job change). **Scott: enter your real 401k + HSA contributions** — they're $0 today, which understates the savings rate.
 - **CARD REFUNDS SHIPPED + BACKFILLED**: Teller import keeps merchant credits as categorized refunds (33 rows / $2,633 over 9 months were silently counted as spend). KEY GOTCHA baked into `server/teller-map.ts`: Teller types EVERY card credit as `payment` — detection is description-only ("ONLINE PAYMENT, THANK YOU" / "CAPITAL ONE MOBILE PYMT").
 - **HONESTY PASS DONE**: TriggerCenter renders only wired actions ("See breakdown" → drilldown; Sweep/Classify removed until built; dismissals persist per-month), NotificationSettings marks unbuilt detectors "coming soon" instead of pretending, Quick Import All stale-closure row-drop fixed.
-- **⭐ THE PRE-UI SHORTLIST IS DONE. Next session = the UI/UX redesign + couples scoreboard.**
+- **BUDGET-TARGET HISTORY SHIPPED** (Scott promoted from "later": reflection requires knowing what the goals WERE). Append-only snapshots in collection `budgetTargets`, recorded inside saveBudgetBuckets (deduped, best-effort); complete months in Overview + Monthly Detail judged via `targetsForMonth` (src/utils/budgetHistory.ts, 6 tests). Known boundary: the watermark/paycheck itself is NOT versioned yet — same problem one level up when net take-home changes at the job switch.
+- StashesCard delete = inline two-click confirm (window.confirm froze the tab).
+- **⭐ PRE-UI WORK COMPLETE (22 commits, 103/103 tests). Order confirmed with Scott: (1) his data homework → (2) couples DATA MODEL (attribution/identity/actor + fun-money month bug) → (3) UI/UX redesign (scoreboard, month-in-review, sankey, bills strip, paycheck anatomy) → (4) investments/equity inherit the visual language.**
 
 
 Working branch: **`overnight-polish-2026-06-11`** (NOT merged to `master` — review & merge first).
