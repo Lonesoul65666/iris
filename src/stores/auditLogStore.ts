@@ -22,6 +22,9 @@ export interface AuditEntry {
   entityId: string;     // account.id, holding.id, or 'global' for budget
   entityName: string;   // human-readable label
   details: string;      // plain-English description
+  /** Who made the change — the unlocked user's name. Absent on entries written
+   *  before the couples model (2026-06-12) or before identity resolves. */
+  actor?: string;
   meta?: Record<string, unknown>; // optional extra context (before/after values, import stats, etc.)
 }
 
@@ -55,9 +58,16 @@ async function auditApi<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ─── Write ───
 
+// Module-level actor: set once when the active user resolves (App unlock /
+// session restore) so the ~10 write helpers don't each thread a name through.
+let currentActor: string | null = null;
+export function setAuditActor(name: string | null): void {
+  currentActor = name;
+}
+
 export async function logAuditEvent(entry: Omit<AuditEntry, 'id'>): Promise<AuditEntry> {
   const id = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-  const full: AuditEntry = { ...entry, id };
+  const full: AuditEntry = { ...entry, id, actor: entry.actor ?? currentActor ?? undefined };
   await auditApi('/api/audit/append', { method: 'POST', body: JSON.stringify({ entry: full }) });
   return full;
 }
