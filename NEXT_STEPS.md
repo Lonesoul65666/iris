@@ -1,66 +1,61 @@
-# Iris — Next Steps (as of 2026-06-11, late session)
+# Iris — Next Steps (as of 2026-06-11, end of the marathon session)
 
-## ✅ LATE-SESSION ADDITIONS (after the three phases)
-- **Overview shows the in-progress month by default** with an IN PROGRESS badge (`56c8f06`) — "a budget is run during the month."
-- **Live trending in Budget Pulse** (`4a849c4`): headline "trending to ~$X vs watermark" (fixed counts once, flex projects linearly) + per-category "→ $X at today's pace"; lane-aware pacing (fixed bills stop false-PACING); TriggerCenter fed true MTD buckets. Pulse renders only for the live month.
-- **Sync debounce fix** (`02b698e`): failed attempts no longer block retries with a lying "Already up to date."
-- **STASH SYSTEM SHIPPED** (`d1b43a5`, design: `docs/stashes-design.md`): derived balances (contributions − linked-category draws, nothing stored but intent), stash categories = the reserve lane (dynamic registry, legacy defaults until configured), Safe-to-Spend subtracts Σ contributions, StashesCard on the daily Overview, Taxes/$1,500 + Trips&Travel/$1,000 auto-seeded from this month. 97/97 tests.
-- **Scott's next stash moves (no code)**: set real opening balances (what's actually sitting in savings per pot), link more lumpy categories (gifts_holidays, home_maintenance, car_maintenance — and decide on insurance, whose semi-annual premium is the May false-alarm), give Holidays/Emergency pots contributions, hit "Start auto-tracking" on the legacy pots.
-- **Stash follow-ups (code, later)**: recurring-detection-driven stash suggestions (needs the >180-day lookback fix), insurance premium split (monthly part fixed-lane, premium stash-drawn), stash history sparkline.
-- **PAYCHECK & WATERMARK EDITOR SHIPPED** (Settings, under Household Earners): net take-home / gross / 401k / HSA with Save-Discard + "Re-derive from bank deposits" (for after the job change). **Scott: enter your real 401k + HSA contributions** — they're $0 today, which understates the savings rate.
-- **CARD REFUNDS SHIPPED + BACKFILLED**: Teller import keeps merchant credits as categorized refunds (33 rows / $2,633 over 9 months were silently counted as spend). KEY GOTCHA baked into `server/teller-map.ts`: Teller types EVERY card credit as `payment` — detection is description-only ("ONLINE PAYMENT, THANK YOU" / "CAPITAL ONE MOBILE PYMT").
-- **HONESTY PASS DONE**: TriggerCenter renders only wired actions ("See breakdown" → drilldown; Sweep/Classify removed until built; dismissals persist per-month), NotificationSettings marks unbuilt detectors "coming soon" instead of pretending, Quick Import All stale-closure row-drop fixed.
-- **BUDGET-TARGET HISTORY SHIPPED** (Scott promoted from "later": reflection requires knowing what the goals WERE). Append-only snapshots in collection `budgetTargets`, recorded inside saveBudgetBuckets (deduped, best-effort); complete months in Overview + Monthly Detail judged via `targetsForMonth` (src/utils/budgetHistory.ts, 6 tests). Known boundary: the watermark/paycheck itself is NOT versioned yet — same problem one level up when net take-home changes at the job switch.
-- StashesCard delete = inline two-click confirm (window.confirm froze the tab).
-- **⭐ PRE-UI WORK COMPLETE (22 commits, 103/103 tests). Order confirmed with Scott: (1) his data homework → (2) couples DATA MODEL (attribution/identity/actor + fun-money month bug) → (3) UI/UX redesign (scoreboard, month-in-review, sankey, bills strip, paycheck anatomy) → (4) investments/equity inherit the visual language.**
+Working branch: **`overnight-polish-2026-06-11`** — **23 commits over `master`, unmerged. Scott reviews & merges first.**
+Review: `git log master..overnight-polish-2026-06-11` / `git diff master...overnight-polish-2026-06-11`.
+Health: `npx tsc -b` clean · `npm test` 103/103 · all surfaces browser-verified in Scott's Chrome.
+Audit trail: `docs/audits/2026-06-11-budget-gap-audit.txt` (36 findings, 0 refuted) · design doc `docs/stashes-design.md`.
 
+## ✅ What shipped today (the budget engine is DONE)
 
-Working branch: **`overnight-polish-2026-06-11`** (NOT merged to `master` — review & merge first).
-Review: `git log master..overnight-polish-2026-06-11` and `git diff master...overnight-polish-2026-06-11`.
-Full audit findings (36 verified, 0 refuted): `docs/audits/2026-06-11-budget-gap-audit.txt`.
+**Trust the numbers** (`f044f28`, `a21751a`, `56c8f06`, `4a849c4`)
+- Real current-month axis; calendar-complete months govern all math, never visibility. Overview defaults to the in-progress month with an IN PROGRESS badge.
+- ONE operating-spend definition everywhere (excl. work + reserve lanes); scorecard lane-aware (9/9 under base), banked stays cash-honest.
+- **Safe to Spend** (take-home − fixed max(budget,MTD) − stash set-asides − flexible MTD): dashboard hero + budget banner with formula + $/day.
+- **Live trending**: Budget Pulse "trending to ~$X vs watermark" + per-category "→ lands at $X at today's pace"; lane-aware pacing (no false PACING on fixed bills); TriggerCenter fed true MTD buckets.
+- Fixed: refund netting+categorization, CashFlowBar double-investing, drilldown ×12 bug, UTC 1st-of-month drift, donut top-6 mislabel, NaN guards. "Sinking fund" → "Stash" everywhere user-visible.
 
-## ✅ Shipped this session (on top of the overnight-polish commits)
+**Pipeline hardening** (`b2701b7`, `02b698e`, `9edebd5`)
+- Employer-agnostic payroll match (job-change safe); sync window anchored to last clean sync; honest partial-sync reporting; pendings skipped; deletion tombstones; merchant mappings applied server-side; recategorize endpoint guards income rows; connector lifecycle (re-enroll retires, dead tokens marked); failed attempts don't arm the debounce.
+- **Card refunds import as categorized refunds** + 9-month backfill (33 rows / $2,633 that was silently counted as spend). GOTCHA baked into `server/teller-map.ts`: Teller types EVERY card credit as `payment` — detection is description-only.
 
-**Data fixes (applied directly to Postgres, verified in Chrome):**
-- Dubai medical artifact: 4 SAUDI GERMAN charges (~$14.6k) moved healthcare → travel_personal. Healthcare reads green.
-- 2 Dubai Ubers un-worked per the international-Uber rule.
+**Redesign gate** (`261d73d`, `7d96cce`, `d0401c3`)
+- 103 unit tests on the pure math (8 files; `npm test`, ~1s). ~1,500 lines dead code deleted (GoalTracker deliberately KEPT for the scoreboard).
+- BudgetView write-on-read killed (the bucket-clobber mechanism — targets finally stick). Chat input out of global context. `replaceCollection` so bucket/stash deletes persist.
 
-**Phase 1 — Trust the numbers (`f044f28`, `a21751a`):**
-- Real current-month axis: dashboard "this month" surfaces show true month-to-date, not multi-month averages.
-- Calendar-based partial-month handling everywhere (replaced the >10-txn heuristics).
-- ONE operating-spend definition (excl. work + reserve lanes) across budget summary, watermark tile, Cash Flow sub-score, scorecard. Scorecard discipline number is lane-aware → 9/9 months under base; banked stays cash-honest.
-- **SAFE TO SPEND shipped**: hero chip on dashboard + formula banner on Budget overview (take-home − fixed − reserve set-asides − flexible MTD, with $/day pacing).
-- Fixed: CashFlowBar double-investing, refund netting + categorization, avg-mode drilldown ×12 bug, UTC 1st-of-month drift, top-6-labeled-as-total donut, savings-rate NaN. "Sinking fund" copy → "Stash".
-- Budget overview + Monthly Detail default to the last COMPLETE month; the in-progress month is navigable with an explicit badge.
+**Features** (`d1b43a5`, `50633aa`, `3c7c1bb`)
+- **Stashes**: derived balances (contributions − linked-category draws, honestly negative), stash categories = the reserve lane (dynamic registry), StashesCard on the daily Overview, Taxes/$1,500 + Trips&Travel/$1,000 seeded. Inline two-click delete confirm.
+- **Paycheck & Watermark editor** (Settings): net/gross/401k/HSA, Save-Discard, "Re-derive from bank deposits" for the job change.
+- **Budget-target history**: append-only snapshots inside saveBudgetBuckets; complete months judged against the caps in effect THEN ("judged against the targets you had that month").
 
-**Phase 2 — Pipeline bombs defused (`b2701b7`):**
-- Income import recognizes generic payroll markers (employer change safe).
-- Sync window anchors to last clean sync (no more >14-day data holes).
-- Partial syncs surface honestly; staleness clock only advances on clean syncs; rate-limit branch reachable.
-- Pendings skipped (no phantom holds / double-counts). Deleted Teller rows tombstoned (`deletedTellerIds` collection).
-- Merchant mappings apply server-side to new imports. Recategorize endpoint guards non-expense rows (the $188k paycheck-flip footgun is dead).
-- Connector lifecycle: re-enrollment retires old rows; dead tokens marked 'disconnected'.
-- **NOTE: server-side changes need a dev-server restart to take effect.**
+**Data fixes**: Dubai medical → travel_personal (~$14.6k out of healthcare); 2 international Ubers un-worked.
 
-**Phase 3 — Redesign gate (`261d73d` + test suite, partially complete):**
-- ~1,500 lines of dead code deleted (migrations, NudgeCenter, SynthesisDigest, ProgressTracker, depositAdvisor, actionExecutor.verify). GoalTracker kept on purpose (couples scoreboard will mount it).
-- BudgetView write-on-read killed — **this was the bucket-clobber mechanism**; budget targets set via Edit Budget now stick, and SQL-set targets would survive too.
-- Chat input out of global context (keystroke no longer re-renders ~20 consumers).
-- categoryEmoji fixed + completed.
-- Vitest + unit-test suite on the pure math modules (see test agent result / `npm test`).
+**Pre-paint sweep verdicts** (6 agents): YNAB/Monarch/Copilot = ready_to_paint (remaining gaps are presentation = redesign work; zero-based/rollover/Age-of-Money = confident skips). Couples = gaps_first → that IS the next build. Independent SQL recompute of all live numbers: 6/6 PASS within $1.
 
-## 🔜 Remaining gate items (small, next session)
-1. Canonicalize duplicated helpers: one formatCurrency (format.ts vs calculations.ts), one monthKey (8 private reimplementations), merge the 3 category-metadata maps with budgetLanes (essentialCats vs FIXED_CATEGORIES disagree on charity/investing).
-2. Memoize the AppDataContext value + derived selectors (chatInput removal already killed the worst re-render).
-3. BudgetView 10-seam decomposition (can overlap the redesign itself) + AppDataContext 5 seams + ExpenseManager parser extraction. Map with line ranges in the audit.
-4. Wire vitest into the pre-commit hook (currently tsc only).
+## 📋 Scott's no-code homework (sooner = better: target history starts accruing from real caps)
+1. **Set real budget targets** via Edit Budget (amazon $500 / groceries $1,000 / subs $250 / personal $200 + the rest). They stick now AND get snapshotted.
+2. **Stash opening balances** (what's actually set aside for taxes/trips) + link more lumpy categories (gifts_holidays, home/car maintenance; decide insurance).
+3. 401k/HSA in the Paycheck panel (display-only, fixes the savings-rate read).
+4. Merge the branch when reviewed.
+5. (Leftover from the delete-confirm test: a throwaway "New stash" may exist + an old confirm dialog may be open in a Chrome tab — OK/Cancel either way, then delete the test stash; deletes persist now.)
 
-## 🔜 Then: the UI/UX redesign + couples scoreboard (fold together)
-Surfacing Fun Money, mounting GoalTracker, de-hardcoding 'Scott'/'Claire' literals, audit-log actor — same painting work as the redesign. Investment/equity (Phase 2) rises after that (Scott leaving Abnormal → RSU liquidity). Gamification stays braked.
+## 🔨 NEXT BUILD: couples data model (BEFORE the paint — else we paint twice)
+From the sweep's scoreboard build list:
+1. **Per-person attribution**: owner on account sources, spender override on transactions (p1/p2/ours — reuse the one-click Personal↔Work toggle pattern).
+2. **Real partner identity**: stop discarding activeUser (AppDataContext:~102); actor on AuditEntry writes.
+3. **Fun-money THIS-MONTH bug**: monthlySpent uses computeCategoryAverages (historical avg) — must be current-month spend. Also de-hardcode 'Scott'/'Claire' literals (fun-money sync + emoji).
+4. Surface FunMoney out of edit mode; mount GoalTracker (its date-pacing math feeds StashesCard too).
 
-## ⚠️ Gotchas (rolling)
-- Teller dev tier: 100-enrollment lifetime cap is the scarce resource; sync with existing tokens is free. No auto-sync by design.
-- Scott's language: keep "watermark"/"reserves"/"Stashes"; never "sinking fund"; OTE/gross framing stays dead.
-- Lane rules + reserve amounts ($1,500 tax / $1,000 travel) live in `src/utils/budgetLanes.ts` (code = clobber-proof). NOTE audit finding: these are Scott-specific constants — make them user-editable when the Stashes/reserve balance feature lands.
-- June income shows $0 until the first June paycheck lands — honest MTD, not a bug.
-- May 2026 honestly shows 8 categories over (semi-annual insurance premium, annual card fees, childcare) — real data, decide whether to re-lane lumpy semi-annuals (audit: gifts/home/car-maintenance "stash-style" categories live in the flexible alarm lane).
+## 🎨 THEN: the UI/UX redesign (establishes the visual language equity/investments will inherit)
+Fold in: couples scoreboard centerpiece (Safe to Spend = the one shared number), month-in-review ritual (computeMonthComparison is computed and consumed by NOTHING), sankey "where money goes", bills-due-this-week strip (nextExpectedDate exists), paycheck anatomy (OTE → deductions → take-home, info-only), stash target-date pacing, BudgetView 10-seam decomposition (line ranges in the audit).
+
+## ⏳ Known boundaries / later
+- **Watermark not versioned** — same reflection problem one level up; do before/at the job switch (paycheck snapshot alongside target snapshots).
+- Annual-bill detection (recurring lookback >180d) → feeds stash suggestions.
+- Banked-vs-bank-balance sanity check; per-category rollover (probably never — stashes cover it); split transactions; card-liability line (Phase 2 net worth); alerts leaving the app (push/email); remaining helper dedup (formatCurrency/monthKey/category maps, budgetStore-vs-collectionsClient) + context memoization; wire `npm test` into pre-commit.
+
+## ⚠️ Standing gotchas
+- Teller dev tier: 100-enrollment lifetime cap is the scarce resource; sync via existing tokens is free; NEVER auto-poll; back-to-back full-history pulls get rate-limited (dry-run + real run = 2 pulls, space them).
+- Server-side changes need a dev-server restart (Vite middleware reload also drops in-flight requests — that was the "Couldn't refresh" Scott saw).
+- Scott's language: "watermark"/"reserves"/"Stashes" yes; "sinking fund"/OTE-framing never.
+- Lane defaults + $1,500/$1,000 reserve constants in `budgetLanes.ts` are FALLBACKS — stash config overrides at runtime via `configureStashLanes`.
+- June income $0 until the first June paycheck lands — honest, not a bug.
