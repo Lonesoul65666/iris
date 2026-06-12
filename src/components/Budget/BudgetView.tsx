@@ -10,6 +10,7 @@ import { computeGuaranteedBase } from '../../utils/savingsScorecard';
 import { computeSafeToSpend } from '../../utils/safeToSpend';
 import { applyStashLaneConfig, seedDefaultStashes } from '../../utils/stashMath';
 import StashesCard from './StashesCard';
+import FunMoneyCard from './FunMoneyCard';
 import { targetsForMonth, type BudgetTargetSnapshot } from '../../utils/budgetHistory';
 import { isGeminiInitialized } from '../../services/gemini';
 import ExpenseManager from './ExpenseManager';
@@ -1180,6 +1181,9 @@ export default function BudgetView() {
           void saveSinkingFunds(next);
         }}
       />
+
+      {/* Fun Money — per-person pots, out of edit mode (couples model). */}
+      <FunMoneyCard funMoney={funMoney} expenses={expenses} onEditBudgets={() => setEditMode(true)} />
 
       {/* Variable Pay — surfaces "above base" overage so user can sweep it instead of spending it. */}
       <VariableSurplusCard expenses={expenses} />
