@@ -4,12 +4,13 @@ import { ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown } from '../../types/budget';
 import type { Expense } from '../../types/budget';
 import { defaultBudgetBuckets, defaultSinkingFunds, defaultFunMoney, defaultPaycheck, calculateBudgetSummary } from '../../stores/budgetDefaults';
-import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, getCustomCategories } from '../../stores/budgetStore';
+import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, getCustomCategories, getBudgetTargetHistory, snapshotBudgetTargets } from '../../stores/budgetStore';
 import { getMonthlyInvestments, getSetting, saveSetting } from '../../stores/portfolioStore';
 import { computeGuaranteedBase } from '../../utils/savingsScorecard';
 import { computeSafeToSpend } from '../../utils/safeToSpend';
 import { applyStashLaneConfig, seedDefaultStashes } from '../../utils/stashMath';
 import StashesCard from './StashesCard';
+import { targetsForMonth, type BudgetTargetSnapshot } from '../../utils/budgetHistory';
 import { isGeminiInitialized } from '../../services/gemini';
 import ExpenseManager from './ExpenseManager';
 import RecurringBills from './RecurringBills';
@@ -122,6 +123,7 @@ export default function BudgetView() {
   const [showCompare, setShowCompare] = useState(false);
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlySpending[]>([]);
+  const [targetHistory, setTargetHistory] = useState<BudgetTargetSnapshot[]>([]);
   const [, setCategoryTrends] = useState<CategoryTrend[]>([]);
 
   // ── Edit mode state ──
@@ -277,6 +279,15 @@ export default function BudgetView() {
       applyStashLaneConfig(sf);
       setSinkingFunds(sf);
 
+      // Target history — baseline snapshot on first run so "the goals that
+      // month" resolves to SOMETHING for every month from today forward.
+      let th = await getBudgetTargetHistory();
+      if (th.length === 0) {
+        await snapshotBudgetTargets(b);
+        th = await getBudgetTargetHistory();
+      }
+      setTargetHistory(th);
+
       let fm = await getFunMoney();
       if (fm.length === 0) { await saveFunMoney(defaultFunMoney); fm = defaultFunMoney; }
       setFunMoney(fm);
@@ -347,12 +358,16 @@ export default function BudgetView() {
     : overviewMonth;
   const overviewIsInProgress = overviewInProgress !== null && resolvedOverviewMonth === overviewInProgress.month;
 
-  // Per-month buckets for overview
+  // Per-month buckets for overview. COMPLETE months are judged against the
+  // targets in effect back then (budget-target history) — changing a cap today
+  // must not rewrite last month's verdicts. The in-progress month and 'avg'
+  // use the live targets.
   const overviewBuckets = (() => {
     if (resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest' || availMonths.length === 0) return buckets;
     const monthData = monthlyData.find(m => m.month === resolvedOverviewMonth);
     if (!monthData) return buckets;
-    return applyMonthToBuckets(buckets, monthData);
+    const histTargets = overviewIsInProgress ? null : targetsForMonth(targetHistory, resolvedOverviewMonth);
+    return applyMonthToBuckets(buckets, monthData, histTargets);
   })();
 
   const summary = calculateBudgetSummary(overviewBuckets, paycheck);
@@ -518,8 +533,13 @@ export default function BudgetView() {
         const isInProgress = inProgressMonth !== null && current.month === inProgressMonth.month;
         const prior = idx > 0 ? navMonths[idx - 1] : null;
 
-        // Apply this month's data to budget buckets
-        const monthBuckets = applyMonthToBuckets(buckets, current);
+        // Apply this month's data to budget buckets — complete months judged
+        // against the targets that were in effect then, not today's caps.
+        const monthBuckets = applyMonthToBuckets(
+          buckets,
+          current,
+          isInProgress ? null : targetsForMonth(targetHistory, current.month),
+        );
         const totalSpend = current.totalExpenses;
         const totalIncome = current.totalIncome;
         const surplus = totalIncome - totalSpend;
@@ -609,6 +629,7 @@ export default function BudgetView() {
               : <>
                   {totalSpend > ytdSpend && <span className="text-negative">This month is {formatCurrency(totalSpend - ytdSpend)} above your average</span>}
                   {totalSpend < ytdSpend && <span className="text-positive">This month is {formatCurrency(ytdSpend - totalSpend)} below your average</span>}
+                  <span className="text-text-muted/70">· judged against the targets you had that month</span>
                 </>}
           </div>
 
