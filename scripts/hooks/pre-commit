@@ -1,7 +1,7 @@
 #!/bin/sh
 # Iris pre-commit hook.
-# Runs TypeScript type-check via tsc -b --noEmit.
-# Blocks the commit if type errors are present.
+# Runs TypeScript type-check (tsc -b --noEmit) + the unit suite (vitest, ~1s).
+# Blocks the commit if either fails.
 #
 # Lint is intentionally NOT in the hook today — see
 # docs/post-phase-1-backlog.md "Lint cleanup" item. Run manually:
@@ -19,6 +19,13 @@ echo "→ pre-commit: tsc -b --noEmit"
 npx tsc -b --noEmit
 if [ $? -ne 0 ]; then
   echo "✗ TypeScript check failed. Fix errors above before committing."
+  exit 1
+fi
+
+echo "→ pre-commit: vitest run"
+npx vitest run --reporter=dot
+if [ $? -ne 0 ]; then
+  echo "✗ Unit tests failed. Fix failures above before committing."
   exit 1
 fi
 
