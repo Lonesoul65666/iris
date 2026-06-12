@@ -515,8 +515,9 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
              SET date = EXCLUDED.date,
                  amount = EXCLUDED.amount,
                  -- Refresh bank-sourced fields, but PRESERVE the user's manual edits
-                 -- (category, work flag, reimbursement, notes, recurring, income subtype)
-                 -- so re-syncing the trailing window never clobbers a correction they made.
+                 -- (category, work flag, reimbursement, notes, recurring, income subtype,
+                 -- spender attribution) so re-syncing the trailing window never
+                 -- clobbers a correction they made.
                  data = EXCLUDED.data || jsonb_strip_nulls(jsonb_build_object(
                    'category',            expenses.data->'category',
                    'isWorkExpense',       expenses.data->'isWorkExpense',
@@ -524,7 +525,8 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
                    'notes',               expenses.data->'notes',
                    'recurring',           expenses.data->'recurring',
                    'incomeSubtype',       expenses.data->'incomeSubtype',
-                   'incomeSourceId',      expenses.data->'incomeSourceId'
+                   'incomeSourceId',      expenses.data->'incomeSourceId',
+                   'spender',             expenses.data->'spender'
                  )),
                  updated_at = now()
            RETURNING (xmax = 0) AS inserted`,
@@ -662,8 +664,9 @@ export async function handleTellerImportIncome(req: Req, res: Res): Promise<void
              SET date = EXCLUDED.date,
                  amount = EXCLUDED.amount,
                  -- Refresh bank-sourced fields, but PRESERVE the user's manual edits
-                 -- (category, work flag, reimbursement, notes, recurring, income subtype)
-                 -- so re-syncing the trailing window never clobbers a correction they made.
+                 -- (category, work flag, reimbursement, notes, recurring, income subtype,
+                 -- spender attribution) so re-syncing the trailing window never
+                 -- clobbers a correction they made.
                  data = EXCLUDED.data || jsonb_strip_nulls(jsonb_build_object(
                    'category',            expenses.data->'category',
                    'isWorkExpense',       expenses.data->'isWorkExpense',
@@ -671,7 +674,8 @@ export async function handleTellerImportIncome(req: Req, res: Res): Promise<void
                    'notes',               expenses.data->'notes',
                    'recurring',           expenses.data->'recurring',
                    'incomeSubtype',       expenses.data->'incomeSubtype',
-                   'incomeSourceId',      expenses.data->'incomeSourceId'
+                   'incomeSourceId',      expenses.data->'incomeSourceId',
+                   'spender',             expenses.data->'spender'
                  )),
                  updated_at = now()
            RETURNING (xmax = 0) AS inserted`,
