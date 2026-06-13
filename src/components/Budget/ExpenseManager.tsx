@@ -174,9 +174,19 @@ export default function ExpenseManager({ expenses, onExpensesChanged }: ExpenseM
     })();
   }, []);
 
-  // Merged category list: defaults + custom
+  // Fun categories show the earners' names (couples model), e.g. "Scott's Fun
+  // Money" — mirrors funCategoryFor()'s slug convention.
+  const funLabels: Record<string, string> = {};
+  for (const e of earners) {
+    const slug = (e.name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    if (!slug) continue;
+    const cat = slug === 'scott' ? 'fun_scott' : slug === 'claire' ? 'fun_wife' : `fun_${slug}`;
+    funLabels[cat] = `${e.name}'s Fun Money`;
+  }
+
+  // Merged category list: defaults (fun categories relabeled to names) + custom
   const CATEGORY_OPTIONS = [
-    ...DEFAULT_CATEGORY_OPTIONS,
+    ...DEFAULT_CATEGORY_OPTIONS.map(o => funLabels[o.value] ? { ...o, label: funLabels[o.value] } : o),
     ...customCategories.map(c => ({ value: c.id as ExpenseCategory, label: c.label, icon: c.icon })),
   ];
 

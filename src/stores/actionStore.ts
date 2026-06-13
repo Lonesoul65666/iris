@@ -440,19 +440,31 @@ async function execute401kIncrease(data: Record<string, string>): Promise<Action
 }
 
 async function executeFunMoney(data: Record<string, string>): Promise<ActionResult> {
+  // Couples model owns the fun-money pots now (one per earner, seeded from
+  // Earner profiles, surfaced on the Budget overview). This legacy action used
+  // to OVERWRITE the collection with two generic "Person A"/"Person B" $400
+  // rows — which clobbered the real earner pots (2026-06-13). It now only
+  // adjusts the BUDGET on the existing pots, in order, and never invents people.
+  const existing = await getFunMoney();
+  if (existing.length === 0) {
+    return {
+      success: false,
+      message: 'No fun-money pots yet. Each earner gets one automatically — set the amounts on the Budget overview.',
+    };
+  }
   // Backward-compatible field names — older actions used scott_amount / wife_amount.
-  const a1Amount = parseFloat(data.person_a_amount || data.scott_amount || '400');
-  const a2Amount = parseFloat(data.person_b_amount || data.wife_amount || '400');
-  const a1Name = data.person_a_name || 'Person A';
-  const a2Name = data.person_b_name || 'Person B';
+  const amounts = [
+    parseFloat(data.person_a_amount || data.scott_amount || ''),
+    parseFloat(data.person_b_amount || data.wife_amount || ''),
+  ];
+  const updated = existing.map((f, i) =>
+    Number.isFinite(amounts[i]) ? { ...f, monthlyBudget: amounts[i] } : f,
+  );
+  await saveFunMoney(updated);
 
-  await saveFunMoney([
-    { person: a1Name, monthlyBudget: a1Amount, monthlySpent: 0 },
-    { person: a2Name, monthlyBudget: a2Amount, monthlySpent: 0 },
-  ]);
-
+  const parts = updated.map((f) => `${f.person} $${f.monthlyBudget}/mo`).join(', ');
   return {
     success: true,
-    message: `Fun money set: ${a1Name} $${a1Amount}/mo, ${a2Name} $${a2Amount}/mo. Total: $${a1Amount + a2Amount}/mo. This is guilt-free — no questions asked.`,
+    message: `Fun money updated: ${parts}. Guilt-free — no questions asked.`,
   };
 }
