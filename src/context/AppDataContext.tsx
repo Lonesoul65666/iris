@@ -26,7 +26,7 @@ import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getEarner
 import type { Expense, FunMoney, Earner } from '../types/budget';
 import { seedFunMoneyFromEarners, linkFunMoneyToEarners, computeFunMoneySpent } from '../utils/funMoney';
 import { setAuditActor } from '../stores/auditLogStore';
-import { applyTransactionsToBuckets, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, currentMonthKey } from '../utils/transactionAnalysis';
+import { applyTransactionsToBuckets, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, registerEarnerFunLabels, currentMonthKey } from '../utils/transactionAnalysis';
 import type { SpendingSummary, MonthComparison, MonthlySpending } from '../utils/transactionAnalysis';
 import { computeSafeToSpend, type SafeToSpend } from '../utils/safeToSpend';
 import { applyStashLaneConfig } from '../utils/stashMath';
@@ -357,7 +357,10 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       if (customCats.length > 0) registerCustomCategories(customCats);
 
       // Household earners — the couples model's identity spine
-      setEarners(await getEarners());
+      const loadedEarners = await getEarners();
+      setEarners(loadedEarners);
+      // Fun categories display the earners' names ("Scott's Fun Money") app-wide.
+      registerEarnerFunLabels(loadedEarners);
 
       // Wire transaction analysis into dashboard
       const allExpenses = await getExpenses();

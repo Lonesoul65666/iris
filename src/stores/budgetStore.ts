@@ -152,8 +152,12 @@ export async function getSinkingFunds(): Promise<SinkingFund[]> {
 }
 
 export async function saveFunMoney(fm: FunMoney[]): Promise<void> {
-  // Key by earner id when linked (stable across renames); person for legacy rows.
-  await saveCollection('funMoney', fm as unknown as Array<Record<string, unknown>>, (f) => {
+  // REPLACE semantics: callers always pass the FULL pot set, so a row that
+  // disappears from the array must disappear from Postgres too. Upsert-only
+  // let orphans survive — that's how a legacy action's "Person A"/"Person B"
+  // defaults lingered alongside the real earner pots (2026-06-13). Key by
+  // earner id when linked (stable across renames); person for legacy rows.
+  await replaceCollection('funMoney', fm as unknown as Array<Record<string, unknown>>, (f) => {
     const row = f as unknown as FunMoney
     return String(row.earnerId ?? row.person)
   })

@@ -286,6 +286,21 @@ export function registerCustomCategories(cats: CustomCategory[]): void {
   }
 }
 
+/** Re-label the per-person fun categories from the household's earner names
+ *  (couples model). fun_scott / fun_wife are legacy KEYS; their DISPLAY should
+ *  read "<name>'s Fun Money" so a different household sees their own names.
+ *  Mirrors funCategoryFor()'s convention inline to avoid an import cycle
+ *  (funMoney.ts already imports from here). */
+export function registerEarnerFunLabels(earners: { name: string }[]): void {
+  for (const e of earners) {
+    const name = e.name?.trim();
+    if (!name) continue;
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    const cat = slug === 'scott' ? 'fun_scott' : slug === 'claire' ? 'fun_wife' : `fun_${slug}`;
+    CATEGORY_INFO[cat] = { label: `${name}'s Fun Money`, icon: CATEGORY_INFO[cat]?.icon ?? '🎯' };
+  }
+}
+
 // Compute per-category trends across months
 export function computeCategoryTrends(expenses: Expense[]): CategoryTrend[] {
   const monthly = computeMonthlySpending(expenses);
