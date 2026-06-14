@@ -140,6 +140,29 @@ export default function DashboardView() {
   const animatedNetWorth = useAnimatedCounter(totalNetWorth);
   const flavor = timeOfDayFlavor();
 
+  // Recent activity card — rendered either beside "Spending this month" (when
+  // the investments donut isn't shown, filling that slot) or in the bottom row.
+  const recentActivityCard = (className: string) => (
+    <DataCard title="Recent activity" subtitle={`Last ${recentTx.length} transactions`} icon="🔁" cta="See all →" onClick={() => setView('budget')} className={className}>
+      <div className="space-y-1">
+        {recentTx.map((tx: { id: string; date: string; description: string; amount: number; category?: string }) => (
+          <div key={tx.id} className="flex items-center gap-3 py-2.5 border-b border-glass-border/50 last:border-0">
+            <div className="w-9 h-9 rounded-lg bg-surface-2 flex items-center justify-center text-sm flex-shrink-0">
+              {categoryEmoji(tx.category)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-text-primary truncate">{tx.description}</div>
+              <div className="text-[11px] text-text-muted">{formatRelDate(tx.date)} · {tx.category || 'uncategorized'}</div>
+            </div>
+            <div className="text-sm font-bold text-text-primary tabular-nums">−{formatCurrency(Math.abs(tx.amount))}</div>
+          </div>
+        ))}
+      </div>
+    </DataCard>
+  );
+  // When investments are hidden, Recent activity fills the slot next to Spending.
+  const recentNextToSpending = !modules.investments && recentTx.length > 0;
+
   return (
     <div className="space-y-6 animate-fadeIn max-w-7xl pb-8">
       {/* ════ HERO ═══════════════════════════════════════════════════════ */}
@@ -357,6 +380,8 @@ export default function DashboardView() {
               <DataCardEmpty icon="📈" line="Add holdings to see your allocation." />
             )}
           </DataCard>
+        ) : recentNextToSpending ? (
+          recentActivityCard('')
         ) : null}
       </div>
 
@@ -419,26 +444,9 @@ export default function DashboardView() {
       {/* ════ SPEND BY ACCOUNT ══════════════════════════════════════════ */}
       <AccountBreakdown />
 
-      {/* ════ RECENT ACTIVITY + EQUITY/WEALTH STACK ═════════════════════ */}
+      {/* ════ RECENT ACTIVITY (only when NOT moved up beside Spending) + EQUITY/WEALTH ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {recentTx.length > 0 && (
-          <DataCard title="Recent activity" subtitle={`Last ${recentTx.length} transactions`} icon="🔁" cta="See all →" onClick={() => setView('budget')} className="lg:col-span-2">
-            <div className="space-y-1">
-              {recentTx.map((tx: { id: string; date: string; description: string; amount: number; category?: string }) => (
-                <div key={tx.id} className="flex items-center gap-3 py-2.5 border-b border-glass-border/50 last:border-0">
-                  <div className="w-9 h-9 rounded-lg bg-surface-2 flex items-center justify-center text-sm flex-shrink-0">
-                    {categoryEmoji(tx.category)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-text-primary truncate">{tx.description}</div>
-                    <div className="text-[11px] text-text-muted">{formatRelDate(tx.date)} · {tx.category || 'uncategorized'}</div>
-                  </div>
-                  <div className="text-sm font-bold text-text-primary tabular-nums">−{formatCurrency(Math.abs(tx.amount))}</div>
-                </div>
-              ))}
-            </div>
-          </DataCard>
-        )}
+        {!recentNextToSpending && recentTx.length > 0 && recentActivityCard('lg:col-span-2')}
 
         <div className="space-y-5">
           {modules.equity && (
