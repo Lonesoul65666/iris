@@ -97,9 +97,11 @@ export type SkipReason =
 
 export interface MapResult {
   keep: boolean
-  amount?: number              // positive spend magnitude
+  amount?: number              // positive magnitude (spend or transfer)
   category?: string
   refund?: boolean             // card merchant credit — import as a refund that nets against its category
+  transfer?: boolean           // money moving between the user's own accounts — VISIBLE but not spend
+  unexpectedOutflow?: boolean  // real spend leaving a savings bucket — counts AND raises an alert
   reason?: SkipReason
 }
 
@@ -135,8 +137,11 @@ const NON_SPEND_PAYEE = new RegExp(
     // brokerage / investment moves
     'FIDELITY', 'FID BKG', 'BKG SVC', 'MONEYLINE', 'SCHWAB', 'VANGUARD',
     'E\\*?TRADE', 'ETRADE', 'BETTERMENT', 'WEALTHFRONT', 'ROBINHOOD', 'MERRILL', 'COINBASE',
-    // explicit transfers
-    'ONLINE BANKING TRANSFER', 'WIRE TRANSFER', 'TRANSFER TO', 'TRANSFER FROM', 'ZELLE',
+    // explicit transfers between the user's own accounts. NOTE: 'ZELLE' was
+    // removed 2026-06-14 — Scott uses Zelle to pay real people (e.g. a $475 car
+    // repair), so an outbound Zelle is genuine spend, not a self-transfer. The
+    // one-off spouse round-trip (a now-closed account) is reconciled by hand.
+    'ONLINE BANKING TRANSFER', 'WIRE TRANSFER', 'TRANSFER TO', 'TRANSFER FROM',
   ].join('|'),
   'i',
 )
@@ -144,6 +149,11 @@ const NON_SPEND_PAYEE = new RegExp(
 function isCheckingNonSpend(description: string): boolean {
   return NON_SPEND_PAYEE.test(description || '')
 }
+
+// Spouse name as it appears in Zelle descriptions — a Zelle to/from Claire
+// ("Lillah Anderson") is an internal couple transfer, not spend or income.
+// Extend if other household members get added.
+const SPOUSE_ZELLE = /LILLAH|ANDERSON/i
 
 export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount): MapResult {
   // Skip pendings entirely: a voided hold (hotel/gas pre-auth) would otherwise
@@ -154,6 +164,21 @@ export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount):
   const amt = Number(t.amount)
   const sub = account.subtype
 
+  // Zelle, decided by DESCRIPTION not type — Teller types every Zelle as
+  // 'transfer'/'payment', so the type-based skips below would wrongly drop a
+  // real payment to a person (same lesson as card credits). A Zelle to/from
+  // the spouse is an internal couple transfer; to/from anyone else is real
+  // money. (Scott, 2026-06-14.)
+  if ((sub === 'checking' || sub === 'savings') && /\bZELLE\b/i.test(t.description || '')) {
+    if (SPOUSE_ZELLE.test(t.description || '')) return { keep: true, transfer: true, amount: Math.abs(amt) }
+    if (amt < 0) {
+      // outbound payment to a person = real spend; from a savings bucket it's also a tripwire
+      const fromSavingsBucket = sub === 'savings' || account.last_four === '1006'
+      return { keep: true, amount: Math.abs(amt), category: bestCategory(t.description, amt, t.details?.category), unexpectedOutflow: fromSavingsBucket }
+    }
+    return { keep: false, reason: 'inflow' } // inbound = income importer's job
+  }
+
   if (sub === 'credit_card') {
     // Purchases are positive on cards.
     if (amt > 0) return { keep: true, amount: amt, category: bestCategory(t.description, amt, t.details?.category) }
@@ -163,9 +188,24 @@ export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount):
     return { keep: true, refund: true, amount: Math.abs(amt), category: bestCategory(t.description, amt, t.details?.category) }
   }
 
+  // Savings buckets: "Super Savings" (3784) and the "Our Stuffs" (1006) holding
+  // account. Per Scott (2026-06-14): show ALL their activity like the main
+  // checking does, but their normal moves are TRANSFERS, not spend. Money
+  // *should not* leave these accounts for spending — so a real outflow that
+  // isn't an own-account transfer is flagged for an alert.
+  if (sub === 'savings' || account.last_four === '1006') {
+    // Inflows (interest, transfers in from checking) — visible, never spend.
+    if (amt >= 0) return { keep: true, transfer: true, amount: amt }
+    // Outflows that are own-account transfers (to checking, etc.) — expected.
+    if (CHECKING_SKIP_TYPES.has(t.type) || isCheckingNonSpend(t.description)) {
+      return { keep: true, transfer: true, amount: Math.abs(amt) }
+    }
+    // A real charge/withdrawal leaving a savings bucket — shouldn't happen.
+    // Count it AND raise the tripwire (rare ATM pulls land here too).
+    return { keep: true, amount: Math.abs(amt), category: bestCategory(t.description, amt, t.details?.category), unexpectedOutflow: true }
+  }
+
   if (sub === 'checking') {
-    // The "Our stuffs" (1006) secondary checking is transfer-only.
-    if (account.last_four === '1006') return { keep: false, reason: 'non_spending_account' }
     if (amt >= 0) return { keep: false, reason: 'inflow' }
     if (CHECKING_SKIP_TYPES.has(t.type)) return { keep: false, reason: 'transfer_or_payment' }
     if (t.details?.category === 'investment') return { keep: false, reason: 'investment' }
@@ -174,7 +214,7 @@ export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount):
     return { keep: true, amount: Math.abs(amt), category: bestCategory(t.description, amt, t.details?.category) }
   }
 
-  // savings + anything else: not a spending account
+  // anything else: not a spending account
   return { keep: false, reason: 'non_spending_account' }
 }
 
@@ -187,8 +227,9 @@ export interface MappedExpense {
   reimbursementStatus: 'not_reimbursable'
   isWorkExpense: boolean   // false from the classifier; user merchant mappings can override at import
   recurring: false
-  flow: 'outflow' | 'inflow'          // refunds are inflows
-  transactionType: 'expense' | 'refund'
+  flow: 'outflow' | 'inflow'          // refunds + transfers-in are inflows
+  transactionType: 'expense' | 'refund' | 'transfer'
+  notes?: string                      // e.g. the savings-withdrawal tripwire note
   source: string
   importBatch: string
   tellerTxnId: string
@@ -204,6 +245,19 @@ export function tellerTxnToExpense(
 ): MappedExpense | null {
   const r = classifyTellerTxn(t, account)
   if (!r.keep || r.amount === undefined) return null
+  const rawAmt = Number(t.amount)
+  // Transfers keep their real direction (in/out) so the account-activity view
+  // mirrors the bank; refunds are inflows; everything else is an outflow.
+  const flow: 'outflow' | 'inflow' = r.refund
+    ? 'inflow'
+    : r.transfer
+      ? (rawAmt >= 0 ? 'inflow' : 'outflow')
+      : 'outflow'
+  const transactionType: 'expense' | 'refund' | 'transfer' = r.refund
+    ? 'refund'
+    : r.transfer
+      ? 'transfer'
+      : 'expense'
   return {
     id: `teller_${t.id}`,
     date: t.date,
@@ -213,8 +267,9 @@ export function tellerTxnToExpense(
     reimbursementStatus: 'not_reimbursable',
     isWorkExpense: false,
     recurring: false,
-    flow: r.refund ? 'inflow' : 'outflow',
-    transactionType: r.refund ? 'refund' : 'expense',
+    flow,
+    transactionType,
+    notes: r.unexpectedOutflow ? `⚠ Withdrawal from ${account.name} — this account shouldn't have spending` : undefined,
     source: mapAccountSource(account),
     importBatch: batch,
     tellerTxnId: t.id,
