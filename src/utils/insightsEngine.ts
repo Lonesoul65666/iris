@@ -456,6 +456,31 @@ function generatePositiveReinforcement(
 
 // ─── Main engine ───
 
+// Tripwire (Scott, 2026-06-14): money should never LEAVE the savings buckets
+// (Super Savings / "Our Stuffs") for spending — only transfer into checking.
+// Transfers import as transactionType='transfer' and are ignored here; a real
+// outflow EXPENSE on those sources is the thing worth flagging.
+const SAVINGS_SOURCES = new Set(['bofa_savings', 'bofa_joint']);
+function detectSavingsWithdrawals(expenses: Expense[]): Insight[] {
+  const hits = expenses.filter(e =>
+    SAVINGS_SOURCES.has(e.source ?? '') &&
+    (e.flow ?? 'outflow') === 'outflow' &&
+    (e.transactionType ?? 'expense') === 'expense',
+  );
+  if (hits.length === 0) return [];
+  const total = hits.reduce((s, e) => s + e.amount, 0);
+  const latest = hits.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+  return [{
+    id: 'savings-withdrawal',
+    severity: 'warning',
+    category: 'saving',
+    title: `${fmt(total)} spent straight from savings`,
+    description: `${hits.length === 1 ? 'A charge' : `${hits.length} charges`} left your savings buckets (Super Savings / Our Stuffs), which shouldn't have spending — most recently "${latest.description.slice(0, 40)}" for ${fmt(latest.amount)}. If that was a rare ATM pull, fine; otherwise it's worth a look.`,
+    metric: total,
+    metricLabel: `${fmt(total)} from savings`,
+  }];
+}
+
 export function generateInsights(params: {
   expenses: Expense[];
   buckets: BudgetBucket[];
@@ -503,6 +528,7 @@ export function generateInsights(params: {
   // Run all insight generators
   const allInsights: Insight[] = [
     ...detectDeficit(bestExpenseEstimate, paycheck.netTakeHome),
+    ...detectSavingsWithdrawals(expenses),
     ...detectCategorySpikes(expenses),
     ...detectOverBudgetCategories(buckets),
     ...detectUnallocatedSurplus(paycheck.netTakeHome, bestExpenseEstimate),
