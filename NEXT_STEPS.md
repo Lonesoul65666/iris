@@ -1,4 +1,29 @@
-# Iris — Next Steps (as of 2026-06-12, couples data model session)
+# Iris — Next Steps
+
+## ⭐ START HERE — next session (as of 2026-06-14, data-honesty + audit session)
+
+Branch **`overnight-polish-2026-06-11`** — **34 commits over `master`, unmerged.** Tree clean (only untracked throwaway `scripts/*`). `npx tsc -b` clean · `npm test` 121/121 (in pre-commit). Dev server :5173 (`npm run dev`); **restart it before any sync** (server-side `teller-map.ts` changed this session). Validate in Scott's real Chrome.
+
+**Next session = work the AUDIT FIX QUEUE.** Full report: `docs/audits/2026-06-14-numbers-audit.md` (14-agent swarm, 12 findings, every high-severity one adversarially verified, none refuted). These are number/logic fixes — **no Fable needed** (the UI/UX redesign is the thing waiting on Fable). Queue, biggest distortion first:
+
+1. **Scorecard under-base verdict** (`savingsScorecard.ts:96`) — judges operating-only, hides $57,078 reserve spend; shows 9/9 green, honest is **3/9**. Flip to total real spend (or subtract a reserve set-aside from base). Trend line (#6, `savingsScorecard.ts:111-115`) rides along.
+2. **Variable-pay band detection** (`VariableSurplusCard.tsx:87-131`) — false 4/30 "pay change" drops ~$17.3k; shows $16.5k YTD vs **$33,816** true. Replace consecutive-diff with a modal-low floor; sum over ALL base paychecks; add a "free to deploy / fast-forward to vacation·reno" tile (Scott wants this).
+3. **Cash-flow time-axis** (`DashboardView.tsx:394-396`) — MTD spend vs full-month income/investing overstates "left this month" by ~$7–10k. Prorate income/investing OR relabel "left so far" + on-pace projection. **Fix this BEFORE deciding $1k→$2k investing** — real monthly room is much tighter than it looks.
+4. **Savings-rate 401k/HSA blindness** (`insightsEngine.ts:220-221` + 2 dup copies; also `budgetDefaults.ts:378-379`, `BudgetView.tsx:415-416`) — fires false "critical 5%" because 401k/HSA = $0; real rate ~**10.7%**. Populate real 401k (~$658, ~3%) + HSA (~$692) in the paycheck panel; extract one shared savings-rate helper.
+5. **Investing $20 vs $1,000** (`transactionAnalysis.ts:226-227`, `budgetHistory.ts:23-26`, `BudgetView.tsx:1323`, `budgetDefaults.ts:375`) — fat-finger snapshot; cash-flow right only by accident. Stop applying historical target to investing, exclude from snapshots, repair row, make input read-only.
+6–12 (medium/low, in the report): scorecard trend line · reserve constant $1,500→$1,000 (`budgetLanes.ts:41` + test) · US Treasury mapping drift → taxes · travel stash blank name → "Trips" · reimbursement income guard (`monthlyBudgetableIncome`) · recent-activity transfer guard (`DashboardView.tsx:129`, cosmetic) · stash targets = $0 (Scott sets, lights up GoalTracker).
+
+**Verified CLEAN (don't re-litigate):** net worth $544,574 (to the penny) · import integrity ($105k transfers never leak into spend) · Safe-to-Spend $2,735 · stash math · cash-flow investing not double-subtracted.
+
+**Scott's pending DECISIONS (gated on the fixes):** $1k→$2k/mo investing (decide after #3 shows true room) · 401k% vs direct-market (after #4) · taxes stash $1,000 likely UNDER-funds (real ~$1,400/mo) · **equity = $0: his Abnormal RSUs aren't entered at all — get them in (he's leaving Abnormal, likely a vesting event).**
+
+**Architecture (logged, NOT building yet):** keep Supabase cloud canonical + add local CACHE layer (offline resilience, mobile later) — see memory `project_iris_offline_architecture`; formalize as ADR (updates ADR-0002) when grounded. Real "fast on a plane / offline" fix = a production build (bundled); Vite dev is heavy. Google-Fonts render-block already fixed (`703c692`).
+
+Then, once numbers are trusted + Fable's back: **the UI/UX redesign** (commercial-grade) + couples scoreboard.
+
+---
+
+## (Prior) Next Steps — 2026-06-12, couples data model session
 
 Working branch: **`overnight-polish-2026-06-11`** — **29 commits over `master`, unmerged. Scott reviews & merges first.**
 Review: `git log master..overnight-polish-2026-06-11` / `git diff master...overnight-polish-2026-06-11`.
