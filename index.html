@@ -7,7 +7,16 @@
     <title>Iris — Financial Intelligence</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Non-blocking font load: the page paints IMMEDIATELY in the system-ui
+         fallback (see --font-sans in index.css) and swaps to Inter only if/when
+         the network delivers it. First paint no longer waits on Google Fonts —
+         critical on weak or offline connections (e.g. a plane). -->
+    <link rel="preload" as="style"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap">
+    </noscript>
   </head>
   <body class="bg-[#0a0a0f] text-white antialiased">
     <div id="root"></div>
