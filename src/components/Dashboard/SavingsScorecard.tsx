@@ -1,18 +1,26 @@
 import { useMemo } from 'react';
 import { useAppData, formatCurrency } from '../../context/AppDataContext';
 import { computeScorecard } from '../../utils/savingsScorecard';
+import { totalReserveSetAside } from '../../utils/budgetLanes';
 
 /**
- * "Living under the guarantee" — the Budget Engine's payoff (Phase 1 V1).
+ * "Living under the base" — System 1 of the two-system model (Phase 1 V1).
  *
- * Are we spending under our GUARANTEED base income each month, and what have we
- * banked? Base = steady paychecks (variable/RSU = surplus, not counted). Honest,
- * functional V1 — green/red month strip + cumulative banked + trend. The
- * gamification skin (streaks, milestones, confetti) is deliberately V2.
+ * Did WE (joint, no-blame) keep our everyday spending under the guaranteed base
+ * AFTER setting aside for the lumpy stuff (taxes/travel)? Base = steady paychecks;
+ * variable/RSU is System 2 (the overage card), not counted here. The lumpy spend
+ * the set-aside funds draws the stash/overage, so a planned tax payment never
+ * paints a month red — but the solvency line keeps this winnable headline honest
+ * about how much of the FULL life leans on the variable. The gamification skin
+ * (streaks, milestones, confetti) is deliberately V2.
  */
 export default function SavingsScorecard() {
   const { rawExpenses } = useAppData();
-  const sc = useMemo(() => computeScorecard(rawExpenses || []), [rawExpenses]);
+  const setAside = totalReserveSetAside();
+  const sc = useMemo(
+    () => computeScorecard(rawExpenses || [], { setAside }),
+    [rawExpenses, setAside],
+  );
 
   if (sc.guaranteedBase === 0 || sc.months.length === 0) return null;
 
@@ -25,10 +33,13 @@ export default function SavingsScorecard() {
     <div className="glass-card p-6 relative overflow-hidden">
       <div className="flex items-start justify-between mb-4 gap-3">
         <div className="min-w-0">
-          <div className="term-label">Living under the guarantee</div>
+          <div className="term-label">Living under the base</div>
           <div className="text-xs text-text-muted mt-1">
-            Guaranteed base <span className="text-text-secondary font-medium mono-num">{formatCurrency(sc.guaranteedBase)}/mo</span>
-            <span className="text-text-muted/70"> · variable/RSU = surplus</span>
+            Base <span className="text-text-secondary font-medium mono-num">{formatCurrency(sc.guaranteedBase)}/mo</span>
+            {sc.setAside > 0 && (
+              <span className="text-text-muted/70"> − {formatCurrency(sc.setAside)} set aside</span>
+            )}
+            <span className="text-text-muted/70"> · variable = System 2</span>
           </div>
         </div>
         <div className="text-right flex-shrink-0">
@@ -65,11 +76,32 @@ export default function SavingsScorecard() {
         <span>Under base <span className="text-text-secondary font-medium">{sc.monthsUnderBase}/{sc.fullMonthCount}</span> months</span>
         {sc.lastFull && sc.priorFull && (
           <span>
-            Trend: <span className={trendCls}>{trendTxt}</span>
+            Everyday spend: <span className={trendCls}>{trendTxt}</span>
             <span className="text-text-muted/70"> ({formatCurrency(sc.lastFull.spend)} vs {formatCurrency(sc.priorFull.spend)})</span>
           </span>
         )}
       </div>
+
+      {/* Solvency truth — calm, never an alarm. Keeps the winnable headline above
+          honest about how much of the FULL life the guaranteed base really carries. */}
+      {sc.fullMonthCount > 0 && sc.solvency.trueLifeCost > 0 && (
+        <div className="text-[11px] leading-relaxed text-text-muted/80 mt-3 pt-3 border-t border-glass-border/60">
+          {sc.solvency.overhead >= 0 ? (
+            <>Base{sc.setAside > 0 ? ' + set-aside' : ''} covers the everyday with about{' '}
+            <span className="text-text-secondary font-medium mono-num">{formatCurrency(sc.solvency.overhead)}/mo</span> to spare. </>
+          ) : (
+            <>Everyday spend runs about{' '}
+            <span className="text-text-secondary font-medium mono-num">{formatCurrency(Math.abs(sc.solvency.overhead))}/mo</span> over base{sc.setAside > 0 ? ' after the set-aside' : ''}. </>
+          )}
+          Full life averages{' '}
+          <span className="text-text-secondary font-medium mono-num">{formatCurrency(sc.solvency.trueLifeCost)}/mo</span>{' '}
+          (taxes &amp; travel included)
+          {sc.solvency.variableLean > 0 && (
+            <> — about <span className="text-text-secondary font-medium mono-num">{formatCurrency(sc.solvency.variableLean)}/mo</span> of it leans on variable pay.</>
+          )}
+          {sc.solvency.variableLean === 0 && <>.</>}
+        </div>
+      )}
     </div>
   );
 }
