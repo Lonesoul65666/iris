@@ -3,7 +3,9 @@ import type { Expense, IncomeSource } from '../../types/budget';
 import { formatCurrency } from '../../utils/format';
 import { getIncomeSources } from '../../stores/budgetStore';
 import { getSetting, saveSetting } from '../../stores/portfolioStore';
-import { parseLocalDate } from '../../utils/transactionAnalysis';
+import { parseLocalDate, isRealExpense } from '../../utils/transactionAnalysis';
+import { computeRecurringPaycheckFloor } from '../../utils/savingsScorecard';
+import { laneOf, totalReserveSetAside } from '../../utils/budgetLanes';
 
 interface Props {
   expenses: Expense[];
@@ -68,60 +70,28 @@ export default function VariableSurplusCard({ expenses, now = new Date() }: Prop
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [baseSource, expenses]);
 
-  // Detect the current pay band: walk from the most recent paycheck backward,
-  // grouping consecutive paychecks that are within ~6% of each other.
-  // The most recent band = current pay rate. A raise (or pay-band change)
-  // breaks the chain and we treat post-change paychecks as the new normal.
-  //
-  // We require the proposed new band to contain at least MIN_BAND_SIZE
-  // paychecks before declaring a pay change. A 1–2 paycheck "band" is almost
-  // always a bonus, RSU vest, commission spike, or off-cycle true-up — not a
-  // sustained pay-rate change. If the new band is too small, we keep walking
-  // backward to look for an earlier real change.
-  const currentBand = useMemo(() => {
-    if (paychecks.length === 0) return { paychecks: [] as Expense[], startDate: null as string | null };
-    if (paychecks.length < 3) return { paychecks, startDate: paychecks[0]?.date ?? null };
-    const sorted = paychecks; // already asc
-    const MIN_BAND_SIZE = 3;
-    let bandStartIdx = 0;
-    for (let i = sorted.length - 1; i > 0; i--) {
-      const cur = sorted[i].amount;
-      const prev = sorted[i - 1].amount;
-      const diff = Math.abs(cur - prev) / Math.min(cur, prev);
-      // 6% threshold — wider than commission swings (~1-3%) but tight enough
-      // to catch typical raises/role changes (5–20%).
-      if (diff > 0.06) {
-        const newBandSize = sorted.length - i;
-        if (newBandSize >= MIN_BAND_SIZE) {
-          bandStartIdx = i;
-          break;
-        }
-        // Otherwise keep walking — this jump is too recent to confirm.
-      }
-    }
-    return {
-      paychecks: sorted.slice(bandStartIdx),
-      startDate: bandStartIdx > 0 ? sorted[bandStartIdx].date : null,
-    };
-  }, [paychecks]);
-
-  // Detected floor = min of current band. Override wins if user set one.
+  // Recurring base floor = the MODAL paycheck (rounded to $50), robust to the
+  // semi-monthly base / base+variable alternation. The old approach walked
+  // consecutive paychecks and "detected a pay change" whenever two adjacent
+  // checks differed >6% — but Scott's mid-month check (~base) always alternates
+  // with his end-month check (base+variable), so nearly every pair tripped it,
+  // truncating YTD to the last ~3 paychecks and discarding most real surplus.
   const detectedFloor = useMemo(() => {
-    if (currentBand.paychecks.length === 0) return baseSource?.amountMin ?? 0;
-    return Math.min(...currentBand.paychecks.map(e => e.amount));
-  }, [currentBand, baseSource]);
+    const modal = computeRecurringPaycheckFloor(paychecks);
+    return modal > 0 ? modal : (baseSource?.amountMin ?? 0);
+  }, [paychecks, baseSource]);
   const effectiveFloor = floorOverride ?? detectedFloor;
 
-  // Compute above-floor totals across windows. Only count paychecks in the
-  // current pay band — pre-raise paychecks aren't relevant once you've moved
-  // to a new role / pay rate.
+  // Above-floor totals across windows — summed over ALL paychecks (no band
+  // truncation). Each paycheck contributes max(0, amount - floor): a base-only
+  // check contributes ~0, a base+variable check contributes the variable part.
   const surplus = useMemo(() => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const ninetyAgo = new Date(now.getTime() - 90 * 86_400_000);
     const yearStart = new Date(now.getFullYear(), 0, 1);
 
     const sumAboveFloor = (from: Date) =>
-      currentBand.paychecks
+      paychecks
         .filter(e => parseLocalDate(e.date) >= from)
         .reduce((s, e) => s + Math.max(0, e.amount - effectiveFloor), 0);
 
@@ -129,10 +99,27 @@ export default function VariableSurplusCard({ expenses, now = new Date() }: Prop
       thisMonth: sumAboveFloor(monthStart),
       last90: sumAboveFloor(ninetyAgo),
       ytd: sumAboveFloor(yearStart),
-      bandCount: currentBand.paychecks.length,
-      bandStart: currentBand.startDate,
+      paycheckCount: paychecks.length,
     };
-  }, [currentBand, effectiveFloor, now]);
+  }, [paychecks, effectiveFloor, now]);
+
+  // ── System 2 reconciliation: what's genuinely FREE to deploy ───────────────
+  // The overage isn't all spendable — some already covered lumpy taxes/travel
+  // beyond what the monthly set-aside (stashes) put away. Free to deploy =
+  // overage YTD − max(0, lumpy spend YTD − set-aside accrued YTD). This is the
+  // honest "fast-forward the vacation / the reno / invest it" number.
+  const deploy = useMemo(() => {
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+    const monthsElapsed = now.getMonth() + 1; // Jan → 1
+    const lumpyYtd = expenses
+      .filter(e => isRealExpense(e) && e.category !== 'travel_work'
+        && laneOf(e.category) === 'reserve' && parseLocalDate(e.date) >= yearStart)
+      .reduce((s, e) => s + Math.abs(e.amount), 0);
+    const setAsideYtd = totalReserveSetAside() * monthsElapsed;
+    const lumpyBeyondSetAside = Math.max(0, lumpyYtd - setAsideYtd);
+    const free = Math.max(0, surplus.ytd - lumpyBeyondSetAside);
+    return { lumpyBeyondSetAside, free };
+  }, [expenses, surplus.ytd, now]);
 
   if (!baseSource || effectiveFloor <= 0) return null;
 
@@ -208,9 +195,7 @@ export default function VariableSurplusCard({ expenses, now = new Date() }: Prop
               <span className="text-[10px] text-text-muted">
                 {floorOverride !== null
                   ? '(your override)'
-                  : surplus.bandStart
-                    ? `(detected from ${surplus.bandCount} paychecks since ${surplus.bandStart} — pay change detected)`
-                    : `(detected from ${surplus.bandCount} paychecks)`}
+                  : `(recurring base across ${surplus.paycheckCount} paychecks)`}
               </span>
               <button onClick={startEditFloor} className="text-[11px] text-accent hover:text-accent-light">edit</button>
             </div>
@@ -231,6 +216,27 @@ export default function VariableSurplusCard({ expenses, now = new Date() }: Prop
             <div className="text-[10px] text-text-muted mt-0.5">above base</div>
           </div>
         ))}
+      </div>
+
+      {/* Free to deploy — the honest, spendable slice of the overage (System 2's
+          payoff): YTD above base, minus the lumpy taxes/travel it already had to
+          cover beyond your set-aside. This is the "fast-forward a goal" number. */}
+      <div className="p-4 rounded-lg bg-gradient-to-br from-accent/10 to-transparent border border-accent/20 mb-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-text-muted">Free to deploy (YTD)</div>
+            <div className="text-2xl font-black text-accent mono-num mt-0.5">{formatCurrency(deploy.free)}</div>
+          </div>
+          <div className="text-[11px] text-text-secondary text-right max-w-[55%]">
+            Fast-forward a goal — a vacation, the reno, or straight into investments.
+          </div>
+        </div>
+        {deploy.lumpyBeyondSetAside > 0 && (
+          <div className="text-[10px] text-text-muted mt-2 pt-2 border-t border-glass-border/40">
+            {formatCurrency(surplus.ytd)} above base − {formatCurrency(deploy.lumpyBeyondSetAside)} that already
+            covered taxes/travel beyond your set-aside = what's genuinely free.
+          </div>
+        )}
       </div>
 
       {/* Sweep destination */}

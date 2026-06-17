@@ -125,8 +125,12 @@ export default function DashboardView() {
   // ── Recent transactions ─────────────────────────────────────────────
   const recentTx = useMemo(() => {
     if (!rawExpenses || rawExpenses.length === 0) return [];
+    // Real expenses only: an outbound transfer (savings→checking, spouse Zelle) or
+    // a refund/investment is NOT a purchase — without the transactionType guard a
+    // $30k savings move would render as −$30,000 fake spend in this feed.
     return [...rawExpenses]
-      .filter((e: { flow?: string }) => (e.flow || 'outflow') === 'outflow')
+      .filter((e: { flow?: string; transactionType?: string }) =>
+        (e.flow || 'outflow') === 'outflow' && (e.transactionType ?? 'expense') === 'expense')
       .sort((a: { date: string }, b: { date: string }) => b.date.localeCompare(a.date))
       .slice(0, 5);
   }, [rawExpenses]);
@@ -385,30 +389,42 @@ export default function DashboardView() {
         ) : null}
       </div>
 
-      {/* ════ CASH FLOW BAR — true month-to-date ════════════════════════ */}
+      {/* ════ CASH FLOW BAR — true month-to-date, like-for-like ═════════════ */}
       {(() => {
         if (budgetSummary.netIncome <= 0 && !monthToDate) return null;
         // Month-to-date operating spend from real transactions. Investing is a
         // separate segment (synced from Settings, not in bank transactions), so
         // it is NOT inside `spent` — the old version double-subtracted it.
         const mtdSpent = Math.max(0, Math.round(monthToDate?.totalOperating ?? 0));
-        const investing = budgetSummary.investing;
-        const mtdSurplus = budgetSummary.netIncome - mtdSpent - investing;
+        // Time-axis fix: spend is month-to-date (~half a month in), but income and
+        // investing were full-month figures — comparing them overstated "left this
+        // month" by roughly half a paycheck. Prorate income + investing to the SAME
+        // elapsed-month fraction so the bar is like-for-like, relabel to "left so
+        // far", and show an honest on-pace projection for month-end.
+        const today = new Date();
+        const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+        const frac = Math.min(1, Math.max(0.0001, today.getDate() / daysInMonth));
+        const proratedIncome = Math.round(budgetSummary.netIncome * frac);
+        const proratedInvesting = Math.round(budgetSummary.investing * frac);
+        const mtdSurplus = proratedIncome - mtdSpent - proratedInvesting;
+        const projectedSpend = Math.round(mtdSpent / frac);
+        const projectedSurplus = Math.round(budgetSummary.netIncome - projectedSpend - budgetSummary.investing);
+        const paceTxt = projectedSurplus >= 0
+          ? `on pace for ${formatCurrency(projectedSurplus)} left by month-end`
+          : `on pace to be ${formatCurrency(Math.abs(projectedSurplus))} over by month-end`;
         return (
           <DataCard
             title="Cash flow this month"
-            subtitle={mtdSurplus >= 0
-              ? `${formatCurrency(mtdSurplus)} left this month`
-              : `${formatCurrency(Math.abs(mtdSurplus))} over income`}
+            subtitle={`${mtdSurplus >= 0 ? `${formatCurrency(mtdSurplus)} left so far` : `${formatCurrency(Math.abs(mtdSurplus))} over so far`} · ${paceTxt}`}
             icon="💸"
             cta="Open Budget →"
             onClick={() => setView('budget')}
             tone={mtdSurplus >= 0 ? 'default' : 'warning'}
           >
             <CashFlowBar
-              income={budgetSummary.netIncome}
+              income={proratedIncome}
               spent={mtdSpent}
-              investing={investing}
+              investing={proratedInvesting}
             />
           </DataCard>
         );

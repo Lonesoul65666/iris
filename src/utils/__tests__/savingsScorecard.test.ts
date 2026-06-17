@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeGuaranteedBase, computeScorecard } from '../savingsScorecard';
+import { computeGuaranteedBase, computeScorecard, computeRecurringPaycheckFloor } from '../savingsScorecard';
 import { currentMonthKey } from '../transactionAnalysis';
 import { exp } from './fixtures';
 import type { Expense } from '../../types/budget';
@@ -134,5 +134,86 @@ describe('computeScorecard', () => {
       { since: '2020-01' },
     );
     expect(card2.months.map(m => m.month)).toEqual(['2020-01']);
+  });
+
+  // ── Two-system model: the set-aside (Option B) ──────────────────────────
+  it('charges the monthly set-aside against base in the everyday verdict', () => {
+    const c = computeScorecard(fixture, { since: '2020-01', setAside: 2000 });
+    const feb = c.months.find(m => m.month === '2020-02')!;
+    expect(feb.surplusVsBase).toBe(1800);  // 15800 base - 2000 set-aside - 12000 everyday
+    expect(feb.reserveSpend).toBe(13000);  // taxes still excluded from the verdict
+    expect(feb.banked).toBe(-9200);        // banked unchanged — cash-honest
+    expect(c.setAside).toBe(2000);
+  });
+
+  it('a heavy everyday month flips red once the set-aside is charged', () => {
+    const heavy = computeScorecard(
+      [
+        paycheck('2020-01-01', 7900), paycheck('2020-01-15', 7900),
+        exp({ date: '2020-01-10', amount: 14500, category: 'food_dining' }),
+      ],
+      { since: '2020-01', setAside: 2000 },
+    );
+    const jan = heavy.months.find(m => m.month === '2020-01')!;
+    expect(jan.surplusVsBase).toBe(-700);  // 15800 - 2000 - 14500
+    expect(heavy.monthsUnderBase).toBe(0);
+  });
+
+  it('defaults the set-aside to 0 — legacy operating-only behavior', () => {
+    const c = computeScorecard(fixture, { since: '2020-01' });
+    expect(c.setAside).toBe(0);
+    expect(c.months.find(m => m.month === '2020-02')!.surplusVsBase).toBe(3800);
+  });
+});
+
+describe('computeScorecard — solvency summary', () => {
+  const fixture: Expense[] = [
+    paycheck('2020-01-01', 7900), paycheck('2020-01-15', 7900),
+    exp({ date: '2020-01-10', amount: 10000, category: 'food_dining' }),
+    paycheck('2020-02-01', 7900), paycheck('2020-02-15', 7900),
+    exp({ date: '2020-02-10', amount: 12000, category: 'food_dining' }),
+    exp({ date: '2020-02-20', amount: 13000, category: 'taxes' }),
+    paycheck('2020-03-01', 7900), paycheck('2020-03-15', 7900),
+    exp({ date: '2020-03-10', amount: 11000, category: 'food_dining' }),
+  ];
+
+  it('averages everyday + reserve over full months for the full-life cost', () => {
+    const c = computeScorecard(fixture, { since: '2020-01', setAside: 2000 });
+    expect(c.solvency.base).toBe(15800);
+    expect(c.solvency.setAside).toBe(2000);
+    expect(c.solvency.avgOperating).toBe(11000);  // (10000+12000+11000)/3
+    expect(c.solvency.avgReserve).toBe(4333);      // (0+13000+0)/3 rounded
+    expect(c.solvency.trueLifeCost).toBe(15333);   // 11000 + 4333
+    expect(c.solvency.overhead).toBe(2800);        // 15800 - 2000 - 11000
+    expect(c.solvency.variableLean).toBe(0);       // 15333 <= 15800
+  });
+
+  it('surfaces a variable lean when the full life costs more than base', () => {
+    const lean = computeScorecard(
+      [
+        paycheck('2020-01-01', 5000), exp({ date: '2020-01-10', amount: 4000, category: 'food_dining' }),
+        exp({ date: '2020-01-20', amount: 3000, category: 'taxes' }),
+        paycheck('2020-02-01', 5000), exp({ date: '2020-02-10', amount: 4000, category: 'food_dining' }),
+        exp({ date: '2020-02-20', amount: 3000, category: 'taxes' }),
+      ],
+      { since: '2020-01' },
+    );
+    expect(lean.solvency.base).toBe(5000);
+    expect(lean.solvency.trueLifeCost).toBe(7000);  // 4000 everyday + 3000 lumpy
+    expect(lean.solvency.variableLean).toBe(2000);  // 7000 - 5000
+  });
+});
+
+describe('computeRecurringPaycheckFloor', () => {
+  it('returns the modal per-paycheck amount (NOT multiplied by pay periods)', () => {
+    const floor = computeRecurringPaycheckFloor([
+      paycheck('2020-01-01', 7900), paycheck('2020-01-15', 7900),
+      paycheck('2020-02-01', 7900), paycheck('2020-02-15', 22000), // variable spike — not the mode
+    ]);
+    expect(floor).toBe(7900);
+  });
+
+  it('returns 0 with no income transactions', () => {
+    expect(computeRecurringPaycheckFloor([])).toBe(0);
   });
 });
