@@ -75,11 +75,12 @@ describe('computeScorecard', () => {
     expect(keys.slice(0, 4)).toEqual(['2020-01', '2020-02', '2020-03', '2020-04']);
   });
 
-  it('spend = OPERATING only: a big tax month stays green vs base while banked drops', () => {
+  it('counts EVERYTHING: a big tax/travel month shows OVER base (red)', () => {
     const feb = card.months.find(m => m.month === '2020-02')!;
-    expect(feb.spend).toBe(12000);          // taxes NOT in the discipline number
-    expect(feb.reserveSpend).toBe(13000);
-    expect(feb.surplusVsBase).toBe(3800);   // 15800 - 12000 → still under the guarantee
+    expect(feb.spend).toBe(12000);          // everyday portion
+    expect(feb.reserveSpend).toBe(13000);   // lumpy taxes — now COUNTED
+    expect(feb.totalSpend).toBe(25000);     // everyday + lumpy
+    expect(feb.surplusVsBase).toBe(-9200);  // 15800 - 25000 → over base by 9,200
     expect(feb.banked).toBe(-9200);         // 15800 - 25000 → cash-honest
   });
 
@@ -96,14 +97,15 @@ describe('computeScorecard', () => {
     expect(card.cumulativeBanked).toBe(1400);
   });
 
-  it('counts months that lived under the base', () => {
-    expect(card.monthsUnderBase).toBe(3); // 5800, 3800, 4800 all >= 0
+  it('counts months whose TOTAL spend came in under base', () => {
+    // Jan total 10000 (+5800), Feb total 25000 (-9200 — the tax month), Mar 11000 (+4800)
+    expect(card.monthsUnderBase).toBe(2);
   });
 
-  it("trend 'better' when the last full month spent less than the prior", () => {
+  it("trend 'better' when the last full month's total spend was less than the prior", () => {
     expect(card.lastFull!.month).toBe('2020-03');
     expect(card.priorFull!.month).toBe('2020-02');
-    expect(card.trend).toBe('better'); // 11000 < 12000
+    expect(card.trend).toBe('better'); // Mar total 11000 < Feb total 25000
   });
 
   it("trend 'worse' when the last full month spent more", () => {
@@ -136,33 +138,13 @@ describe('computeScorecard', () => {
     expect(card2.months.map(m => m.month)).toEqual(['2020-01']);
   });
 
-  // ── Two-system model: the set-aside (Option B) ──────────────────────────
-  it('charges the monthly set-aside against base in the everyday verdict', () => {
-    const c = computeScorecard(fixture, { since: '2020-01', setAside: 2000 });
-    const feb = c.months.find(m => m.month === '2020-02')!;
-    expect(feb.surplusVsBase).toBe(1800);  // 15800 base - 2000 set-aside - 12000 everyday
-    expect(feb.reserveSpend).toBe(13000);  // taxes still excluded from the verdict
-    expect(feb.banked).toBe(-9200);        // banked unchanged — cash-honest
-    expect(c.setAside).toBe(2000);
-  });
-
-  it('a heavy everyday month flips red once the set-aside is charged', () => {
-    const heavy = computeScorecard(
-      [
-        paycheck('2020-01-01', 7900), paycheck('2020-01-15', 7900),
-        exp({ date: '2020-01-10', amount: 14500, category: 'food_dining' }),
-      ],
-      { since: '2020-01', setAside: 2000 },
-    );
-    const jan = heavy.months.find(m => m.month === '2020-01')!;
-    expect(jan.surplusVsBase).toBe(-700);  // 15800 - 2000 - 14500
-    expect(heavy.monthsUnderBase).toBe(0);
-  });
-
-  it('defaults the set-aside to 0 — legacy operating-only behavior', () => {
-    const c = computeScorecard(fixture, { since: '2020-01' });
-    expect(c.setAside).toBe(0);
-    expect(c.months.find(m => m.month === '2020-02')!.surplusVsBase).toBe(3800);
+  it('totalSpend = everyday + reserve; a lumpy month counts fully against base', () => {
+    const jan = card.months.find(m => m.month === '2020-01')!;
+    expect(jan.totalSpend).toBe(10000);     // no reserve
+    expect(jan.surplusVsBase).toBe(5800);   // 15800 - 10000 → under base
+    const feb = card.months.find(m => m.month === '2020-02')!;
+    expect(feb.totalSpend).toBe(25000);     // 12000 everyday + 13000 taxes
+    expect(feb.surplusVsBase).toBe(-9200);  // over base by 9,200
   });
 });
 
@@ -178,14 +160,12 @@ describe('computeScorecard — solvency summary', () => {
   ];
 
   it('averages everyday + reserve over full months for the full-life cost', () => {
-    const c = computeScorecard(fixture, { since: '2020-01', setAside: 2000 });
+    const c = computeScorecard(fixture, { since: '2020-01' });
     expect(c.solvency.base).toBe(15800);
-    expect(c.solvency.setAside).toBe(2000);
-    expect(c.solvency.avgOperating).toBe(11000);  // (10000+12000+11000)/3
-    expect(c.solvency.avgReserve).toBe(4333);      // (0+13000+0)/3 rounded
-    expect(c.solvency.trueLifeCost).toBe(15333);   // 11000 + 4333
-    expect(c.solvency.overhead).toBe(2800);        // 15800 - 2000 - 11000
-    expect(c.solvency.variableLean).toBe(0);       // 15333 <= 15800
+    expect(c.solvency.avgEveryday).toBe(11000);    // (10000+12000+11000)/3
+    expect(c.solvency.avgReserve).toBe(4333);       // (0+13000+0)/3 rounded
+    expect(c.solvency.avgTotalSpend).toBe(15333);   // 11000 + 4333
+    expect(c.solvency.variableLean).toBe(0);        // 15333 <= 15800
   });
 
   it('surfaces a variable lean when the full life costs more than base', () => {
@@ -199,8 +179,8 @@ describe('computeScorecard — solvency summary', () => {
       { since: '2020-01' },
     );
     expect(lean.solvency.base).toBe(5000);
-    expect(lean.solvency.trueLifeCost).toBe(7000);  // 4000 everyday + 3000 lumpy
-    expect(lean.solvency.variableLean).toBe(2000);  // 7000 - 5000
+    expect(lean.solvency.avgTotalSpend).toBe(7000);  // 4000 everyday + 3000 lumpy
+    expect(lean.solvency.variableLean).toBe(2000);   // 7000 - 5000
   });
 });
 
