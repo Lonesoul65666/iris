@@ -522,6 +522,10 @@ export function monthlyBudgetableIncome(sources: { cadence: IncomeCadence; avgAm
   let total = 0;
   for (const s of sources) {
     if (!s.includeInBudget) continue;
+    // Reimbursements are never budgetable income — they're expense payback. Guard
+    // here too (sibling totalMonthlyAll already does) so a row flagged
+    // includeInBudget=true can't leak in if its cadence stops being irregular.
+    if (s.subtype === 'reimbursement') continue;
     total += monthlyEquivalent(s.avgAmount, s.cadence);
   }
   return total;

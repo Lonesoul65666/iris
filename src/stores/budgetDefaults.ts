@@ -1,5 +1,6 @@
 import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown, BudgetScenario } from '../types/budget';
 import { laneOf } from '../utils/budgetLanes';
+import { computeSavingsRate } from '../utils/savingsRate';
 
 // ─── SAMPLE DATA (Scott's actual numbers) ─────────────────────────────────
 // These are loaded by Settings → "Load sample data" so a new user can poke
@@ -369,15 +370,21 @@ export function calculateBudgetSummary(buckets: BudgetBucket[], paycheck: Payche
   const realActual = buckets
     .filter(b => laneOf(b.category) !== 'reserve')
     .reduce((s, b) => s + b.monthlyActual, 0);
-  // Investing is now a bucket in the array — pull the actual from it, fall back to
-  // the Settings amount, then 0. Never inject a hardcoded number for fresh users.
+  // Investing: the Settings amount is authoritative (synced), so prefer it and
+  // only fall back to the bucket fields, then 0. Reading the bucket first let a
+  // stale/fat-fingered bucket value win over the real synced amount. Never inject
+  // a hardcoded number for fresh users.
   const investingBucket = buckets.find(b => b.category === 'investing');
-  const investing = investingBucket?.monthlyActual || investingBucket?.monthlyBudget || monthlyInvestmentAmount || 0;
+  const investing = monthlyInvestmentAmount || investingBucket?.monthlyActual || investingBucket?.monthlyBudget || 0;
   // Surplus = income minus all real spending (investing is already included in realActual via bucket)
   const surplus = paycheck.netTakeHome - realActual;
-  const savingsRate = paycheck.grossMonthly > 0
-    ? ((investing + paycheck.retirement401k + paycheck.hsaContribution) / paycheck.grossMonthly) * 100
-    : 0;
+  const savingsRate = computeSavingsRate({
+    grossMonthly: paycheck.grossMonthly,
+    netTakeHome: paycheck.netTakeHome,
+    retirement401k: paycheck.retirement401k,
+    hsaContribution: paycheck.hsaContribution,
+    investing,
+  }).rate;
 
   return {
     grossIncome: paycheck.grossMonthly,

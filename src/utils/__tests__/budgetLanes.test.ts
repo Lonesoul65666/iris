@@ -64,9 +64,9 @@ describe('isOverBudget', () => {
 });
 
 describe('RESERVE_ALLOCATIONS', () => {
-  it('monthly reserve set-aside totals $2,500 (taxes 1500 + travel 1000 + work 0)', () => {
+  it('monthly reserve set-aside totals $2,000 (taxes 1000 + travel 1000 + work 0)', () => {
     const total = Object.values(RESERVE_ALLOCATIONS).reduce((s, v) => s + v, 0);
-    expect(total).toBe(2500);
+    expect(total).toBe(2000);
     expect(RESERVE_ALLOCATIONS.travel_work).toBe(0); // reimbursed — no personal reserve
   });
 });

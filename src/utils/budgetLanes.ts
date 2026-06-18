@@ -34,11 +34,14 @@ export const RESERVE_CATEGORIES = [
   'taxes', 'travel_personal', 'travel_work',
 ];
 
-// Default monthly set-aside per reserve, used until Stashes are configured.
-// (Derived from real annual actuals, 2026-06: taxes ≈ $16–18k/yr → $1,500/mo;
-// travel ad-hoc ~$1,000/mo; work travel is reimbursed → $0.)
+// Default monthly set-aside per reserve, used until Stashes are configured (and
+// as the re-seed value if a stash is deleted). Aligned to Scott's live stashes
+// ($1,000 each) so a re-seed can't silently bump taxes to a value he didn't pick.
+// NOTE: real taxes run ~$1,400/mo amortized, so $1,000 under-funds long-term —
+// that gap is now surfaced by the scorecard's solvency line, Scott's call to raise.
+// (travel ad-hoc ~$1,000/mo; work travel is reimbursed → $0.)
 export const RESERVE_ALLOCATIONS: Record<string, number> = {
-  taxes: 1500,
+  taxes: 1000,
   travel_personal: 1000,
   travel_work: 0,
 };

@@ -7,6 +7,7 @@ import type {
 } from '../types/budget';
 import { computeMonthlySpending, computeCategoryTrends } from './transactionAnalysis';
 import { laneOf } from './budgetLanes';
+import { computeSavingsRate } from './savingsRate';
 
 // ─── Types ───
 
@@ -216,9 +217,32 @@ function checkSavingsRate(
 ): Insight[] {
   if (paycheck.grossMonthly <= 0) return [];
 
-  // Savings rate = (investing + retirement + HSA) / gross income
-  const totalSaving = monthlyInvestmentAmount + paycheck.retirement401k + paycheck.hsaContribution;
-  const rate = (totalSaving / paycheck.grossMonthly) * 100;
+  const { totalSaving, rate, preTaxInvisible, unexplainedGap } = computeSavingsRate({
+    grossMonthly: paycheck.grossMonthly,
+    netTakeHome: paycheck.netTakeHome,
+    retirement401k: paycheck.retirement401k,
+    hsaContribution: paycheck.hsaContribution,
+    investing: monthlyInvestmentAmount,
+  });
+
+  // Honesty guard: pre-tax 401k/HSA aren't recorded but a big chunk of gross
+  // never reaches take-home — so the real rate is unknowable and the shown
+  // number is a FLOOR, not the truth. Don't cry "critical"; surface what's
+  // missing instead. (Once 401k/HSA are entered this branch goes quiet.)
+  if (preTaxInvisible) {
+    return [{
+      id: 'savings-rate',
+      severity: 'info',
+      category: 'saving',
+      title: `Savings rate shows ${pct(rate)} — but pre-tax savings aren't recorded`,
+      description:
+        `This counts ${fmt(totalSaving)}/mo of visible saving (${pct(rate)} of gross), but about ${fmt(unexplainedGap)}/mo ` +
+        `of gross never reaches take-home and no 401k/HSA is entered — so your real rate is almost certainly higher. ` +
+        `Add your per-paycheck 401k and HSA in the Paycheck panel to see the true number.`,
+      metric: rate,
+      metricLabel: `${pct(rate)}+ of gross (floor)`,
+    }];
+  }
 
   if (rate < 10) {
     return [{
@@ -519,11 +543,14 @@ export function generateInsights(params: {
     ? totalActualFromBuckets
     : avgMonthlyExpenses;
 
-  // Calculate savings rate for reinforcement checks
-  const totalSaving = monthlyInvestmentAmount + paycheck.retirement401k + paycheck.hsaContribution;
-  const savingsRate = paycheck.grossMonthly > 0
-    ? (totalSaving / paycheck.grossMonthly) * 100
-    : 0;
+  // Calculate savings rate for reinforcement checks (one shared definition)
+  const savingsRate = computeSavingsRate({
+    grossMonthly: paycheck.grossMonthly,
+    netTakeHome: paycheck.netTakeHome,
+    retirement401k: paycheck.retirement401k,
+    hsaContribution: paycheck.hsaContribution,
+    investing: monthlyInvestmentAmount,
+  }).rate;
 
   // Run all insight generators
   const allInsights: Insight[] = [

@@ -19,10 +19,13 @@ export interface BudgetTargetSnapshot {
   targets: Record<string, number>;    // category -> monthlyBudget at that moment
 }
 
-/** Extract the targets map a snapshot stores from a bucket array. */
+/** Extract the targets map a snapshot stores from a bucket array.
+ *  Investing is excluded — it's synced from Settings, not a budgeted target, so
+ *  snapshotting it let a fat-fingered keystroke ($1000→…→$20) get replayed onto
+ *  every past month. */
 export function targetsOf(buckets: BudgetBucket[]): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const b of buckets) out[b.category] = b.monthlyBudget;
+  for (const b of buckets) if (b.category !== 'investing') out[b.category] = b.monthlyBudget;
   return out;
 }
 

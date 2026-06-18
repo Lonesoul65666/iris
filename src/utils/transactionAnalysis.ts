@@ -222,9 +222,11 @@ export function applyMonthToBuckets(
     const monthlyBudget = targets && targets[bucket.category] !== undefined
       ? targets[bucket.category]
       : bucket.monthlyBudget;
-    // Investing bucket keeps its synced actual — no bank transactions for this
+    // Investing is synced from Settings, not from bank transactions, and never
+    // carries a real historical budget (the snapshots were fat-fingered to $20).
+    // Return it untouched so neither its actual nor its budget gets replayed.
     if (bucket.category === 'investing') {
-      return targets ? { ...bucket, monthlyBudget } : bucket;
+      return bucket;
     }
     const actual = monthData.byCategory[bucket.category];
     return { ...bucket, monthlyBudget, monthlyActual: actual !== undefined ? Math.round(actual) : 0 };
