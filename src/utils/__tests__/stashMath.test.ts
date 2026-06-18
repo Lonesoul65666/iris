@@ -121,7 +121,7 @@ describe('lane registry wiring (design D2/D3)', () => {
   it('is a no-op when no stash has categories (legacy defaults rule)', () => {
     applyStashLaneConfig([stash({ monthlyContribution: 999 })]);
     expect(laneOf('taxes')).toBe('reserve');
-    expect(totalReserveSetAside()).toBe(2500);
+    expect(totalReserveSetAside()).toBe(2000);
   });
 });
 
@@ -132,7 +132,7 @@ describe('seedDefaultStashes (design D5)', () => {
     expect(names).toContain('Taxes');
     expect(names).toContain('Trips & Travel');
     const taxes = seeded.find(s => s.name === 'Taxes')!;
-    expect(taxes.monthlyContribution).toBe(1500);
+    expect(taxes.monthlyContribution).toBe(1000);
     expect(taxes.startMonth).toBe('2026-06');
     expect(taxes.openingBalance).toBe(0);
   });

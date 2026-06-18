@@ -7,6 +7,7 @@ import { defaultBudgetBuckets, defaultSinkingFunds, defaultFunMoney, defaultPayc
 import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, getCustomCategories, getBudgetTargetHistory, snapshotBudgetTargets } from '../../stores/budgetStore';
 import { getMonthlyInvestments, getSetting, saveSetting } from '../../stores/portfolioStore';
 import { computeGuaranteedBase } from '../../utils/savingsScorecard';
+import { computeSavingsRate } from '../../utils/savingsRate';
 import { computeSafeToSpend } from '../../utils/safeToSpend';
 import { applyStashLaneConfig, seedDefaultStashes } from '../../utils/stashMath';
 import StashesCard from './StashesCard';
@@ -411,9 +412,14 @@ export default function BudgetView() {
   const essentialSpend = operatingBuckets.filter(b => essentialCats.includes(b.category)).reduce((s, b) => s + b.monthlyActual, 0);
   const discretionarySpend = operatingBuckets.filter(b => !essentialCats.includes(b.category) && b.monthlyActual > 0).reduce((s, b) => s + b.monthlyActual, 0);
   const investingAmt = overviewBuckets.find(b => b.category === 'investing')?.monthlyActual || 0;
-  // Intentional savings: investing + 401k + HSA (what you deliberately set aside)
-  const intentionalSavings = investingAmt + paycheck.retirement401k + paycheck.hsaContribution;
-  const intentionalSavingsRate = paycheck.grossMonthly > 0 ? (intentionalSavings / paycheck.grossMonthly) * 100 : 0;
+  // Intentional savings rate: (investing + 401k + HSA) / gross (one shared definition)
+  const intentionalSavingsRate = computeSavingsRate({
+    grossMonthly: paycheck.grossMonthly,
+    netTakeHome: paycheck.netTakeHome,
+    retirement401k: paycheck.retirement401k,
+    hsaContribution: paycheck.hsaContribution,
+    investing: investingAmt,
+  }).rate;
   // Actual spend for the Monthly Spend stat — operating only (= summary.realActual)
   const totalBucketSpend = operatingBuckets.reduce((s, b) => s + b.monthlyActual, 0);
 
@@ -1320,9 +1326,18 @@ export default function BudgetView() {
                   onChange={e => updateBucket('monthlyActual', Number(e.target.value))}
                   className={`w-16 bg-transparent border border-transparent hover:border-glass-border rounded px-1 py-0.5 text-sm font-semibold text-right outline-none focus:border-accent/50 ${over ? 'text-negative' : 'text-text-primary'}`} />
                 <span className="text-xs text-text-muted">/</span>
-                <input type="number" step="0.01" value={b.monthlyBudget} onClick={e => e.stopPropagation()}
-                  onChange={e => updateBucket('monthlyBudget', Number(e.target.value))}
-                  className="w-16 bg-transparent border border-transparent hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50" />
+                {b.category === 'investing' ? (
+                  // Investing budget is synced from Settings — read-only here so a
+                  // stray keystroke can't fat-finger it (the $1000→$20 bug).
+                  <span title="Synced from Settings — change it there" onClick={e => e.stopPropagation()}
+                    className="w-16 px-1 py-0.5 text-xs text-text-muted/70 text-right cursor-default">
+                    {formatCurrency(b.monthlyBudget)}
+                  </span>
+                ) : (
+                  <input type="number" step="0.01" value={b.monthlyBudget} onClick={e => e.stopPropagation()}
+                    onChange={e => updateBucket('monthlyBudget', Number(e.target.value))}
+                    className="w-16 bg-transparent border border-transparent hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50" />
+                )}
               </div>
               <div className="w-28 flex-shrink-0">
                 {b.monthlyBudget > 0 ? (
@@ -1384,9 +1399,18 @@ export default function BudgetView() {
                   onChange={e => updateBucket('monthlyActual', Number(e.target.value))}
                   className={`w-16 bg-transparent border border-transparent hover:border-glass-border rounded px-1 py-0.5 text-sm font-semibold text-right outline-none focus:border-accent/50 ${over ? 'text-negative' : 'text-text-primary'}`} />
                 <span className="text-xs text-text-muted">/</span>
-                <input type="number" step="0.01" value={b.monthlyBudget} onClick={e => e.stopPropagation()}
-                  onChange={e => updateBucket('monthlyBudget', Number(e.target.value))}
-                  className="w-16 bg-transparent border border-transparent hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50" />
+                {b.category === 'investing' ? (
+                  // Investing budget is synced from Settings — read-only here so a
+                  // stray keystroke can't fat-finger it (the $1000→$20 bug).
+                  <span title="Synced from Settings — change it there" onClick={e => e.stopPropagation()}
+                    className="w-16 px-1 py-0.5 text-xs text-text-muted/70 text-right cursor-default">
+                    {formatCurrency(b.monthlyBudget)}
+                  </span>
+                ) : (
+                  <input type="number" step="0.01" value={b.monthlyBudget} onClick={e => e.stopPropagation()}
+                    onChange={e => updateBucket('monthlyBudget', Number(e.target.value))}
+                    className="w-16 bg-transparent border border-transparent hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-muted text-right outline-none focus:border-accent/50" />
+                )}
               </div>
               <div className="w-28 flex-shrink-0">
                 {b.monthlyBudget > 0 ? (

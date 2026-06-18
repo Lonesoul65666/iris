@@ -18,7 +18,7 @@ function bucket(category: ExpenseCategory, monthlyBudget: number): BudgetBucket 
 
 // June 11, 2026 — June has 30 days, so daysLeft = 30 - 11 + 1 = 20.
 const NOW = new Date(2026, 5, 11);
-const RESERVE_SET_ASIDE = 2500; // taxes 1500 + travel_personal 1000 + travel_work 0
+const RESERVE_SET_ASIDE = 2000; // taxes 1000 + travel_personal 1000 + travel_work 0
 
 describe('computeSafeToSpend', () => {
   it('amount = takeHome - fixedCommitment - reserveSetAside - flexSpent', () => {
@@ -36,7 +36,7 @@ describe('computeSafeToSpend', () => {
     expect(s.fixedCommitment).toBe(3000); // budget wins while the bill is under it
     expect(s.reserveSetAside).toBe(RESERVE_SET_ASIDE);
     expect(s.flexSpent).toBe(400);
-    expect(s.amount).toBe(15800 - 3000 - 2500 - 400);
+    expect(s.amount).toBe(15800 - 3000 - 2000 - 400);
   });
 
   it('fixed commitment bumps to the ACTUAL when a fixed bill ran hotter than budget', () => {
@@ -73,7 +73,7 @@ describe('computeSafeToSpend', () => {
       NOW,
     );
     expect(s.flexSpent).toBe(100);
-    expect(s.amount).toBe(10000 - 0 - 2500 - 100);
+    expect(s.amount).toBe(10000 - 0 - 2000 - 100);
   });
 
   it('refunds net out of flexible MTD spend', () => {
@@ -97,7 +97,7 @@ describe('computeSafeToSpend', () => {
       NOW,
     );
     expect(s.flexSpent).toBe(0);
-    expect(s.amount).toBe(10000 - 2500);
+    expect(s.amount).toBe(10000 - 2000);
   });
 
   it('only the current month counts — prior-month spend is ignored', () => {
@@ -130,7 +130,7 @@ describe('computeSafeToSpend', () => {
       8000,
       NOW,
     );
-    expect(s.amount).toBe(8000 - 5000 - 2500 - 4000); // -3500
+    expect(s.amount).toBe(8000 - 5000 - 2000 - 4000); // -3000
     expect(s.amount).toBeLessThan(0);
   });
 });
