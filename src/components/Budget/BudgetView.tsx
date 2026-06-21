@@ -27,7 +27,7 @@ import { auditBudgetEdit, type BudgetDiff } from '../../stores/auditLogStore';
 import BucketGroupsManager from './BucketGroupsManager';
 import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems } from '../../stores/actionStore';
-import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, isRealExpense, isCompleteMonth, currentMonthKey, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
+import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, isRealExpense, isCompleteMonth, currentMonthKey, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
 import { formatCurrency } from '../../utils/format';
 import { laneOf, isOverBudget, RESERVE_ALLOCATIONS, FLEX_APPROACHING, type BudgetLane } from '../../utils/budgetLanes';
 import ScoreRing from '../ui/ScoreRing';
@@ -472,12 +472,11 @@ export default function BudgetView() {
           Visible on overview only; click jumps to the Transactions sub-tab. */}
       {section === 'overview' && !editMode && (() => {
         const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
-        const recent = expenses.filter(e => new Date(e.date) >= sevenDaysAgo);
-        const needsReview = recent.filter(e =>
-          (e.flow || 'outflow') === 'outflow' &&
-          (e.transactionType || 'expense') === 'expense' &&
-          (e.category === 'other' || !e.category)
-        );
+        // Spending transactions only (real expenses) — income/transfers/refunds
+        // don't get reviewed/categorized here, so counting them was misleading.
+        // parseLocalDate avoids the UTC off-by-one at the 7-day window edge.
+        const recent = expenses.filter(e => parseLocalDate(e.date) >= sevenDaysAgo && isRealExpense(e));
+        const needsReview = recent.filter(e => e.category === 'other' || !e.category);
         if (recent.length === 0) return null;
         const hasReview = needsReview.length > 0;
         return (
@@ -994,6 +993,12 @@ export default function BudgetView() {
           <div className="text-text-secondary text-xs mt-0.5">
             {formatCurrency(investingAmt)} investing + {formatCurrency(paycheck.retirement401k)} 401k + {formatCurrency(paycheck.hsaContribution)} HSA
           </div>
+          {intentionalSavingsRate < 20 && paycheck.grossMonthly > 0 && (
+            <div className="text-text-muted text-[11px] mt-1">
+              Green at 20% — ~{formatCurrency(Math.max(0, 0.20 * paycheck.grossMonthly - (investingAmt + paycheck.retirement401k + paycheck.hsaContribution)))}/mo more
+              <span className="text-text-muted/60"> (fixed savings; variable sweep not counted)</span>
+            </div>
+          )}
         </div>
         {/* Saved vs watermark — green under, red over (your "total saved / total spent").
             For the in-progress month this is "left", not "saved" — the month isn't done. */}
