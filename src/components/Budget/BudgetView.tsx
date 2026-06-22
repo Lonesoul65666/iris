@@ -1004,7 +1004,25 @@ export default function BudgetView() {
             For the in-progress month this is "left", not "saved" — the month isn't done. */}
         {(() => {
           const saved = summary.netIncome - totalBucketSpend;
-          const label = saved < 0 ? 'Over Watermark' : overviewIsInProgress ? 'Left This Month' : 'Saved This Month';
+          if (overviewIsInProgress) {
+            // In-progress: don't show a spendable "left" number — that's Safe to
+            // Spend's job. Show the projected OUTCOME (on pace to save/overspend)
+            // by extrapolating month-to-date operating spend to month-end.
+            const now = new Date();
+            const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+            const frac = Math.min(1, Math.max(0.0001, now.getDate() / daysInMonth));
+            const projectedSaved = Math.round(summary.netIncome - totalBucketSpend / frac);
+            return (
+              <div className="glass-card p-4">
+                <div className="term-label">{projectedSaved >= 0 ? 'On Pace to Save' : 'On Pace to Overspend'}</div>
+                <div className={`text-3xl font-black mt-1 mono-num ${projectedSaved >= 0 ? 'text-positive' : 'text-negative'}`}>
+                  {projectedSaved >= 0 ? '+' : '−'}{formatCurrency(Math.abs(projectedSaved))}
+                </div>
+                <div className="text-text-secondary text-xs mt-0.5">Projected month-end at today's pace</div>
+              </div>
+            );
+          }
+          const label = saved < 0 ? 'Over Watermark' : 'Saved This Month';
           return (
             <div className="glass-card p-4">
               <div className="term-label">{label}</div>
@@ -1013,8 +1031,7 @@ export default function BudgetView() {
               </div>
               <div className="text-text-secondary text-xs mt-0.5">
                 {saved < 0 ? 'Spending above take-home this month'
-                  : overviewIsInProgress ? 'Take-home minus spend so far — month in progress'
-                  : 'Under your watermark — fund reserves + savings'}
+                  : 'Under your watermark — funds reserves + savings'}
               </div>
             </div>
           );

@@ -14,7 +14,7 @@ Status key: ⬜ not reviewed · 🔍 reviewing · 🛠️ fix in progress · ✅
 | 2 | Month navigator (prev/next/avg + in-progress badge) (`:889`) | ⬜ | Verify edge months + avg toggle. |
 | 3 | Safe to Spend banner (`:941`) | ✅ | Solid. Visible breakdown (take-home − fixed − reserve set-asides − flex). The "reserve set-asides" line IS the stash aggregate — partial answer to Scott's "show it leaving the month." |
 | 4 | Savings Rate tile (`:990`) | ✅ | FIXED: now shows "Green at 20% — ~$X/mo more (fixed savings; variable sweep not counted)" when under target. Answers "where's green?" + keeps the honest caveat. |
-| 5 | Net Take Home / Monthly Spend tiles (`:975`) | 💬 | Verify `totalBucketSpend` composition (reserve? investing? work?). COHERENCE ISSUE: "Saved/Left This Month" tile (`:1000`) is a THIRD "money left" number alongside Safe to Spend + dashboard cash-flow — same juxtaposition Scott flagged. Decide THE number + how the others relate. |
+| 5 | Net Take Home / Monthly Spend tiles (`:975`) | ✅ | `totalBucketSpend` confirmed operating-only (= summary.realActual). COHERENCE FIXED (Scott approved): Safe to Spend = THE spendable number; the tile now shows "On Pace to Save $X" (projection) in-progress / "Saved This Month" when complete — no longer a competing "Left" number; dashboard cash-flow relabeled to pacing ("$X spent so far · on pace to save $Y"), bar segment "Left" → "Surplus". Three numbers, three distinct jobs. |
 | 6 | Budget Health + sub-scores + housing ratio (`:1019`) | ⬜ | Verify sub-scores + housing-ratio detail. |
 | 7 | Spending Breakdown (`:1019`) | ⬜ | |
 | 8 | Budget Pulse — live read (`:1167`) | ⬜ | |
@@ -37,7 +37,7 @@ Status key: ⬜ not reviewed · 🔍 reviewing · 🛠️ fix in progress · ✅
 | "Iris noticed" insights | 🛠️ | Savings-rate insight: add target/gap, soften for variable earners. |
 | Spending this month (donut) | ⬜ | |
 | Recent activity | ✅ | Transfer guard added this session. |
-| Cash flow bar | 💬 | Relabel "left so far" vs Safe to Spend (the juxtaposition). |
+| Cash flow bar | ✅ | Relabeled to pacing ("$X spent so far · on pace to save $Y by month-end"); bar segment "Left" → "Surplus". No longer competes with Safe to Spend. |
 | Living under the base (scorecard) | ✅ | Option A (total spend vs base), verified 3/9. |
 | Spend by account | ⬜ | |
 | Equity / wealth | ⬜ | Equity = $0 (RSUs not entered — Phase 2). |

@@ -409,13 +409,15 @@ export default function DashboardView() {
         const mtdSurplus = proratedIncome - mtdSpent - proratedInvesting;
         const projectedSpend = Math.round(mtdSpent / frac);
         const projectedSurplus = Math.round(budgetSummary.netIncome - projectedSpend - budgetSummary.investing);
+        // Pacing/outcome framing — NOT "spendable left" (that's Safe to Spend's job).
+        // This card answers "where's the month headed," not "what can I spend now."
         const paceTxt = projectedSurplus >= 0
-          ? `on pace for ${formatCurrency(projectedSurplus)} left by month-end`
+          ? `on pace to save ${formatCurrency(projectedSurplus)} by month-end`
           : `on pace to be ${formatCurrency(Math.abs(projectedSurplus))} over by month-end`;
         return (
           <DataCard
             title="Cash flow this month"
-            subtitle={`${mtdSurplus >= 0 ? `${formatCurrency(mtdSurplus)} left so far` : `${formatCurrency(Math.abs(mtdSurplus))} over so far`} · ${paceTxt}`}
+            subtitle={`${formatCurrency(mtdSpent)} spent so far · ${paceTxt}`}
             icon="💸"
             cta="Open Budget →"
             onClick={() => setView('budget')}
@@ -637,7 +639,7 @@ function CashFlowBar({ income, spent, investing }: { income: number; spent: numb
         <CashFlowSegment color="from-violet-500 to-indigo-500" label="Investing" value={investing} />
         {overage > 0
           ? <CashFlowSegment color="bg-negative" label="Over income" value={overage} negative solid />
-          : <CashFlowSegment color="from-emerald-500 to-teal-500" label="Left" value={surplus} positive />
+          : <CashFlowSegment color="from-emerald-500 to-teal-500" label="Surplus" value={surplus} positive />
         }
       </div>
     </div>
