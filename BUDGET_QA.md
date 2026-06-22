@@ -22,6 +22,17 @@ Status key: ⬜ not reviewed · 🔍 reviewing · 🛠️ fix in progress · ✅
 | 10 | Fun Money card (`:1192`) | ⬜ | |
 | 11 | Variable / overage card (`:1195`) | ✅ | Reworked this session (modal floor, all paychecks, free-to-deploy). Re-confirm after stash work. |
 
+## UI / redesign parking lot (waits for Fable — captured so they're out of Scott's head)
+
+These are pure visual/layout — substance underneath is fine, looks need work. Do NOT
+spend pre-Fable effort here; this list is the memory so we can let them go for now.
+
+- **7-day transactions bar** — content's good ("27 in the last 7 days · N need categorizing"), styling "looks like garbage." Restyle.
+- **Month selector** should sit ABOVE the 7-day bar (currently below). Trivial reorder — parked as UI.
+- **Excess white space** across the overview.
+- **Net Take Home tile** — it's a constant ($15,800); a static big-number tile is the wrong treatment. Show it differently (a watermark line, not a "stat").
+- **Savings Rate placement** — Scott: may belong on the Dashboard, not the budget page (Dashboard already surfaces it via insights). DECISION pending: keep on budget (now reordered after On-Pace) or remove here since Dashboard covers it.
+
 ## Added during the pass
 
 - ✅ **Inline reclassify from the category drilldown** (`BudgetView` drilldown modal). Click a category → each transaction now has a **Move** button → pick a new category, with: **one-off by default**, a **"Apply to all [merchant] — now & future"** checkbox (bulk-updates same-merchant txns + writes a merchant mapping for future imports), and a **💼 Mark as work** toggle (moves it to the work lane / out of spend). Reuses the existing engine (`saveExpense` + `saveMerchantMapping`); `loadExpenses()` refreshes the drilldown + bars after. Fix-where-you-find-it; keeps categorization clean post-Claude. Audit-log of reclassifications = parked (actor already stamped on writes). Open: whether to add a distinct "car mods/upgrades" category (Scott's call).

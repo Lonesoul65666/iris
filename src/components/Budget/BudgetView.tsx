@@ -1014,25 +1014,22 @@ export default function BudgetView() {
             {formatCurrency(essentialSpend)} essential + {formatCurrency(discretionarySpend)} lifestyle
           </div>
         </div>
-        <div className="glass-card p-4">
-          <div className="term-label">Savings Rate</div>
-          <div className={`text-3xl font-black mt-1 mono-num ${intentionalSavingsRate >= 20 ? 'text-positive' : intentionalSavingsRate >= 15 ? 'text-warning' : 'text-negative'}`}>
-            {intentionalSavingsRate.toFixed(1)}%
-          </div>
-          <div className="text-text-secondary text-xs mt-0.5">
-            {formatCurrency(investingAmt)} investing + {formatCurrency(paycheck.retirement401k)} 401k + {formatCurrency(paycheck.hsaContribution)} HSA
-          </div>
-          {intentionalSavingsRate < 20 && paycheck.grossMonthly > 0 && (
-            <div className="text-text-muted text-[11px] mt-1">
-              Green at 20% — ~{formatCurrency(Math.max(0, 0.20 * paycheck.grossMonthly - (investingAmt + paycheck.retirement401k + paycheck.hsaContribution)))}/mo more
-              <span className="text-text-muted/60"> (fixed savings; variable sweep not counted)</span>
-            </div>
-          )}
-        </div>
-        {/* Saved vs watermark — green under, red over (your "total saved / total spent").
-            For the in-progress month this is "left", not "saved" — the month isn't done. */}
+        {/* On Pace to Save / Saved — placed BEFORE Savings Rate (Scott: this is the
+            more useful day-to-day number). Carries a month-over-month comparison. */}
         {(() => {
           const saved = summary.netIncome - totalBucketSpend;
+          // Prior complete month's result vs the same watermark — month-over-month.
+          const compMonths = fullMonths.filter(m =>
+            (resolvedOverviewMonth === 'latest' || resolvedOverviewMonth === 'avg') ? true : m.month < resolvedOverviewMonth);
+          const prior = compMonths[compMonths.length - 1];
+          const savedPrior = prior ? Math.round(summary.netIncome - prior.totalOperating) : null;
+          const compLine = (current: number) => (prior && savedPrior !== null) ? (
+            <div className="text-[11px] mt-1">
+              <span className="text-text-muted">{prior.monthLabel}: </span>
+              <span className={savedPrior >= 0 ? 'text-positive' : 'text-negative'}>{savedPrior >= 0 ? '+' : '−'}{formatCurrency(Math.abs(savedPrior))}</span>
+              <span className="text-text-muted/70"> · {current >= savedPrior ? '▲' : '▼'} {formatCurrency(Math.abs(current - savedPrior))} {current >= savedPrior ? 'better' : 'worse'}</span>
+            </div>
+          ) : null;
           if (overviewIsInProgress) {
             // In-progress: don't show a spendable "left" number — that's Safe to
             // Spend's job. Show the projected OUTCOME (on pace to save/overspend)
@@ -1048,6 +1045,7 @@ export default function BudgetView() {
                   {projectedSaved >= 0 ? '+' : '−'}{formatCurrency(Math.abs(projectedSaved))}
                 </div>
                 <div className="text-text-secondary text-xs mt-0.5">Projected month-end at today's pace</div>
+                {compLine(projectedSaved)}
               </div>
             );
           }
@@ -1062,9 +1060,25 @@ export default function BudgetView() {
                 {saved < 0 ? 'Spending above take-home this month'
                   : 'Under your watermark — funds reserves + savings'}
               </div>
+              {compLine(saved)}
             </div>
           );
         })()}
+        <div className="glass-card p-4">
+          <div className="term-label">Savings Rate</div>
+          <div className={`text-3xl font-black mt-1 mono-num ${intentionalSavingsRate >= 20 ? 'text-positive' : intentionalSavingsRate >= 15 ? 'text-warning' : 'text-negative'}`}>
+            {intentionalSavingsRate.toFixed(1)}%
+          </div>
+          <div className="text-text-secondary text-xs mt-0.5">
+            {formatCurrency(investingAmt)} investing + {formatCurrency(paycheck.retirement401k)} 401k + {formatCurrency(paycheck.hsaContribution)} HSA
+          </div>
+          {intentionalSavingsRate < 20 && paycheck.grossMonthly > 0 && (
+            <div className="text-text-muted text-[11px] mt-1">
+              Green at 20% — ~{formatCurrency(Math.max(0, 0.20 * paycheck.grossMonthly - (investingAmt + paycheck.retirement401k + paycheck.hsaContribution)))}/mo more
+              <span className="text-text-muted/60"> (fixed savings; variable sweep not counted)</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Budget Health + Spending Breakdown */}
