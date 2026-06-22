@@ -22,6 +22,10 @@ Status key: ⬜ not reviewed · 🔍 reviewing · 🛠️ fix in progress · ✅
 | 10 | Fun Money card (`:1192`) | ⬜ | |
 | 11 | Variable / overage card (`:1195`) | ✅ | Reworked this session (modal floor, all paychecks, free-to-deploy). Re-confirm after stash work. |
 
+## Added during the pass
+
+- ✅ **Inline reclassify from the category drilldown** (`BudgetView` drilldown modal). Click a category → each transaction now has a **Move** button → pick a new category, with: **one-off by default**, a **"Apply to all [merchant] — now & future"** checkbox (bulk-updates same-merchant txns + writes a merchant mapping for future imports), and a **💼 Mark as work** toggle (moves it to the work lane / out of spend). Reuses the existing engine (`saveExpense` + `saveMerchantMapping`); `loadExpenses()` refreshes the drilldown + bars after. Fix-where-you-find-it; keeps categorization clean post-Claude. Audit-log of reclassifications = parked (actor already stamped on writes). Open: whether to add a distinct "car mods/upgrades" category (Scott's call).
+
 ## Budget page — other tabs
 | Section | Status | Findings |
 |---------|--------|----------|

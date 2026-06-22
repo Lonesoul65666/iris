@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown } from '../../types/budget';
-import type { Expense } from '../../types/budget';
+import type { Expense, ExpenseCategory } from '../../types/budget';
 import { defaultBudgetBuckets, defaultSinkingFunds, defaultFunMoney, defaultPaycheck, calculateBudgetSummary } from '../../stores/budgetDefaults';
-import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, getCustomCategories, getBudgetTargetHistory, snapshotBudgetTargets } from '../../stores/budgetStore';
+import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, saveExpense, getCustomCategories, getBudgetTargetHistory, snapshotBudgetTargets } from '../../stores/budgetStore';
 import { getMonthlyInvestments, getSetting, saveSetting } from '../../stores/portfolioStore';
 import { computeGuaranteedBase } from '../../utils/savingsScorecard';
 import { computeSavingsRate } from '../../utils/savingsRate';
@@ -26,7 +26,7 @@ import VariableSurplusCard from './VariableSurplusCard';
 import { auditBudgetEdit, type BudgetDiff } from '../../stores/auditLogStore';
 import BucketGroupsManager from './BucketGroupsManager';
 import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
-import { getActionItems, saveAllActionItems } from '../../stores/actionStore';
+import { getActionItems, saveAllActionItems, saveMerchantMapping } from '../../stores/actionStore';
 import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, isRealExpense, isCompleteMonth, currentMonthKey, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
 import { formatCurrency } from '../../utils/format';
 import { laneOf, isOverBudget, RESERVE_ALLOCATIONS, FLEX_APPROACHING, type BudgetLane } from '../../utils/budgetLanes';
@@ -122,6 +122,8 @@ export default function BudgetView() {
   const [loaded, setLoaded] = useState(false);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [drilldownCategory, setDrilldownCategory] = useState<string | null>(null);
+  // Inline reclassify (from the category drilldown): which txn is being moved.
+  const [reclassify, setReclassify] = useState<{ id: string; cat: string; all: boolean; work: boolean } | null>(null);
   const [showCompare, setShowCompare] = useState(false);
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlySpending[]>([]);
@@ -242,6 +244,33 @@ export default function BudgetView() {
     setActionItems(items);
     await saveAllActionItems(items);
   }, []);
+
+  // Inline reclassify from the category drilldown. One-off by default (just this
+  // txn); "apply to all" also moves every same-merchant txn AND writes a merchant
+  // mapping so future imports follow. Work toggle moves it into the work lane
+  // (out of spend). Reuses the same engine as ExpenseManager (saveExpense +
+  // saveMerchantMapping), then loadExpenses() refreshes the drilldown + bars.
+  const applyReclassify = useCallback(async (e: Expense) => {
+    if (!reclassify || reclassify.id !== e.id) return;
+    const work = reclassify.work;
+    const cat = (work ? 'travel_work' : reclassify.cat) as ExpenseCategory;
+    const patch = (x: Expense): Expense => ({
+      ...x,
+      category: cat,
+      isWorkExpense: work,
+      reimbursementStatus: work ? 'pending' : (x.isWorkExpense ? 'not_reimbursable' : x.reimbursementStatus),
+    });
+    if (reclassify.all) {
+      const key = (e.description || '').toLowerCase();
+      const matches = expenses.filter(x => (x.description || '').toLowerCase() === key);
+      for (const m of matches) await saveExpense(patch(m));
+      await saveMerchantMapping({ original: e.description, displayName: e.description, category: cat, isWorkExpense: work });
+    } else {
+      await saveExpense(patch(e));
+    }
+    setReclassify(null);
+    await loadExpenses();
+  }, [reclassify, expenses, loadExpenses]);
 
   useEffect(() => {
     async function load() {
@@ -1723,15 +1752,54 @@ export default function BudgetView() {
               <div className="overflow-y-auto max-h-[55vh] p-4 space-y-1">
                 {catTxns.length === 0 ? (
                   <p className="text-text-muted text-sm text-center py-8">No transactions for this category in the selected period</p>
-                ) : catTxns.map((e, i) => (
-                  <div key={i} className="flex items-center justify-between py-2 text-sm border-b border-glass-border/50 last:border-0">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-text-primary truncate">{e.description}</div>
-                      <div className="text-[10px] text-text-muted">{e.date}</div>
+                ) : catTxns.map((e) => {
+                  const editing = reclassify?.id === e.id;
+                  return (
+                  <div key={e.id} className="py-2 text-sm border-b border-glass-border/50 last:border-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-text-primary truncate">{e.description}</div>
+                        <div className="text-[10px] text-text-muted">{e.date}</div>
+                      </div>
+                      <span className="text-text-primary font-medium">{formatCurrency(e.amount)}</span>
+                      <button
+                        onClick={() => setReclassify(editing ? null : { id: e.id, cat: e.category || 'other', all: false, work: false })}
+                        className="text-[11px] text-accent hover:text-accent-light flex-shrink-0">
+                        {editing ? 'Close' : 'Move'}
+                      </button>
                     </div>
-                    <span className="text-text-primary font-medium ml-3">{formatCurrency(e.amount)}</span>
+                    {editing && reclassify && (
+                      <div className="mt-2 p-2.5 rounded-lg bg-white/[0.03] border border-glass-border space-y-2">
+                        <select
+                          value={reclassify.cat}
+                          disabled={reclassify.work}
+                          onChange={ev => setReclassify(r => r ? { ...r, cat: ev.target.value } : r)}
+                          className="w-full bg-surface-2 border border-glass-border rounded px-2 py-1 text-xs text-text-primary outline-none focus:border-accent/50 disabled:opacity-50">
+                          {buckets.map(b => (
+                            <option key={b.category} value={b.category}>{b.icon} {b.label.split('(')[0].trim()}</option>
+                          ))}
+                        </select>
+                        <label className="flex items-center gap-2 text-[11px] text-text-secondary cursor-pointer">
+                          <input type="checkbox" checked={reclassify.all}
+                            onChange={ev => setReclassify(r => r ? { ...r, all: ev.target.checked } : r)} />
+                          Apply to all “{e.description}” — now &amp; future imports
+                        </label>
+                        <label className="flex items-center gap-2 text-[11px] text-text-secondary cursor-pointer">
+                          <input type="checkbox" checked={reclassify.work}
+                            onChange={ev => setReclassify(r => r ? { ...r, work: ev.target.checked } : r)} />
+                          💼 Mark as work expense (moves out of spend)
+                        </label>
+                        <div className="flex gap-2 justify-end pt-0.5">
+                          <button onClick={() => setReclassify(null)}
+                            className="px-2 py-1 rounded bg-surface-2 text-text-muted text-xs">Cancel</button>
+                          <button onClick={() => applyReclassify(e)}
+                            className="px-2 py-1 rounded bg-accent text-white text-xs font-semibold">Save</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
               {/* Budget comparison + annualized projection — per-MONTH numbers */}
               <div className="border-t border-glass-border">
