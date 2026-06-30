@@ -11,6 +11,7 @@ import { computeSavingsRate } from '../../utils/savingsRate';
 import { computeSafeToSpend } from '../../utils/safeToSpend';
 import { applyStashLaneConfig, seedDefaultStashes } from '../../utils/stashMath';
 import StashesCard from './StashesCard';
+import MoneyMap from './MoneyMap';
 import FunMoneyCard from './FunMoneyCard';
 import { targetsForMonth, type BudgetTargetSnapshot } from '../../utils/budgetHistory';
 import { isGeminiInitialized } from '../../services/gemini';
@@ -29,7 +30,7 @@ import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, saveMerchantMapping } from '../../stores/actionStore';
 import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, isRealExpense, isCompleteMonth, currentMonthKey, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
 import { formatCurrency } from '../../utils/format';
-import { laneOf, isOverBudget, RESERVE_ALLOCATIONS, FLEX_APPROACHING, type BudgetLane } from '../../utils/budgetLanes';
+import { laneOf, isOverBudget, RESERVE_ALLOCATIONS, FLEX_APPROACHING, totalReserveSetAside, type BudgetLane } from '../../utils/budgetLanes';
 import ScoreRing from '../ui/ScoreRing';
 import EmptyState from '../ui/EmptyState';
 import { useHasRealData } from '../../hooks/useHasRealData';
@@ -994,6 +995,22 @@ export default function BudgetView() {
                 style={{ width: `${pct}%` }} />
             </div>
           </div>
+        );
+      })()}
+
+      {/* Money Map — where the whole base ($15,800) goes: everyday + investing +
+          reserves + what's free. The Pulse below is the spending-pace detail. */}
+      {paycheck.netTakeHome > 0 && (() => {
+        const everydayBudget = operatingBuckets.filter(b => b.category !== 'investing').reduce((s, b) => s + b.monthlyBudget, 0);
+        const everydaySpent = operatingBuckets.filter(b => b.category !== 'investing').reduce((s, b) => s + b.monthlyActual, 0);
+        return (
+          <MoneyMap
+            income={paycheck.netTakeHome}
+            everydayBudget={everydayBudget}
+            everydaySpent={everydaySpent}
+            investing={investingAmt}
+            reserveSetAside={totalReserveSetAside()}
+          />
         );
       })()}
 

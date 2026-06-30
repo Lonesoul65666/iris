@@ -39,6 +39,8 @@ spend pre-Fable effort here; this list is the memory so we can let them go for n
 
 - ✅ **Investment transfers now imported (not dropped)** (`server/teller-map.ts`). Investigating "do we see Fidelity charges?" revealed the import classifier was *recognizing* brokerage transfers (FID BKG SVG LLC, Schwab, Vanguard…) and **dropping them** as non-spend → investing was invisible / the $1,000/mo was a Settings guess. Now brokerage transfers out of checking import as `transactionType='investment'`: counted toward investing, excluded from spend, and **feed-validatable** (which makes the deploy-confirmation idea viable for investments, not just savings). Requires dev-server restart + re-sync to pull them in. Follow-up: reconcile the budget's investing figure to derive from these real transactions vs the Settings number.
 
+- 🔍 **Money Map v1** (`src/components/Budget/MoneyMap.tsx`, top of budget overview) — Scott's "track the whole $15,800." Stacked bar: Everyday budget + Investing + Reserves + **Free** (leftover), summing to base income. Free = the win to deploy; goal = trim everyday → Free grows. ALLOCATION view (budgeted, sums to income) with everyday-spent noted. Pulse stays the spending-pace detail below. v1 — awaiting Scott's redline (allocation-vs-actual framing, placement, what counts as "Reserves/savings"). Foundation for the gamified surplus-deploy + Month-in-Review.
+
 ## Budget page — other tabs
 | Section | Status | Findings |
 |---------|--------|----------|
