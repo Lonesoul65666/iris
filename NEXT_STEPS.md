@@ -1,6 +1,25 @@
 # Iris — Next Steps
 
-## ⭐ START HERE — next session (as of 2026-06-14, data-honesty + audit session)
+## ⭐ START HERE (2026-06-30) — Money Map + the gamified surplus engine
+
+Branch **`overnight-polish-2026-06-11`** — **46 commits over master, unmerged** (Scott reviews/merges). `npx tsc -b` clean · `npm test` 126/126 (pre-commit) · tree clean (only untracked throwaway `scripts/*`). Dev server = **detached vite on :5173** (survives sessions; relaunch via PowerShell `Start-Process` if down — NOT the agent background-task tool, those get reaped). Validate in Scott's real Chrome (HMR-live); he's a visual reactor — ship a v1, he redlines.
+
+**⏰ DEADLINE:** Scott leaves Abnormal **~Aug 2026** and **loses Claude Code** then. Spend remaining Claude time on engineering (logic/connectors), not data-entry (he can do anytime) or the Fable-gated redesign. **#1 = PORTABILITY** — run Iris off the work machine / phone / personal laptop (data's already device-agnostic in his Supabase; it's a "serve it somewhere reachable" problem).
+
+**Read first:** memory `project_iris_handoff_2026-06-30`, the design spec **`docs/money-map-design.md`**, and the live QA checklist **`BUDGET_QA.md`** (keep updating it).
+
+**NEXT, in order:**
+1. **Money Map v1 redline** (`src/components/Budget/MoneyMap.tsx`) — allocation-vs-actual framing? "Reserves" slice vs a separate "savings" slice? placement?
+2. **Continue the QA pass** (`BUDGET_QA.md`): Budget Health + housing ratio → Spending Breakdown → Fun Money. (Safe-to-Spend, Savings-rate, On-Pace, Budget Pulse, 7-day prompt all ✅ this session.)
+3. **Stashes interconnection rework** — the 5 decisions: surface forward calc + due date ON the Stashes card (the GoalTracker math EXISTS but is hidden/on the dashboard); recurring-vs-one-time-goal type; base-funded + variable top-up; visible "set aside this month" line; scorecard "covered by [stash]" annotation. (`Stash = SinkingFund`.)
+4. **Deploy/gamification engine + Month in Review** (per `docs/money-map-design.md`; `computeMonthComparison` exists, consumed by nothing).
+5. **PORTABILITY** + FID-history backfill (deeper Teller pull, spaced/rate-limited) + reconcile the investing figure to real FID transfers.
+
+**Shipped 2026-06-30:** audit fix queue (all 12) · scorecard → Option A (total spend vs base, 3/9) · three "money-left" numbers split into distinct jobs · 401k $812 + HSA $360 entered · brokerage transfers import as `investment` (Fidelity $1k/mo now real) · inline reclassify from drilldown · Money Map v1. Detail in the handoff memory.
+
+---
+
+## (Prior) START HERE — 2026-06-14, audit fix queue
 
 Branch **`overnight-polish-2026-06-11`** — **34 commits over `master`, unmerged.** Tree clean (only untracked throwaway `scripts/*`). `npx tsc -b` clean · `npm test` 121/121 (in pre-commit). Dev server :5173 (`npm run dev`); **restart it before any sync** (server-side `teller-map.ts` changed this session). Validate in Scott's real Chrome.
 
