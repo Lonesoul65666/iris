@@ -101,6 +101,7 @@ export interface MapResult {
   category?: string
   refund?: boolean             // card merchant credit — import as a refund that nets against its category
   transfer?: boolean           // money moving between the user's own accounts — VISIBLE but not spend
+  investment?: boolean         // brokerage transfer (Fidelity, Schwab…) — money to investments, not spend
   unexpectedOutflow?: boolean  // real spend leaving a savings bucket — counts AND raises an alert
   reason?: SkipReason
 }
@@ -134,9 +135,6 @@ const NON_SPEND_PAYEE = new RegExp(
     'CAPITAL ONE', 'CITI ?CARD', 'CITICARD', 'COMENITY', 'AMERICAN EXPRESS', 'AMEX',
     'DISCOVER', 'CHASE CARD', 'CARDMEMBER', 'SYNCHRONY', 'BARCLAY', 'BANKCARD',
     'CRCARDPMT', 'CC ?PYMT', 'CREDIT ?CRD', 'CREDIT CARD',
-    // brokerage / investment moves
-    'FIDELITY', 'FID BKG', 'BKG SVC', 'MONEYLINE', 'SCHWAB', 'VANGUARD',
-    'E\\*?TRADE', 'ETRADE', 'BETTERMENT', 'WEALTHFRONT', 'ROBINHOOD', 'MERRILL', 'COINBASE',
     // explicit transfers between the user's own accounts. NOTE: 'ZELLE' was
     // removed 2026-06-14 — Scott uses Zelle to pay real people (e.g. a $475 car
     // repair), so an outbound Zelle is genuine spend, not a self-transfer. The
@@ -146,8 +144,25 @@ const NON_SPEND_PAYEE = new RegExp(
   'i',
 )
 
+// Brokerage / investment transfers OUT of checking. These USED to be lumped into
+// NON_SPEND_PAYEE and dropped — but that made investing invisible. They're not
+// spend, but they're real money going to work, so we import them as
+// transactionType='investment' (counts toward investing, excluded from spend,
+// and feed-validatable for deploy confirmations). "FID BKG SVG LLC" = Fidelity.
+const INVESTMENT_PAYEE = new RegExp(
+  [
+    'FIDELITY', 'FID BKG', 'BKG SVC', 'MONEYLINE', 'SCHWAB', 'VANGUARD',
+    'E\\*?TRADE', 'ETRADE', 'BETTERMENT', 'WEALTHFRONT', 'ROBINHOOD', 'MERRILL', 'COINBASE',
+  ].join('|'),
+  'i',
+)
+
 function isCheckingNonSpend(description: string): boolean {
   return NON_SPEND_PAYEE.test(description || '')
+}
+
+function isInvestmentTransfer(description: string): boolean {
+  return INVESTMENT_PAYEE.test(description || '')
 }
 
 // Spouse name as it appears in Zelle descriptions — a Zelle to/from Claire
@@ -207,9 +222,15 @@ export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount):
 
   if (sub === 'checking') {
     if (amt >= 0) return { keep: false, reason: 'inflow' }
+    // Brokerage / investment transfers OUT of checking (Fidelity, Schwab, or a
+    // Teller-categorized investment) — import as INVESTMENT so investing is real
+    // and feed-validatable, instead of dropping it. Checked BEFORE the
+    // transfer/payment skips: Teller often types these as plain 'transfer'/'ach'.
+    if (t.details?.category === 'investment' || isInvestmentTransfer(t.description)) {
+      return { keep: true, investment: true, amount: Math.abs(amt), category: 'investing' }
+    }
     if (CHECKING_SKIP_TYPES.has(t.type)) return { keep: false, reason: 'transfer_or_payment' }
-    if (t.details?.category === 'investment') return { keep: false, reason: 'investment' }
-    // Card payments / brokerage transfers that Teller typed as plain `ach`.
+    // Card payments / internal transfers that Teller typed as plain `ach`.
     if (isCheckingNonSpend(t.description)) return { keep: false, reason: 'transfer_or_payment' }
     return { keep: true, amount: Math.abs(amt), category: bestCategory(t.description, amt, t.details?.category) }
   }
@@ -228,7 +249,7 @@ export interface MappedExpense {
   isWorkExpense: boolean   // false from the classifier; user merchant mappings can override at import
   recurring: false
   flow: 'outflow' | 'inflow'          // refunds + transfers-in are inflows
-  transactionType: 'expense' | 'refund' | 'transfer'
+  transactionType: 'expense' | 'refund' | 'transfer' | 'investment'
   notes?: string                      // e.g. the savings-withdrawal tripwire note
   source: string
   importBatch: string
@@ -253,11 +274,13 @@ export function tellerTxnToExpense(
     : r.transfer
       ? (rawAmt >= 0 ? 'inflow' : 'outflow')
       : 'outflow'
-  const transactionType: 'expense' | 'refund' | 'transfer' = r.refund
+  const transactionType: 'expense' | 'refund' | 'transfer' | 'investment' = r.refund
     ? 'refund'
-    : r.transfer
-      ? 'transfer'
-      : 'expense'
+    : r.investment
+      ? 'investment'
+      : r.transfer
+        ? 'transfer'
+        : 'expense'
   return {
     id: `teller_${t.id}`,
     date: t.date,

@@ -37,6 +37,8 @@ spend pre-Fable effort here; this list is the memory so we can let them go for n
 
 - ✅ **Inline reclassify from the category drilldown** (`BudgetView` drilldown modal). Click a category → each transaction now has a **Move** button → pick a new category, with: **one-off by default**, a **"Apply to all [merchant] — now & future"** checkbox (bulk-updates same-merchant txns + writes a merchant mapping for future imports), and a **💼 Mark as work** toggle (moves it to the work lane / out of spend). Reuses the existing engine (`saveExpense` + `saveMerchantMapping`); `loadExpenses()` refreshes the drilldown + bars after. Fix-where-you-find-it; keeps categorization clean post-Claude. Audit-log of reclassifications = parked (actor already stamped on writes). Open: whether to add a distinct "car mods/upgrades" category (Scott's call).
 
+- ✅ **Investment transfers now imported (not dropped)** (`server/teller-map.ts`). Investigating "do we see Fidelity charges?" revealed the import classifier was *recognizing* brokerage transfers (FID BKG SVG LLC, Schwab, Vanguard…) and **dropping them** as non-spend → investing was invisible / the $1,000/mo was a Settings guess. Now brokerage transfers out of checking import as `transactionType='investment'`: counted toward investing, excluded from spend, and **feed-validatable** (which makes the deploy-confirmation idea viable for investments, not just savings). Requires dev-server restart + re-sync to pull them in. Follow-up: reconcile the budget's investing figure to derive from these real transactions vs the Settings number.
+
 ## Budget page — other tabs
 | Section | Status | Findings |
 |---------|--------|----------|
