@@ -91,6 +91,60 @@ export function computeAllStashes(stashes: Stash[], expenses: Expense[], now: Da
   return stashes.map(s => computeStashStatus(s, expenses, now));
 }
 
+/** Forward look at a stash vs its goal — built on the DERIVED balance, so the
+ *  pots show "how full + when full" the same way they show their balance. Pure
+ *  numbers + a status enum; the component formats the label (keeps this IO-free).
+ *  Returns null when no goal is set (nothing to forecast). */
+export interface StashForecast {
+  target: number;
+  remaining: number;              // $ still needed to hit the goal (>= 0)
+  percent: number;                // 0..100 of goal funded
+  status: 'met' | 'past_due' | 'on_track' | 'behind' | 'projecting' | 'idle';
+  projectedMonth: string | null;  // "Mar 2027" — when it fills at the current rate
+  additionalNeeded: number | null;// extra $/mo to make a set targetDate
+  monthsToGo: number | null;      // months to fill at the current contribution
+}
+
+export function computeStashForecast(status: StashStatus, now: Date = new Date()): StashForecast | null {
+  const { stash, balance } = status;
+  const target = stash.targetAmount || 0;
+  if (target <= 0) return null;
+
+  const remaining = Math.max(0, target - balance);
+  const percent = Math.max(0, Math.min(100, Math.round((balance / target) * 100)));
+  const contribution = stash.monthlyContribution || 0;
+  const fmtMonth = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+  if (balance >= target) {
+    return { target, remaining: 0, percent: 100, status: 'met', projectedMonth: null, additionalNeeded: null, monthsToGo: 0 };
+  }
+
+  // Anchored to an explicit deadline: are we pacing to make it?
+  if (stash.targetDate) {
+    const td = new Date(stash.targetDate);
+    const monthsLeft = (td.getFullYear() - now.getFullYear()) * 12 + (td.getMonth() - now.getMonth());
+    const projectedMonth = fmtMonth(td);
+    if (monthsLeft <= 0) {
+      return { target, remaining, percent, status: 'past_due', projectedMonth, additionalNeeded: null, monthsToGo: null };
+    }
+    const requiredPerMonth = remaining / monthsLeft;
+    if (contribution >= requiredPerMonth) {
+      return { target, remaining, percent, status: 'on_track', projectedMonth, additionalNeeded: null, monthsToGo: monthsLeft };
+    }
+    return { target, remaining, percent, status: 'behind', projectedMonth, additionalNeeded: Math.ceil(requiredPerMonth - contribution), monthsToGo: monthsLeft };
+  }
+
+  // No deadline: project a fill date from the monthly drip.
+  if (contribution > 0) {
+    const monthsToGo = Math.ceil(remaining / contribution);
+    const projected = new Date(now.getFullYear(), now.getMonth() + monthsToGo, 1);
+    return { target, remaining, percent, status: 'projecting', projectedMonth: fmtMonth(projected), additionalNeeded: null, monthsToGo };
+  }
+
+  // A goal with no funding path — can't project; nudge to set a contribution.
+  return { target, remaining, percent, status: 'idle', projectedMonth: null, additionalNeeded: null, monthsToGo: null };
+}
+
 /** Σ monthly contributions — the Safe-to-Spend "reserve set-asides" line (D3). */
 export function totalStashContributions(stashes: Stash[]): number {
   return stashes.reduce((s, f) => s + (f.monthlyContribution || 0), 0);
