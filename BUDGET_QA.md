@@ -17,7 +17,7 @@ Status key: ⬜ not reviewed · 🔍 reviewing · 🛠️ fix in progress · ✅
 | 5 | Net Take Home / Monthly Spend tiles (`:975`) | ✅ | `totalBucketSpend` confirmed operating-only (= summary.realActual). COHERENCE FIXED (Scott approved): Safe to Spend = THE spendable number; the tile now shows "On Pace to Save $X" (projection) in-progress / "Saved This Month" when complete — no longer a competing "Left" number; dashboard cash-flow relabeled to pacing ("$X spent so far · on pace to save $Y"), bar segment "Left" → "Surplus". Three numbers, three distinct jobs. |
 | 6 | Budget Health + sub-scores + housing ratio (`:1019`) | ⬜ | Verify sub-scores + housing-ratio detail. |
 | 7 | Spending Breakdown (`:1019`) | ⬜ | |
-| 8 | Budget Pulse — live read (`:1167`) | ⬜ | |
+| 8 | Budget Pulse — live read | ✅ | BUG FIXED: header "spent / budgeted" was summing ALL buckets incl. reserve — but reserve has a $0 bucket budget (stash-funded), so a lumpy taxes/travel payment landed in "spent" with no matching "budget" → looked over-budget (opposite of the lane model, and contradicted Pulse's own reserve-excluding projection). Now operating-lanes only → matches Monthly Spend tile + the rest of the page. This was the source of the "$14,584 / $13,227 — why am I over?" confusion. |
 | 9 | **Stashes card** (`:1181`) | 💬 | The big interconnection rework (5 decisions: surface forward calc/due date, recurring-vs-goal type, base-funded + variable top-up, visible set-aside line, scorecard "covered" link). See conversation. |
 | 10 | Fun Money card (`:1192`) | ⬜ | |
 | 11 | Variable / overage card (`:1195`) | ✅ | Reworked this session (modal floor, all paychecks, free-to-deploy). Re-confirm after stash work. |
