@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react';
 import type { Expense, Stash } from '../../types/budget';
 import { formatCurrency } from '../../utils/format';
-import { computeAllStashes, totalStashContributions } from '../../utils/stashMath';
+import { computeAllStashes, computeStashForecast, totalStashContributions, type StashForecast } from '../../utils/stashMath';
 import { currentMonthKey } from '../../utils/transactionAnalysis';
 import { defaultBudgetBuckets } from '../../stores/budgetDefaults';
 
@@ -31,6 +31,18 @@ function monthShort(ym: string): string {
   const [y, m] = ym.split('-').map(Number);
   const mon = new Date(y, (m || 1) - 1, 1).toLocaleDateString('en-US', { month: 'short' });
   return `${mon} '${String(y).slice(2)}`; // "Jun '26" — never mistakable for a day-of-month
+}
+
+// The forward-looking line under a stash's goal bar: how it's pacing + when it fills.
+function forecastLine(f: StashForecast): { text: string; cls: string } {
+  switch (f.status) {
+    case 'met':        return { text: '✓ Goal met — overflow is free to redeploy', cls: 'text-positive' };
+    case 'on_track':   return { text: `On track for ${f.projectedMonth}`, cls: 'text-positive' };
+    case 'behind':     return { text: `Behind — ${formatCurrency(f.additionalNeeded || 0)}/mo more to hit ${f.projectedMonth}`, cls: 'text-warning' };
+    case 'past_due':   return { text: `Past ${f.projectedMonth} — ${formatCurrency(f.remaining)} short`, cls: 'text-negative' };
+    case 'projecting': return { text: `Funded ~${f.projectedMonth}${f.monthsToGo != null ? ` · ${f.monthsToGo} mo at this rate` : ''}`, cls: 'text-text-secondary' };
+    case 'idle':       return { text: 'Set a $/mo amount to project a fill date', cls: 'text-text-muted' };
+  }
 }
 
 export default function StashesCard({ stashes, expenses, onChange }: Props) {
@@ -88,9 +100,12 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-        {statuses.map(({ stash: sf, balance, derived, drawn, monthsAccrued, biggestDraw, targetProgress }) => {
+        {statuses.map((status) => {
+          const { stash: sf, balance, derived, drawn, monthsAccrued, biggestDraw } = status;
           const isOpen = expanded === sf.id;
           const negative = balance < 0;
+          const forecast = computeStashForecast(status);
+          const fline = forecast ? forecastLine(forecast) : null;
           return (
             <div key={sf.id} className={`p-4 rounded-xl bg-white/[0.03] border ${negative ? 'border-negative/40' : 'border-glass-border'}`}>
               {/* Name + contribution */}
@@ -118,11 +133,28 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                   : 'manual balance — open to start auto-tracking'}
               </div>
 
-              {/* Target bar */}
-              {targetProgress !== null && (
-                <div className="w-full bg-white/10 rounded-full h-1.5 mb-2">
-                  <div className="h-1.5 rounded-full transition-all" style={{ width: `${Math.round(targetProgress * 100)}%`, background: sf.color }} />
+              {/* Goal + forecast — surfaced so each pot shows how full AND when it
+                  fills (the GoalTracker math, now on the stash itself). No goal =
+                  a nudge to set one (you can't deploy toward a goal you can't see). */}
+              {forecast && fline ? (
+                <div className="mb-2">
+                  <div className="flex items-center justify-between text-[10px] mb-1">
+                    <span className="text-text-muted">{forecast.percent}% of {formatCurrency(forecast.target)} goal</span>
+                    {forecast.status !== 'met' && forecast.remaining > 0 && (
+                      <span className="text-text-secondary font-medium">{formatCurrency(forecast.remaining)} to go</span>
+                    )}
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-1.5 mb-1">
+                    <div className="h-1.5 rounded-full transition-all"
+                      style={{ width: `${forecast.percent}%`, background: forecast.status === 'met' ? '#22c55e' : sf.color }} />
+                  </div>
+                  <div className={`text-[10px] ${fline.cls}`}>{fline.text}</div>
                 </div>
+              ) : (
+                <button onClick={() => setExpanded(sf.id)}
+                  className="text-[10px] text-accent/80 hover:underline mb-2 block">
+                  + Set a goal to track progress
+                </button>
               )}
 
               {/* Linked categories */}
