@@ -59,13 +59,24 @@ progress month). `computeMonthComparison` already exists and is consumed by NOTH
 final — review it"); true push/email isn't wired (parked capability).
 
 ## v1 status + open redlines (Money Map)
-Shipped: stacked bar Everyday / Investing / Reserves / Free, summing to base income,
-allocation-based (budgeted, sums cleanly) with everyday-spent noted. Open:
-1. **Allocation vs actual** — show budgeted allocation (current) or actual
-   deployment (where money really went)?
-2. **"Reserves" slice = the $2k stash set-aside.** Is that "savings," or should
-   savings (transfers to savings accounts) be its own slice separate from taxes/trips?
-3. **Placement** — top of overview, above the tiles. Right spot?
+v2 shipped 2026-06-30 (Scott's "how the month's going" braindump): the map is now
+the **zero-based ACTUAL "how's the month going" frame** off the $15,800 base —
+everyday SPENT + investing + reserves set aside, leftover = the win ("you beat the
+base by $X" / "still in play" in-progress / "over base — trim to fit"). Header:
+"How the month's going · vs your $15,800 base" → "Where your $15,800 went". This
+kills the bottom-up "$14,584" as the headline number Scott distrusted. Redlines:
+1. **Allocation vs actual** — ✅ RESOLVED: ACTUAL deployment. (Everyday segment now
+   = spent, with the budget noted as the target. Leftover is the live over/under.)
+2. **Investing is CONFIRMABLE, not inferred** — ✅ SHIPPED: planned $1,000 renders
+   dashed/faded ("planned — confirm it") with a **Confirm deposit** button; tapping
+   it (Fidelity alerted Scott the transfer landed) locks the slice solid + "✓
+   confirmed". Persisted per-month in the `deployConfirmations` collection
+   (`${month}:${lane}`); toggle to undo. This is build-step #2's manual-confirm
+   half — feed-detect / live ticker still PARKED (Scott: "no idea on that piece").
+3. **"Reserves" slice = the $2k stash set-aside.** Still open — savings (transfers
+   to savings accts) as its own slice vs lumped with taxes/trips? (Not addressed in
+   the braindump; left as-is.)
+4. **Placement** — top of overview, above the tiles. Confirmed fine.
 
 ## Build sequence (deadline-smart: logic now, shell later)
 1. **Money Map** (reconcile; v1 shipped — refine per redline).
