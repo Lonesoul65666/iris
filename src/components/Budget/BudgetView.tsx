@@ -4,7 +4,7 @@ import { ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown } from '../../types/budget';
 import type { Expense, ExpenseCategory } from '../../types/budget';
 import { defaultBudgetBuckets, defaultSinkingFunds, defaultFunMoney, defaultPaycheck, calculateBudgetSummary } from '../../stores/budgetDefaults';
-import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, saveExpense, getCustomCategories, getBudgetTargetHistory, snapshotBudgetTargets } from '../../stores/budgetStore';
+import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, saveExpense, getCustomCategories, getBudgetTargetHistory, snapshotBudgetTargets, getDeployConfirmations, saveDeployConfirmation, clearDeployConfirmation, type DeployConfirmation } from '../../stores/budgetStore';
 import { getMonthlyInvestments, getSetting, saveSetting } from '../../stores/portfolioStore';
 import { computeGuaranteedBase } from '../../utils/savingsScorecard';
 import { computeSavingsRate } from '../../utils/savingsRate';
@@ -130,6 +130,9 @@ export default function BudgetView() {
   const [monthlyData, setMonthlyData] = useState<MonthlySpending[]>([]);
   const [targetHistory, setTargetHistory] = useState<BudgetTargetSnapshot[]>([]);
   const [, setCategoryTrends] = useState<CategoryTrend[]>([]);
+  // Planned→confirmed deploys (Money Map honesty layer) — manual confirm of the
+  // monthly investment so the lane reads as real, not an inferred Settings guess.
+  const [deployConfirms, setDeployConfirms] = useState<DeployConfirmation[]>([]);
 
   // ── Edit mode state ──
   // Daily Budget tab is read-only. Editing happens in a dedicated mode that
@@ -246,6 +249,20 @@ export default function BudgetView() {
     await saveAllActionItems(items);
   }, []);
 
+  // Confirm / un-confirm this month's investing deposit (Money Map). Toggle:
+  // first tap locks it as moved, tapping again undoes it. Optimistic + persisted.
+  const toggleInvestConfirm = useCallback(async (month: string, amount: number) => {
+    const existing = deployConfirms.find(c => c.month === month && c.lane === 'investing');
+    if (existing) {
+      setDeployConfirms(prev => prev.filter(c => !(c.month === month && c.lane === 'investing')));
+      await clearDeployConfirmation(month, 'investing');
+    } else {
+      const c: DeployConfirmation = { month, lane: 'investing', amount, confirmedAt: new Date().toISOString() };
+      setDeployConfirms(prev => [...prev, c]);
+      await saveDeployConfirmation(c);
+    }
+  }, [deployConfirms]);
+
   // Inline reclassify from the category drilldown. One-off by default (just this
   // txn); "apply to all" also moves every same-merchant txn AND writes a merchant
   // mapping so future imports follow. Work toggle moves it into the work lane
@@ -330,6 +347,8 @@ export default function BudgetView() {
       setPaycheck(loadedPaycheck);
       const actions = await getActionItems();
       setActionItems(actions);
+
+      setDeployConfirms(await getDeployConfirmations());
 
       // Register custom categories for proper label display
       const cc = await getCustomCategories();
@@ -1003,13 +1022,21 @@ export default function BudgetView() {
       {paycheck.netTakeHome > 0 && (() => {
         const everydayBudget = operatingBuckets.filter(b => b.category !== 'investing').reduce((s, b) => s + b.monthlyBudget, 0);
         const everydaySpent = operatingBuckets.filter(b => b.category !== 'investing').reduce((s, b) => s + b.monthlyActual, 0);
+        // Confirm state is per-month; 'avg' has no single month to confirm, so
+        // treat it as confirmed (it's a historical blend, not a live deposit).
+        const confirmMonth = resolvedOverviewMonth === 'avg' ? '' : resolvedOverviewMonth;
+        const investingConfirmed = resolvedOverviewMonth === 'avg'
+          || deployConfirms.some(c => c.month === confirmMonth && c.lane === 'investing');
         return (
           <MoneyMap
             income={paycheck.netTakeHome}
             everydayBudget={everydayBudget}
             everydaySpent={everydaySpent}
             investing={investingAmt}
+            investingConfirmed={investingConfirmed}
+            onToggleInvesting={confirmMonth ? () => toggleInvestConfirm(confirmMonth, investingAmt) : undefined}
             reserveSetAside={totalReserveSetAside()}
+            inProgress={overviewIsInProgress}
           />
         );
       })()}

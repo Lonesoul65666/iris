@@ -209,6 +209,35 @@ export async function clearRecurringDecision(id: string): Promise<void> {
   await deleteCollectionKey('recurringDecisions', id)
 }
 
+// ─── Deploy confirmations (planned → confirmed) ──────────────────────────
+// The honesty layer for the Money Map: a lane amount (investing $1,000/mo,
+// later reserves) is a PLAN until the money actually moves. Scott confirms it
+// manually — Fidelity alerts him the transfer landed, he taps ✓ — so the lane
+// reads as REAL for that month instead of an inferred Settings guess. Keyed by
+// `${month}:${lane}` so each month is confirmed independently. Feed-detect or a
+// live ticker may validate this automatically later (parked, undecided).
+
+export interface DeployConfirmation {
+  month: string // 'YYYY-MM'
+  lane: string  // 'investing' (extensible: 'reserves', a stash id, …)
+  amount: number
+  confirmedAt: string
+}
+
+const deployKey = (c: DeployConfirmation) => `${c.month}:${c.lane}`
+
+export async function getDeployConfirmations(): Promise<DeployConfirmation[]> {
+  return listCollection<DeployConfirmation>('deployConfirmations')
+}
+
+export async function saveDeployConfirmation(c: DeployConfirmation): Promise<void> {
+  await saveCollectionItem('deployConfirmations', c as unknown as Record<string, unknown>, (r) => deployKey(r as unknown as DeployConfirmation))
+}
+
+export async function clearDeployConfirmation(month: string, lane: string): Promise<void> {
+  await deleteCollectionKey('deployConfirmations', `${month}:${lane}`)
+}
+
 // ─── Income sources ──────────────────────────────────────────────────────
 
 export async function getIncomeSources(): Promise<IncomeSource[]> {
