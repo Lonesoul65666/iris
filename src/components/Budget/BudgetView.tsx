@@ -411,9 +411,15 @@ export default function BudgetView() {
     ...fullMonths.map(m => m.month),
     curMonthKey,
   ])].sort();
-  const resolvedOverviewMonth = overviewMonth === 'latest' && availMonths.length > 0
-    ? availMonths[availMonths.length - 1]
-    : overviewMonth;
+  // "Latest" lands on the most recent month with ACTIVITY — not the blank new
+  // month. So on the 1st you open to last month's real numbers, and the view
+  // auto-advances to the new month the instant its first transaction lands
+  // (Scott's "don't roll over until it sees a transaction"). The current month
+  // stays in availMonths, so the → arrow can always reach the blank new month
+  // like a calendar page that exists but isn't your default view yet.
+  const monthsWithData = monthlyData.map(m => m.month).sort();
+  const latestWithData = monthsWithData.length > 0 ? monthsWithData[monthsWithData.length - 1] : curMonthKey;
+  const resolvedOverviewMonth = overviewMonth === 'latest' ? latestWithData : overviewMonth;
   const overviewIsInProgress = resolvedOverviewMonth === curMonthKey;
 
   // Per-month buckets for overview. COMPLETE months are judged against the
