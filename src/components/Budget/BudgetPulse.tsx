@@ -11,6 +11,12 @@ interface Props {
   onCategoryClick?: (category: string) => void;
   /** Net take-home — enables the "on pace for $X vs watermark" projection. */
   watermark?: number;
+  /** The month is closed (viewing a past month). Freezes the read: no pace
+   *  ticks, projections, or "trending to" — just the final over/under verdicts.
+   *  This is what lets the Pulse persist across every month for continuity. */
+  complete?: boolean;
+  /** Month label ("June 2026") — shown instead of "Day N / M" when complete. */
+  monthLabel?: string;
 }
 
 type Status = 'over' | 'pacing' | 'ontrack' | 'untouched' | 'nobudget';
@@ -26,7 +32,7 @@ const STATUS_META: Record<Status, { label: string; pillCls: string; activePillCl
 const STATUS_ORDER: Record<Status, number> = { over: 0, pacing: 1, ontrack: 2, untouched: 3, nobudget: 4 };
 const ALL_STATUSES: Status[] = ['over', 'pacing', 'ontrack', 'untouched', 'nobudget'];
 
-function classify(b: BudgetBucket, monthFraction: number): Status {
+function classify(b: BudgetBucket, monthFraction: number, complete: boolean): Status {
   if (b.monthlyBudget <= 0) return 'nobudget';
   if (b.monthlyActual <= 0) return 'untouched';
   // FIXED-lane bills land once at (about) their full amount — daily-pace logic
@@ -40,6 +46,9 @@ function classify(b: BudgetBucket, monthFraction: number): Status {
   // their full amount and won't overshoot). PACING is only meaningful when
   // there's still headroom to overshoot.
   if (b.monthlyActual >= b.monthlyBudget) return 'ontrack';
+  // A CLOSED month has no "pacing" — it either busted its cap or it didn't.
+  // Under budget at month-end is simply ON TRACK (the final verdict).
+  if (complete) return 'ontrack';
   // PACING fires on EITHER condition: spending faster than calendar pace, OR
   // already burned through enough of the cap that the bucket needs attention.
   const expected = monthFraction * b.monthlyBudget;
@@ -49,17 +58,19 @@ function classify(b: BudgetBucket, monthFraction: number): Status {
   return 'ontrack';
 }
 
-export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick, watermark }: Props) {
+export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick, watermark, complete = false, monthLabel }: Props) {
   const dayOfMonth = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const monthFraction = dayOfMonth / daysInMonth;
+  // A closed month is fully elapsed — fraction 1 so pace logic reads as final.
+  const monthFraction = complete ? 1 : dayOfMonth / daysInMonth;
 
   // Month-end projection — the "how am I TRENDING" number. Fixed bills count
   // once at max(budget, actual) — housing paid on the 1st must not project
   // ×2.7. Flexible spend projects linearly at the current daily pace. Reserve
-  // lanes are excluded (lumpy by design, funded by set-asides).
+  // lanes are excluded (lumpy by design, funded by set-asides). Suppressed for
+  // closed months — there's nothing left to trend.
   const projection = useMemo(() => {
-    if (!watermark || watermark <= 0 || monthFraction >= 1) return null;
+    if (complete || !watermark || watermark <= 0 || monthFraction >= 1) return null;
     let fixed = 0;
     let flexActual = 0;
     for (const b of buckets) {
@@ -76,13 +87,13 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
 
   const allRows = useMemo(() => {
     return buckets
-      .map(b => ({ b, status: classify(b, monthFraction) }))
+      .map(b => ({ b, status: classify(b, monthFraction, complete) }))
       .sort((x, y) => {
         const s = STATUS_ORDER[x.status] - STATUS_ORDER[y.status];
         if (s !== 0) return s;
         return y.b.monthlyActual - x.b.monthlyActual;
       });
-  }, [buckets, monthFraction]);
+  }, [buckets, monthFraction, complete]);
 
   const counts = useMemo(() => {
     const c: Record<Status, number> = { over: 0, pacing: 0, ontrack: 0, untouched: 0, nobudget: 0 };
@@ -122,10 +133,10 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
       <div className="flex items-start justify-between mb-3">
         <div>
           <div className="term-label">Budget Pulse</div>
-          <h2 className="text-lg font-semibold text-text-primary mt-0.5">How the month is going</h2>
+          <h2 className="text-lg font-semibold text-text-primary mt-0.5">{complete ? 'How the month went' : 'How the month is going'}</h2>
         </div>
         <div className="text-right">
-          <div className="term-label">Day {dayOfMonth} / {daysInMonth}</div>
+          <div className="term-label">{complete ? (monthLabel ?? 'Final') : `Day ${dayOfMonth} / ${daysInMonth}`}</div>
           <div className="mono-num text-sm text-text-secondary mt-0.5">
             {formatCurrency(totalActual)} <span className="text-text-muted">/ {formatCurrency(totalBudget)}</span>
           </div>
@@ -182,7 +193,7 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
           // Where this category LANDS at the current daily pace — flexible
           // lanes only (fixed bills land once; reserves are lumpy by design).
           // Suppressed in the first ~3 days (one coffee would project wildly).
-          const trendTo = laneOf(b.category) === 'flexible' && b.monthlyActual > 0 && b.monthlyBudget > 0
+          const trendTo = !complete && laneOf(b.category) === 'flexible' && b.monthlyActual > 0 && b.monthlyBudget > 0
             && monthFraction >= 0.1 && monthFraction < 0.97
             ? b.monthlyActual / monthFraction
             : null;
@@ -206,7 +217,7 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
                 {trendTo !== null ? `→ ${formatCurrency(trendTo)}` : ''}
               </span>
               <div className="flex-1 bg-white/5 rounded-full h-2 relative overflow-hidden min-w-[60px]">
-                {b.monthlyBudget > 0 && (
+                {!complete && b.monthlyBudget > 0 && (
                   <div
                     className="absolute top-0 bottom-0 w-px bg-white/40 z-10"
                     style={{ left: `${expectedPct}%` }}
@@ -242,11 +253,17 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
         </div>
       )}
 
-      {/* Legend */}
+      {/* Legend — pace/trend cues are meaningless for a closed month. */}
       <div className="mt-3 flex items-center gap-3 text-[10px] text-text-muted">
-        <span className="flex items-center gap-1"><span className="w-px h-2.5 bg-white/40 inline-block" /> calendar pace tick</span>
-        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warning" /> over pace OR ≥85% of cap</span>
-        <span className="flex items-center gap-1"><span className="mono-num">→</span> where it lands at today's pace (flexible spending)</span>
+        {complete ? (
+          <span>Final for {monthLabel ?? 'the month'} — locked to the targets that were set then.</span>
+        ) : (
+          <>
+            <span className="flex items-center gap-1"><span className="w-px h-2.5 bg-white/40 inline-block" /> calendar pace tick</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warning" /> over pace OR ≥85% of cap</span>
+            <span className="flex items-center gap-1"><span className="mono-num">→</span> where it lands at today's pace (flexible spending)</span>
+          </>
+        )}
       </div>
     </div>
   );
