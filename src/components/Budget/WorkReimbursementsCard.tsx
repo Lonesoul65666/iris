@@ -18,10 +18,7 @@ function isWorkExpense(e: Expense): boolean {
 
 /**
  * Build the canonical "this expense ID is a reimbursement inflow" set from
- * IncomeSources. The IncomeSource layer is the user-facing source of truth
- * for income classification — the auto-classifier on the expense itself
- * frequently falls back to `transactionType: 'income'` and misses reimburse-
- * ments.
+ * IncomeSources — the user-facing source of truth for income classification.
  */
 function buildReimbursementIds(sources: IncomeSource[]): Set<string> {
   const ids = new Set<string>();
@@ -41,11 +38,13 @@ function isReimbursementInflow(e: Expense, reimbIds: Set<string>): boolean {
   );
 }
 
-interface WindowStats {
-  label: string;
-  spent: number;
-  reimbursed: number;
-  net: number;
+function ymOf(dateStr: string): string {
+  const d = parseLocalDate(dateStr);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function ymLabel(ym: string): string {
+  const [y, m] = ym.split('-');
+  return new Date(parseInt(y), parseInt(m) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 }
 
 export default function WorkReimbursementsCard({ expenses, now = new Date(), onViewTransactions }: Props) {
@@ -61,76 +60,83 @@ export default function WorkReimbursementsCard({ expenses, now = new Date(), onV
       isWorkExpense(e),
     );
     const allReimb = expenses.filter(e => isReimbursementInflow(e, reimbIds));
-
     if (allWork.length === 0 && allReimb.length === 0) return null;
 
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const ninetyAgo = new Date(now.getTime() - 90 * 86_400_000);
-    const yearStart = new Date(now.getFullYear(), 0, 1);
-
-    const sumFrom = (arr: Expense[], from: Date) =>
-      arr.filter(e => parseLocalDate(e.date) >= from).reduce((s, e) => s + e.amount, 0);
-
-    const mkWindow = (label: string, from: Date): WindowStats => {
-      const spent = sumFrom(allWork, from);
-      const reimbursed = sumFrom(allReimb, from);
-      return { label, spent, reimbursed, net: spent - reimbursed };
+    // Month-by-month IN / OUT ledger — the "am I floating work money?" view.
+    const byMonth = new Map<string, { spent: number; reimbursed: number }>();
+    const bump = (ym: string, k: 'spent' | 'reimbursed', amt: number) => {
+      const m = byMonth.get(ym) ?? { spent: 0, reimbursed: 0 };
+      m[k] += amt; byMonth.set(ym, m);
     };
+    for (const e of allWork) bump(ymOf(e.date), 'spent', e.amount);
+    for (const e of allReimb) bump(ymOf(e.date), 'reimbursed', e.amount);
 
-    return {
-      thisMonth: mkWindow('This month', monthStart),
-      last90: mkWindow('Last 90 days', ninetyAgo),
-      ytd: mkWindow('Year to date', yearStart),
-      hasAnyData: allWork.length > 0 || allReimb.length > 0,
-    };
+    const months = [...byMonth.entries()]
+      .map(([ym, v]) => ({ ym, ...v, net: v.spent - v.reimbursed }))
+      .sort((a, b) => b.ym.localeCompare(a.ym)); // most recent first
+
+    const lifetimeSpent = allWork.reduce((s, e) => s + e.amount, 0);
+    const lifetimeReimb = allReimb.reduce((s, e) => s + e.amount, 0);
+    const floating = lifetimeSpent - lifetimeReimb; // + = work still owes you
+
+    return { months, lifetimeSpent, lifetimeReimb, floating };
   }, [expenses, now, reimbIds]);
 
-  if (!stats?.hasAnyData) return null;
-
-  const ytdBalanced = Math.abs(stats.ytd.net) < 50;
+  if (!stats) return null;
+  const { months, lifetimeSpent, lifetimeReimb, floating } = stats;
+  const floatingTone = floating > 100 ? 'text-warning' : floating < -100 ? 'text-positive' : 'text-text-muted';
 
   return (
     <div className="glass-card p-6">
-      <div className="flex items-start justify-between mb-3 gap-4">
+      <div className="flex items-start justify-between mb-4 gap-4">
         <div>
-          <div className="term-label">Work Expenses & Reimbursements</div>
-          <h2 className="text-lg font-semibold text-text-primary mt-0.5">
-            {ytdBalanced ? '✓ Reimbursements roughly balanced' : 'Work spend vs reimbursements'}
-          </h2>
+          <div className="term-label">Work — money in / out</div>
+          <h2 className="text-lg font-semibold text-text-primary mt-0.5">The work float</h2>
           <p className="text-xs text-text-muted mt-1">
-            Totals only. Coupa or your equivalent handles the line items — Iris just shows whether the cash in roughly matches the cash out.
+            Real money out until it comes back. Kept out of your base budget — tracked here so nothing hides.
           </p>
         </div>
         {onViewTransactions && (
-          <button
-            type="button"
-            onClick={onViewTransactions}
-            className="text-[11px] text-accent hover:text-accent-light whitespace-nowrap flex-shrink-0 mt-1 underline underline-offset-2"
-          >
+          <button type="button" onClick={onViewTransactions}
+            className="text-[11px] text-accent hover:text-accent-light whitespace-nowrap flex-shrink-0 mt-1 underline underline-offset-2">
             See transactions →
           </button>
         )}
       </div>
 
-      {/* Three windows */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {[stats.thisMonth, stats.last90, stats.ytd].map((w, i) => (
-          <div key={i} className="p-3 rounded-lg bg-white/[0.03] border border-glass-border">
-            <div className="text-text-muted text-[10px] uppercase tracking-wider">{w.label}</div>
-            <div className="flex items-baseline justify-between mt-1">
-              <span className="text-sm font-bold text-text-primary mono-num">{formatCurrency(w.spent)}</span>
-              <span className="text-[10px] text-text-muted">spent</span>
-            </div>
-            <div className="flex items-baseline justify-between">
-              <span className="text-sm font-bold text-positive mono-num">{formatCurrency(w.reimbursed)}</span>
-              <span className="text-[10px] text-text-muted">reimbursed</span>
-            </div>
-            <div className="flex items-baseline justify-between mt-1 pt-1 border-t border-glass-border/50">
-              <span className={`text-sm font-bold mono-num ${w.net > 50 ? 'text-warning' : w.net < -50 ? 'text-positive' : 'text-text-muted'}`}>
-                {w.net >= 0 ? '+' : ''}{formatCurrency(w.net)}
-              </span>
-              <span className="text-[10px] text-text-muted">{w.net > 0 ? 'pending' : w.net < 0 ? 'ahead' : 'even'}</span>
-            </div>
+      {/* Floating hero — what work still owes you (or you're ahead on) */}
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-4 p-4 rounded-xl bg-white/[0.03] border border-glass-border">
+        <div>
+          <div className="term-label">{floating >= 0 ? 'Currently floating' : 'Reimbursed ahead'}</div>
+          <div className={`text-3xl font-black mono-num mt-0.5 ${floatingTone}`}>
+            {floating < 0 ? '−' : ''}{formatCurrency(Math.abs(floating))}
+          </div>
+          <div className="text-[11px] text-text-muted mt-0.5">
+            {floating >= 0 ? 'work spend still awaiting payback' : 'reimbursements are ahead of spend'}
+          </div>
+        </div>
+        <div className="text-right text-xs text-text-muted space-y-0.5">
+          <div><span className="mono-num text-text-secondary">{formatCurrency(lifetimeSpent)}</span> out, all-time</div>
+          <div><span className="mono-num text-positive">{formatCurrency(lifetimeReimb)}</span> paid back</div>
+        </div>
+      </div>
+
+      {/* Month-by-month IN / OUT — the ratio over time (June-forward is the real record) */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-3 px-1 pb-1 text-[10px] uppercase tracking-wider text-text-muted">
+          <span className="w-14">Month</span>
+          <span className="flex-1 text-right">Out</span>
+          <span className="flex-1 text-right">Back</span>
+          <span className="w-24 text-right">Net</span>
+        </div>
+        {months.map(m => (
+          <div key={m.ym} className="flex items-center gap-3 px-1 py-1.5 rounded hover:bg-white/[0.02]">
+            <span className="w-14 text-xs font-mono text-text-secondary">{ymLabel(m.ym)}</span>
+            <span className="flex-1 text-right mono-num text-xs text-text-primary">{m.spent > 0 ? formatCurrency(m.spent) : '—'}</span>
+            <span className="flex-1 text-right mono-num text-xs text-positive">{m.reimbursed > 0 ? formatCurrency(m.reimbursed) : '—'}</span>
+            <span className={`w-24 text-right mono-num text-xs font-semibold ${m.net > 50 ? 'text-warning' : m.net < -50 ? 'text-positive' : 'text-text-muted'}`}>
+              {m.net >= 0 ? '+' : '−'}{formatCurrency(Math.abs(m.net))}
+            </span>
           </div>
         ))}
       </div>
