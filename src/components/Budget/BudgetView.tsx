@@ -465,7 +465,15 @@ export default function BudgetView() {
   // month's housing (overviewBuckets) — not the blended average (audit fix).
   const housingRatio = paycheck.netTakeHome > 0 ? (overviewBuckets.find(b => b.category === 'housing')?.monthlyActual || 0) / paycheck.netTakeHome * 100 : 0;
   const housingScore = housingRatio <= 30 ? 90 : housingRatio <= 40 ? 65 : 30;
-  const surplusScore = summary.surplus > 1000 ? 90 : summary.surplus > 0 ? 60 : 20;
+  // ONE month over/under, matching the Money Map's whole-$15,800 view: base −
+  // everyday spent − investing − reserve set-aside. summary.surplus excludes the
+  // reserve set-aside (reserves are lumpy), so subtracting it here reconciles the
+  // Cash Flow score + the Saved/On-Pace tile to the Money Map — the page tells
+  // ONE story instead of "over $1,504" (map) vs "+$496" (cash flow). Set-asides
+  // ARE a job for the money; being over means everyday ran hot.
+  const reserveSetAside = totalReserveSetAside();
+  const monthSurplus = summary.surplus - reserveSetAside;
+  const surplusScore = monthSurplus > 1000 ? 90 : monthSurplus > 0 ? 60 : 20;
   const overallBudgetScore = Math.round((savingsScore + overageScore + housingScore + surplusScore) / 4);
 
   // (Paycheck Waterfall removed per Scott 2026-06-11 — the Income Sources panel
@@ -1080,12 +1088,14 @@ export default function BudgetView() {
         {/* On Pace to Save / Saved — placed BEFORE Savings Rate (Scott: this is the
             more useful day-to-day number). Carries a month-over-month comparison. */}
         {(() => {
-          const saved = summary.netIncome - totalBucketSpend;
-          // Prior complete month's result vs the same watermark — month-over-month.
+          // Reconciled to the Money Map (whole $15,800): base − everyday − investing
+          // − reserve set-aside. Same number the Money Map shows, so the page agrees.
+          const saved = monthSurplus;
+          // Prior complete month, same formula (everyday + investing + set-aside).
           const compMonths = fullMonths.filter(m =>
             (resolvedOverviewMonth === 'latest' || resolvedOverviewMonth === 'avg') ? true : m.month < resolvedOverviewMonth);
           const prior = compMonths[compMonths.length - 1];
-          const savedPrior = prior ? Math.round(summary.netIncome - prior.totalOperating) : null;
+          const savedPrior = prior ? Math.round(summary.netIncome - prior.totalOperating - investingAmt - reserveSetAside) : null;
           const compLine = (current: number) => (prior && savedPrior !== null) ? (
             <div className="text-[11px] mt-1">
               <span className="text-text-muted">{prior.monthLabel}: </span>
@@ -1114,7 +1124,7 @@ export default function BudgetView() {
               );
             }
             const frac = Math.min(1, Math.max(0.0001, dayOfMonth / daysInMonth));
-            const projectedSaved = Math.round(summary.netIncome - totalBucketSpend / frac);
+            const projectedSaved = Math.round(summary.netIncome - totalBucketSpend / frac - reserveSetAside);
             return (
               <div className="glass-card p-4">
                 <div className="term-label">{projectedSaved >= 0 ? 'On Pace to Save' : 'On Pace to Overspend'}</div>
@@ -1126,16 +1136,16 @@ export default function BudgetView() {
               </div>
             );
           }
-          const label = saved < 0 ? 'Over Watermark' : 'Saved This Month';
+          const label = saved < 0 ? 'Over Base' : 'Came in Under';
           return (
             <div className="glass-card p-4">
               <div className="term-label">{label}</div>
               <div className={`text-3xl font-black mt-1 mono-num ${saved >= 0 ? 'text-positive' : 'text-negative'}`}>
-                {saved >= 0 ? '+' : ''}{formatCurrency(saved)}
+                {saved >= 0 ? '+' : '−'}{formatCurrency(Math.abs(saved))}
               </div>
               <div className="text-text-secondary text-xs mt-0.5">
-                {saved < 0 ? 'Spending above take-home this month'
-                  : 'Under your watermark — funds reserves + savings'}
+                {saved < 0 ? 'Everyday ran hot — over your $15,800 after set-asides'
+                  : 'Under your $15,800 after everything — the win to deploy'}
               </div>
               {compLine(saved)}
             </div>
@@ -1209,9 +1219,9 @@ export default function BudgetView() {
                   },
                   {
                     name: 'Cash Flow', score: surplusScore,
-                    msg: summary.surplus >= 0 ? `+${formatCurrency(summary.surplus)}` : formatCurrency(summary.surplus),
-                    detail: `${formatCurrency(paycheck.netTakeHome)} take-home - ${formatCurrency(totalBucketSpend)} spent`,
-                    action: summary.surplus < 0 ? 'Spending exceeds income this month' : summary.surplus > 1000 ? 'Healthy buffer — deploy to savings' : 'Tight but positive',
+                    msg: monthSurplus >= 0 ? `+${formatCurrency(monthSurplus)}` : formatCurrency(monthSurplus),
+                    detail: `${formatCurrency(paycheck.netTakeHome)} base − ${formatCurrency(totalBucketSpend)} spent − ${formatCurrency(reserveSetAside)} set aside`,
+                    action: monthSurplus < 0 ? 'Everyday ran hot — over base after set-asides' : monthSurplus > 1000 ? 'Healthy buffer — deploy to savings' : 'Tight but positive',
                   },
                 ];
                 // Good news up top, the drag at the bottom — explains why the score is what it is.
