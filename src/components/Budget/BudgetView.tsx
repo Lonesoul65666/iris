@@ -461,8 +461,10 @@ export default function BudgetView() {
   // Budget health score
   const savingsScore = summary.savingsRate >= 20 ? 90 : summary.savingsRate >= 15 ? 70 : summary.savingsRate >= 10 ? 50 : 25;
   const overageScore = totalOverage === 0 ? 95 : totalOverage < 500 ? 65 : totalOverage < 1000 ? 40 : 20;
-  const housingRatio = paycheck.grossMonthly > 0 ? (buckets.find(b => b.category === 'housing')?.monthlyActual || 0) / paycheck.grossMonthly * 100 : 0;
-  const housingScore = housingRatio <= 28 ? 90 : housingRatio <= 33 ? 65 : 30;
+  // Housing ratio off NET take-home (the $15,800 frame), and off the SELECTED
+  // month's housing (overviewBuckets) — not the blended average (audit fix).
+  const housingRatio = paycheck.netTakeHome > 0 ? (overviewBuckets.find(b => b.category === 'housing')?.monthlyActual || 0) / paycheck.netTakeHome * 100 : 0;
+  const housingScore = housingRatio <= 30 ? 90 : housingRatio <= 40 ? 65 : 30;
   const surplusScore = summary.surplus > 1000 ? 90 : summary.surplus > 0 ? 60 : 20;
   const overallBudgetScore = Math.round((savingsScore + overageScore + housingScore + surplusScore) / 4);
 
@@ -478,7 +480,7 @@ export default function BudgetView() {
   const essentialSpend = operatingBuckets.filter(b => essentialCats.includes(b.category)).reduce((s, b) => s + b.monthlyActual, 0);
   const discretionarySpend = operatingBuckets.filter(b => !essentialCats.includes(b.category) && b.monthlyActual > 0).reduce((s, b) => s + b.monthlyActual, 0);
   const investingAmt = overviewBuckets.find(b => b.category === 'investing')?.monthlyActual || 0;
-  // Intentional savings rate: (investing + 401k + HSA) / gross (one shared definition)
+  // Intentional savings rate: (investing + 401k + HSA) / net take-home (one shared definition)
   const intentionalSavingsRate = computeSavingsRate({
     grossMonthly: paycheck.grossMonthly,
     netTakeHome: paycheck.netTakeHome,
@@ -1147,9 +1149,9 @@ export default function BudgetView() {
           <div className="text-text-secondary text-xs mt-0.5">
             {formatCurrency(investingAmt)} investing + {formatCurrency(paycheck.retirement401k)} 401k + {formatCurrency(paycheck.hsaContribution)} HSA
           </div>
-          {intentionalSavingsRate < 20 && paycheck.grossMonthly > 0 && (
+          {intentionalSavingsRate < 20 && paycheck.netTakeHome > 0 && (
             <div className="text-text-muted text-[11px] mt-1">
-              Green at 20% — ~{formatCurrency(Math.max(0, 0.20 * paycheck.grossMonthly - (investingAmt + paycheck.retirement401k + paycheck.hsaContribution)))}/mo more
+              Green at 20% of take-home — ~{formatCurrency(Math.max(0, 0.20 * paycheck.netTakeHome - (investingAmt + paycheck.retirement401k + paycheck.hsaContribution)))}/mo more
               <span className="text-text-muted/60"> (fixed savings; variable sweep not counted)</span>
             </div>
           )}
@@ -1202,8 +1204,8 @@ export default function BudgetView() {
                   {
                     name: 'Housing Ratio', score: housingScore,
                     msg: `${housingRatio.toFixed(1)}%`,
-                    detail: `${formatCurrency(buckets.find(b => b.category === 'housing')?.monthlyActual || 0)}/mo housing on ${formatCurrency(paycheck.grossMonthly)} gross`,
-                    action: housingRatio <= 28 ? 'Under 28% guideline' : housingRatio <= 33 ? 'Slightly high but manageable in TX' : 'Above 33% — stretching',
+                    detail: `${formatCurrency(overviewBuckets.find(b => b.category === 'housing')?.monthlyActual || 0)}/mo housing on ${formatCurrency(paycheck.netTakeHome)} take-home`,
+                    action: housingRatio <= 30 ? 'Under 30% of take-home — healthy' : housingRatio <= 40 ? 'A bit high on take-home' : 'Above 40% of take-home — stretching',
                   },
                   {
                     name: 'Cash Flow', score: surplusScore,
