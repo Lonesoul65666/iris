@@ -1304,21 +1304,28 @@ export default function BudgetView() {
         </div>
       )}
 
-      {/* Budget Pulse — the LIVE read: how the month is going + where it's
-          trending. Pace ticks and projections only make sense for the month
-          you're living in, so it renders only when viewing the in-progress
-          month (a budget runs DURING the month — Scott). */}
-      {overviewIsInProgress && filteredBuckets.filter(b => (b.monthlyActual > 0 || b.monthlyBudget > 0) && laneOf(b.category) !== 'reserve').length > 0 && (
-        <BudgetPulse
-          // Operating lanes only — reserve (taxes/travel) is lumpy with a $0 bucket
-          // budget, so counting its spend here made a tax/travel payment look like a
-          // budget bust (the opposite of the lane model). Now the Pulse "spent /
-          // budgeted" matches the Monthly Spend tile and the rest of the page.
-          buckets={filteredBuckets.filter(b => (b.monthlyActual > 0 || b.monthlyBudget > 0) && laneOf(b.category) !== 'reserve')}
-          watermark={paycheck.netTakeHome}
-          onCategoryClick={(cat) => setDrilldownCategory(cat)}
-        />
-      )}
+      {/* Budget Pulse — persists for EVERY month for continuity (Scott): "How
+          the month is going" live, "How the month went" (locked, no pace/trend)
+          for closed months, so you can page back and see how each month landed
+          against the targets in effect then — without leaving the overview. */}
+      {filteredBuckets.filter(b => (b.monthlyActual > 0 || b.monthlyBudget > 0) && laneOf(b.category) !== 'reserve').length > 0 && (() => {
+        const pulseMonthLabel = resolvedOverviewMonth === 'avg'
+          ? `${fullMonths.length}-mo average`
+          : (() => { const [y, mo] = resolvedOverviewMonth.split('-'); return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); })();
+        return (
+          <BudgetPulse
+            // Operating lanes only — reserve (taxes/travel) is lumpy with a $0 bucket
+            // budget, so counting its spend here made a tax/travel payment look like a
+            // budget bust (the opposite of the lane model). Now the Pulse "spent /
+            // budgeted" matches the Monthly Spend tile and the rest of the page.
+            buckets={filteredBuckets.filter(b => (b.monthlyActual > 0 || b.monthlyBudget > 0) && laneOf(b.category) !== 'reserve')}
+            watermark={paycheck.netTakeHome}
+            complete={!overviewIsInProgress}
+            monthLabel={pulseMonthLabel}
+            onCategoryClick={(cat) => setDrilldownCategory(cat)}
+          />
+        );
+      })()}
 
       {/* Stashes — daily-visible saving pots with DERIVED balances. Edits save
           directly and reconfigure the reserve lanes live. */}
