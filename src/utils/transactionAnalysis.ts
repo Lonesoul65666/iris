@@ -56,6 +56,18 @@ export interface MonthlySpending {
   transactionCount: number;
 }
 
+/** A zeroed month — used for the current calendar month before any transaction
+ *  lands (new-month rollover), so the overview shows a clean slate instead of
+ *  blended-average actuals that look like real spend. */
+export function emptyMonthlySpending(month: string): MonthlySpending {
+  return {
+    month, monthLabel: getMonthLabel(month), byCategory: {},
+    totalExpenses: 0, totalOperating: 0, totalReserve: 0, totalWork: 0,
+    totalIncome: 0, totalReimbursement: 0, totalTransfers: 0, totalInvestments: 0,
+    transactionCount: 0,
+  };
+}
+
 export interface CategoryTrend {
   category: ExpenseCategory;
   label: string;

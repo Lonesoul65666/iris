@@ -28,7 +28,7 @@ import { auditBudgetEdit, type BudgetDiff } from '../../stores/auditLogStore';
 import BucketGroupsManager from './BucketGroupsManager';
 import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, saveMerchantMapping } from '../../stores/actionStore';
-import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, isRealExpense, isCompleteMonth, currentMonthKey, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
+import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, isRealExpense, isCompleteMonth, currentMonthKey, emptyMonthlySpending, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
 import { formatCurrency } from '../../utils/format';
 import { laneOf, isOverBudget, RESERVE_ALLOCATIONS, FLEX_APPROACHING, totalReserveSetAside, type BudgetLane } from '../../utils/budgetLanes';
 import ScoreRing from '../ui/ScoreRing';
@@ -398,16 +398,23 @@ export default function BudgetView() {
   // opening the budget mid-month should show the month you're living in.
   // Completeness only governs the MATH (averages, verdicts, scorecard), never
   // visibility.
+  const curMonthKey = currentMonthKey();
   const fullMonths = monthlyData.filter(m => isCompleteMonth(m.month));
-  const overviewInProgress = monthlyData.find(m => m.month === currentMonthKey()) ?? null;
-  const availMonths = [
+  // The CURRENT calendar month is always selectable as the in-progress month —
+  // even before a single transaction lands. Without this, on the 1st of a new
+  // month you'd be stranded on last month with the → arrow dead until the first
+  // import (the "didn't roll over to July" bug). It shows a clean slate until
+  // spend arrives (see overviewBuckets → emptyMonthlySpending).
+  const overviewInProgress = monthlyData.find(m => m.month === curMonthKey)
+    ?? emptyMonthlySpending(curMonthKey);
+  const availMonths = [...new Set([
     ...fullMonths.map(m => m.month),
-    ...(overviewInProgress ? [overviewInProgress.month] : []),
-  ].sort();
+    curMonthKey,
+  ])].sort();
   const resolvedOverviewMonth = overviewMonth === 'latest' && availMonths.length > 0
     ? availMonths[availMonths.length - 1]
     : overviewMonth;
-  const overviewIsInProgress = overviewInProgress !== null && resolvedOverviewMonth === overviewInProgress.month;
+  const overviewIsInProgress = resolvedOverviewMonth === curMonthKey;
 
   // Per-month buckets for overview. COMPLETE months are judged against the
   // targets in effect back then (budget-target history) — changing a cap today
@@ -415,7 +422,11 @@ export default function BudgetView() {
   // use the live targets.
   const overviewBuckets = (() => {
     if (resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest' || availMonths.length === 0) return buckets;
-    const monthData = monthlyData.find(m => m.month === resolvedOverviewMonth);
+    // The current month with no transactions yet renders as a clean slate (zero
+    // actuals vs live targets) — NOT blended averages, which would look like the
+    // fresh month already had ~$14k of spend.
+    const monthData = monthlyData.find(m => m.month === resolvedOverviewMonth)
+      ?? (resolvedOverviewMonth === curMonthKey ? emptyMonthlySpending(curMonthKey) : undefined);
     if (!monthData) return buckets;
     const histTargets = overviewIsInProgress ? null : targetsForMonth(targetHistory, resolvedOverviewMonth);
     return applyMonthToBuckets(buckets, monthData, histTargets);
@@ -1080,7 +1091,21 @@ export default function BudgetView() {
             // by extrapolating month-to-date operating spend to month-end.
             const now = new Date();
             const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-            const frac = Math.min(1, Math.max(0.0001, now.getDate() / daysInMonth));
+            const dayOfMonth = now.getDate();
+            // Linear extrapolation is unstable in the first week: dividing by a
+            // tiny elapsed-fraction turns one fixed charge (e.g. the $1,000
+            // investing drip on the 1st) into a fake "on pace to overspend $15k".
+            // Hold the projection until there's enough month to trend against.
+            if (dayOfMonth < 7) {
+              return (
+                <div className="glass-card p-4">
+                  <div className="term-label">Month-End Projection</div>
+                  <div className="text-3xl font-black mt-1 mono-num text-text-secondary">—</div>
+                  <div className="text-text-secondary text-xs mt-0.5">Day {dayOfMonth} of {daysInMonth} — too early to call; the pace firms up after the first week</div>
+                </div>
+              );
+            }
+            const frac = Math.min(1, Math.max(0.0001, dayOfMonth / daysInMonth));
             const projectedSaved = Math.round(summary.netIncome - totalBucketSpend / frac);
             return (
               <div className="glass-card p-4">
