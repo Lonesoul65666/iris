@@ -426,7 +426,7 @@ export default function BudgetView() {
   // targets in effect back then (budget-target history) — changing a cap today
   // must not rewrite last month's verdicts. The in-progress month and 'avg'
   // use the live targets.
-  const overviewBuckets = (() => {
+  const overviewBucketsRaw = (() => {
     if (resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest' || availMonths.length === 0) return buckets;
     // The current month with no transactions yet renders as a clean slate (zero
     // actuals vs live targets) — NOT blended averages, which would look like the
@@ -437,6 +437,25 @@ export default function BudgetView() {
     const histTargets = overviewIsInProgress ? null : targetsForMonth(targetHistory, resolvedOverviewMonth);
     return applyMonthToBuckets(buckets, monthData, histTargets);
   })();
+
+  // ── Investing HONESTY (Scott: "don't pull it until it's real") ──────────
+  // The investing lane counts ONLY when the money actually moved: the feed saw a
+  // brokerage transfer this month (transactionType='investment' → monthlyData
+  // .totalInvestments) OR Scott checked it off (deployConfirmations). Otherwise
+  // $0 — planned, not done. Replaces the force-written "$1,000 done" that showed
+  // before the auto-draft ever hit the account. Feed beats manual (real amount).
+  const investMonth = resolvedOverviewMonth === 'avg' ? null : resolvedOverviewMonth;
+  const feedInvesting = investMonth ? Math.round(monthlyData.find(m => m.month === investMonth)?.totalInvestments ?? 0) : 0;
+  const investingPlanned = overviewBucketsRaw.find(b => b.category === 'investing')?.monthlyBudget ?? 0;
+  const investingConfirmedManual = investMonth !== null && deployConfirms.some(c => c.month === investMonth && c.lane === 'investing');
+  // 'avg' is a historical blend → treat investing as its planned amount.
+  const investingActual = investMonth === null
+    ? investingPlanned
+    : (feedInvesting > 0 ? feedInvesting : (investingConfirmedManual ? investingPlanned : 0));
+  const investingStatus: 'feed' | 'confirmed' | 'planned' =
+    feedInvesting > 0 ? 'feed' : (investingConfirmedManual ? 'confirmed' : 'planned');
+  const overviewBuckets = overviewBucketsRaw.map(b =>
+    b.category === 'investing' ? { ...b, monthlyActual: investingActual } : b);
 
   const summary = calculateBudgetSummary(overviewBuckets, paycheck);
   // Work expenses always excluded from the bucket views — they net out via
@@ -1049,19 +1068,18 @@ export default function BudgetView() {
       {paycheck.netTakeHome > 0 && (() => {
         const everydayBudget = operatingBuckets.filter(b => b.category !== 'investing').reduce((s, b) => s + b.monthlyBudget, 0);
         const everydaySpent = operatingBuckets.filter(b => b.category !== 'investing').reduce((s, b) => s + b.monthlyActual, 0);
-        // Confirm state is per-month; 'avg' has no single month to confirm, so
-        // treat it as confirmed (it's a historical blend, not a live deposit).
+        // 'avg' is a historical blend, not a live deposit → no per-month confirm.
         const confirmMonth = resolvedOverviewMonth === 'avg' ? '' : resolvedOverviewMonth;
-        const investingConfirmed = resolvedOverviewMonth === 'avg'
-          || deployConfirms.some(c => c.month === confirmMonth && c.lane === 'investing');
         return (
           <MoneyMap
             income={paycheck.netTakeHome}
             everydayBudget={everydayBudget}
             everydaySpent={everydaySpent}
             investing={investingAmt}
-            investingConfirmed={investingConfirmed}
-            onToggleInvesting={confirmMonth ? () => toggleInvestConfirm(confirmMonth, investingAmt) : undefined}
+            investingPlanned={investingPlanned}
+            investingStatus={investingStatus}
+            // Feed-validated deposits can't be un-confirmed; only manual planned/confirmed toggle.
+            onToggleInvesting={confirmMonth && investingStatus !== 'feed' ? () => toggleInvestConfirm(confirmMonth, investingPlanned) : undefined}
             reserveSetAside={totalReserveSetAside()}
             inProgress={overviewIsInProgress}
           />
