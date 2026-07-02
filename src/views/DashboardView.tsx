@@ -12,7 +12,7 @@ import SavingsScorecard from '../components/Dashboard/SavingsScorecard';
 import SyncStatus from '../components/Dashboard/SyncStatus';
 import GoalTracker from '../components/Dashboard/GoalTracker';
 import { computeAllStashes } from '../utils/stashMath';
-import { laneOf, isOverBudget } from '../utils/budgetLanes';
+import { laneOf, isOverBudget, totalReserveSetAside } from '../utils/budgetLanes';
 import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -406,12 +406,21 @@ export default function DashboardView() {
         const frac = Math.min(1, Math.max(0.0001, today.getDate() / daysInMonth));
         const proratedIncome = Math.round(budgetSummary.netIncome * frac);
         const proratedInvesting = Math.round(budgetSummary.investing * frac);
-        const mtdSurplus = proratedIncome - mtdSpent - proratedInvesting;
+        // Reserve set-aside is a job for the $15,800 (taxes/trips), same as on the
+        // Budget page's Money Map — subtract it here too so the two pages agree
+        // instead of the Dashboard reading "surplus" while Budget reads "over".
+        const reserveSetAside = totalReserveSetAside();
+        const proratedReserve = Math.round(reserveSetAside * frac);
+        const mtdSurplus = proratedIncome - mtdSpent - proratedInvesting - proratedReserve;
         const projectedSpend = Math.round(mtdSpent / frac);
-        const projectedSurplus = Math.round(budgetSummary.netIncome - projectedSpend - budgetSummary.investing);
+        const projectedSurplus = Math.round(budgetSummary.netIncome - projectedSpend - budgetSummary.investing - reserveSetAside);
         // Pacing/outcome framing — NOT "spendable left" (that's Safe to Spend's job).
-        // This card answers "where's the month headed," not "what can I spend now."
-        const paceTxt = projectedSurplus >= 0
+        // First week: linear extrapolation of a near-empty month is noise (matches
+        // the Budget page's guard), so hold the projection until the pace firms up.
+        const dayOfMonth = today.getDate();
+        const paceTxt = dayOfMonth < 7
+          ? `day ${dayOfMonth} of ${daysInMonth} — too early to call`
+          : projectedSurplus >= 0
           ? `on pace to save ${formatCurrency(projectedSurplus)} by month-end`
           : `on pace to be ${formatCurrency(Math.abs(projectedSurplus))} over by month-end`;
         return (
@@ -421,12 +430,13 @@ export default function DashboardView() {
             icon="💸"
             cta="Open Budget →"
             onClick={() => setView('budget')}
-            tone={mtdSurplus >= 0 ? 'default' : 'warning'}
+            tone={dayOfMonth < 7 || mtdSurplus >= 0 ? 'default' : 'warning'}
           >
             <CashFlowBar
               income={proratedIncome}
               spent={mtdSpent}
               investing={proratedInvesting}
+              reserves={proratedReserve}
             />
           </DataCard>
         );
@@ -609,11 +619,15 @@ function DonutWithCenterLabel({
   );
 }
 
-function CashFlowBar({ income, spent, investing }: { income: number; spent: number; investing: number }) {
-  const total = Math.max(income, spent + investing, 1);
+function CashFlowBar({ income, spent, investing, reserves }: { income: number; spent: number; investing: number; reserves: number }) {
+  // Same partition as the Budget page's Money Map: income = spent + investing +
+  // reserves + surplus. Reserves (taxes/trips set-aside) is its own segment so a
+  // "surplus" here can't quietly ignore money that's already committed.
+  const total = Math.max(income, spent + investing + reserves, 1);
   const spentPct = (spent / total) * 100;
   const investingPct = (investing / total) * 100;
-  const surplus = income - spent - investing;
+  const reservesPct = (reserves / total) * 100;
+  const surplus = income - spent - investing - reserves;
   const surplusPct = surplus > 0 ? (surplus / total) * 100 : 0;
   const overage = surplus < 0 ? Math.abs(surplus) : 0;
 
@@ -628,17 +642,22 @@ function CashFlowBar({ income, spent, investing }: { income: number; spent: numb
           <div className="bg-gradient-to-r from-violet-500 to-indigo-500 transition-all border-l border-black/20"
             style={{ width: `${investingPct}%` }} title={`Investing: ${formatCurrency(investing)}`} />
         )}
+        {reservesPct > 0 && (
+          <div className="bg-gradient-to-r from-amber-500 to-yellow-400 transition-all border-l border-black/20"
+            style={{ width: `${reservesPct}%` }} title={`Reserves set aside: ${formatCurrency(reserves)}`} />
+        )}
         {surplusPct > 0 && (
           <div className="bg-gradient-to-r from-emerald-500 to-teal-500 transition-all border-l border-black/20"
             style={{ width: `${surplusPct}%` }} title={`Surplus: ${formatCurrency(surplus)}`} />
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mt-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
         <CashFlowSegment color="from-rose-500 to-pink-500" label="Spent" value={spent} />
         <CashFlowSegment color="from-violet-500 to-indigo-500" label="Investing" value={investing} />
+        <CashFlowSegment color="from-amber-500 to-yellow-400" label="Reserves" value={reserves} />
         {overage > 0
-          ? <CashFlowSegment color="bg-negative" label="Over income" value={overage} negative solid />
+          ? <CashFlowSegment color="bg-negative" label="Over base" value={overage} negative solid />
           : <CashFlowSegment color="from-emerald-500 to-teal-500" label="Surplus" value={surplus} positive />
         }
       </div>
