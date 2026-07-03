@@ -170,7 +170,7 @@ export default function DashboardView() {
   return (
     <div className="space-y-6 animate-fadeIn max-w-7xl pb-8">
       {/* ════ HERO ═══════════════════════════════════════════════════════ */}
-      <div className="glass-card cyber-grid cyber-corners cyber-scanlines relative overflow-hidden">
+      <div className="glass-card cyber-corners relative overflow-hidden">
         <div className={`absolute -top-20 -right-20 w-72 h-72 rounded-full bg-gradient-to-br ${flavor.tone} opacity-[0.08] blur-3xl pointer-events-none`} />
         <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-gradient-to-tr from-cyan-400/[0.06] to-transparent blur-3xl pointer-events-none" />
 

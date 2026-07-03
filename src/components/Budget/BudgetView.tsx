@@ -1089,7 +1089,7 @@ export default function BudgetView() {
       {/* Top Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Net Take Home is the watermark — shown first and emphasized */}
-        <div className="glass-card p-4 cyber-grid cyber-corners cyber-scanlines">
+        <div className="glass-card p-4 cyber-corners">
           <div className="term-label">Net Take Home</div>
           <div className="text-3xl font-black mt-1 text-text-primary mono-num">{formatCurrency(summary.netIncome)}</div>
           <div className="text-text-secondary text-xs mt-0.5">Your monthly watermark — stay under it</div>
