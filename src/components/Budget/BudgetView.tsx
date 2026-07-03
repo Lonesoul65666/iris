@@ -694,7 +694,7 @@ export default function BudgetView() {
 
           {/* Month Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="glass-card p-4 cyber-grid cyber-corners cyber-scanlines">
+            <div className="glass-card p-4">
               <div className="term-label">Income</div>
               <div className="text-3xl font-black text-positive mt-1 mono-num">{formatCurrency(totalIncome)}</div>
               {prior && <div className="text-xs text-text-muted mt-0.5">Prior: {formatCurrency(prior.totalIncome)}</div>}
@@ -1035,7 +1035,7 @@ export default function BudgetView() {
         const sts = computeSafeToSpend(expenses, buckets, paycheck.netTakeHome);
         const pct = sts.takeHome > 0 ? Math.max(0, Math.min(100, (sts.amount / sts.takeHome) * 100)) : 0;
         return (
-          <div className={`glass-card p-5 cyber-corners relative overflow-hidden ${sts.amount >= 0 ? '' : 'border-negative/40'}`}>
+          <div className={`glass-card p-5 relative overflow-hidden ${sts.amount >= 0 ? '' : 'border-negative/40'}`}>
             <div className="aurora-blob aurora-a" />
             <div className="aurora-blob aurora-b" />
             <div className="relative z-10">
@@ -1093,7 +1093,7 @@ export default function BudgetView() {
       {/* Top Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Net Take Home is the watermark — shown first and emphasized */}
-        <div className="glass-card p-4 cyber-corners">
+        <div className="glass-card p-4">
           <div className="term-label">Net Take Home</div>
           <div className="text-3xl font-black mt-1 text-text-primary mono-num">{formatCurrency(summary.netIncome)}</div>
           <div className="text-text-secondary text-xs mt-0.5">Your monthly watermark — stay under it</div>

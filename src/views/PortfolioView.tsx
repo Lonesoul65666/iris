@@ -276,7 +276,7 @@ export default function PortfolioView() {
       })()}
 
       {/* Hero Performance Chart */}
-      <div className="glass-card p-5 cyber-grid cyber-corners cyber-scanlines">
+      <div className="glass-card p-5">
         <PerformanceChart
           snapshots={netWorthSnapshots}
           currentTotal={totalLiquid}

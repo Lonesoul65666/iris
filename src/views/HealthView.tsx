@@ -140,7 +140,7 @@ export default function HealthView() {
       </div>
 
       {/* ── Gradient verdict banner ──────────────────────────────────── */}
-      <div className="glass-card p-6 relative overflow-hidden cyber-grid cyber-corners cyber-scanlines">
+      <div className="glass-card p-6 relative overflow-hidden">
         <div className={`absolute inset-0 bg-gradient-to-br ${GRADE_TINTS[grade]} pointer-events-none`} />
         <div className="relative grid grid-cols-1 lg:grid-cols-[auto_1fr_auto] gap-6 items-center">
           {/* Letter grade tile */}
