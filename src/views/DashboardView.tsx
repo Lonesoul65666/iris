@@ -171,8 +171,8 @@ export default function DashboardView() {
     <div className="space-y-6 animate-fadeIn max-w-7xl pb-8">
       {/* ════ HERO ═══════════════════════════════════════════════════════ */}
       <div className="glass-card cyber-corners relative overflow-hidden">
-        <div className={`absolute -top-20 -right-20 w-72 h-72 rounded-full bg-gradient-to-br ${flavor.tone} opacity-[0.08] blur-3xl pointer-events-none`} />
-        <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-gradient-to-tr from-cyan-400/[0.06] to-transparent blur-3xl pointer-events-none" />
+        <div className="aurora-blob aurora-a" />
+        <div className="aurora-blob aurora-b" />
 
         <div className="relative p-6 md:p-7">
           {/* HUD top strip — LIVE chip + greeting + timestamp */}
@@ -198,7 +198,7 @@ export default function DashboardView() {
               <div className="term-label">Net worth · all sources</div>
               <div className="flex items-baseline gap-3 mt-2">
                 <div className="text-5xl md:text-6xl font-black text-text-primary leading-none tracking-tight mono-num"
-                  style={{ textShadow: '0 0 12px rgba(0,229,255,0.25)' }}>
+                  style={{ textShadow: '0 0 16px rgba(139,109,255,0.35)' }}>
                   {formatCurrency(animatedNetWorth)}
                 </div>
                 {netWorthTrend.length >= 2 && (
