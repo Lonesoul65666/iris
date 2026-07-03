@@ -1035,7 +1035,10 @@ export default function BudgetView() {
         const sts = computeSafeToSpend(expenses, buckets, paycheck.netTakeHome);
         const pct = sts.takeHome > 0 ? Math.max(0, Math.min(100, (sts.amount / sts.takeHome) * 100)) : 0;
         return (
-          <div className={`glass-card p-5 cyber-grid cyber-corners ${sts.amount >= 0 ? '' : 'border-negative/40'}`}>
+          <div className={`glass-card p-5 cyber-corners relative overflow-hidden ${sts.amount >= 0 ? '' : 'border-negative/40'}`}>
+            <div className="aurora-blob aurora-a" />
+            <div className="aurora-blob aurora-b" />
+            <div className="relative z-10">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <div className="term-label">Safe to spend · {sts.daysLeft} days left this month</div>
@@ -1058,6 +1061,7 @@ export default function BudgetView() {
             <div className="mt-3 h-2 rounded-full bg-surface-2 overflow-hidden">
               <div className={`h-2 rounded-full transition-all ${sts.amount >= 0 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-negative'}`}
                 style={{ width: `${pct}%` }} />
+            </div>
             </div>
           </div>
         );
