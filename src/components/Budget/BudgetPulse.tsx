@@ -17,6 +17,10 @@ interface Props {
   complete?: boolean;
   /** Month label ("June 2026") — shown instead of "Day N / M" when complete. */
   monthLabel?: string;
+  /** Reserve set-aside for the month (taxes/travel/stashes). Folded into the
+   *  full-base view so the Pulse reflects the WHOLE watermark ($15,800), not
+   *  just the operating caps — reserves are no longer held back. */
+  reserveSetAside?: number;
 }
 
 type Status = 'over' | 'pacing' | 'ontrack' | 'untouched' | 'nobudget';
@@ -58,7 +62,7 @@ function classify(b: BudgetBucket, monthFraction: number, complete: boolean): St
   return 'ontrack';
 }
 
-export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick, watermark, complete = false, monthLabel }: Props) {
+export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick, watermark, complete = false, monthLabel, reserveSetAside = 0 }: Props) {
   const dayOfMonth = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   // A closed month is fully elapsed — fraction 1 so pace logic reads as final.
@@ -119,6 +123,12 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
 
   const totalBudget = buckets.reduce((s, b) => s + b.monthlyBudget, 0);
   const totalActual = buckets.reduce((s, b) => s + b.monthlyActual, 0);
+  // Reflect the WHOLE base ($15,800), not just operating caps. Everyday spend +
+  // reserves set-aside + what's still free = the full watermark. Falls back to
+  // the operating-cap total only when no watermark is supplied.
+  const hasBase = !!watermark && watermark > 0;
+  const base = hasBase ? watermark! : totalBudget;
+  const freeOfBase = hasBase ? Math.max(0, watermark! - totalActual - reserveSetAside) : 0;
   const totalOver = buckets
     .filter(b => b.monthlyBudget > 0 && b.monthlyActual > b.monthlyBudget)
     .reduce((s, b) => s + (b.monthlyActual - b.monthlyBudget), 0);
@@ -138,8 +148,13 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
         <div className="text-right">
           <div className="term-label">{complete ? (monthLabel ?? 'Final') : `Day ${dayOfMonth} / ${daysInMonth}`}</div>
           <div className="mono-num text-sm text-text-secondary mt-0.5">
-            {formatCurrency(totalActual)} <span className="text-text-muted">/ {formatCurrency(totalBudget)}</span>
+            {formatCurrency(totalActual)} <span className="text-text-muted">/ {formatCurrency(base)}</span>
           </div>
+          {hasBase && (
+            <div className="mono-num text-[11px] text-text-muted mt-0.5">
+              {reserveSetAside > 0 && <>{formatCurrency(reserveSetAside)} reserved · </>}{formatCurrency(freeOfBase)} still free
+            </div>
+          )}
           {projection && (
             <div className={`text-[11px] mt-0.5 mono-num font-medium ${projection.under ? 'text-positive' : 'text-negative'}`}>
               trending to ~{formatCurrency(projection.projected)} · {projection.under ? `${formatCurrency(projection.delta)} under` : `${formatCurrency(projection.delta)} OVER`} your watermark

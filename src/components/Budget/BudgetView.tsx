@@ -1354,6 +1354,7 @@ export default function BudgetView() {
             // budgeted" matches the Monthly Spend tile and the rest of the page.
             buckets={filteredBuckets.filter(b => (b.monthlyActual > 0 || b.monthlyBudget > 0) && laneOf(b.category) !== 'reserve')}
             watermark={paycheck.netTakeHome}
+            reserveSetAside={reserveSetAside}
             complete={!overviewIsInProgress}
             monthLabel={pulseMonthLabel}
             onCategoryClick={(cat) => setDrilldownCategory(cat)}
