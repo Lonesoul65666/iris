@@ -128,7 +128,7 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
   const filtering = activeFilters.size > 0;
 
   return (
-    <div className="glass-card p-6 cyber-scanlines relative">
+    <div className="glass-card p-6 relative">
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div>

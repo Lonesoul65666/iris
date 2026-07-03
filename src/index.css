@@ -48,46 +48,6 @@
   50%      { transform: translate(-1.4rem, -1.2rem) scale(1.1); }
 }
 
-/* ─── Cyber overlay layer (Dashboard hero + cards) ─── */
-.cyber-grid {
-  background-image:
-    linear-gradient(rgba(139, 109, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(139, 109, 255, 0.04) 1px, transparent 1px);
-  background-size: 32px 32px;
-}
-.cyber-scanlines { position: relative; }
-.cyber-scanlines::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(139, 109, 255, 0.45), transparent);
-  animation: scanline-sweep 6s linear infinite;
-  pointer-events: none;
-  border-radius: inherit;
-}
-@keyframes scanline-sweep {
-  0%   { top: -2%; opacity: 0; }
-  10%  { opacity: 1; }
-  90%  { opacity: 1; }
-  100% { top: 102%; opacity: 0; }
-}
-.cyber-corners::before, .cyber-corners::after {
-  content: '';
-  position: absolute;
-  width: 12px; height: 12px;
-  border-color: var(--color-cyber-cyan);
-  pointer-events: none;
-  opacity: 0.6;
-  z-index: 1;
-}
-.cyber-corners::before {
-  top: 8px; left: 8px;
-  border-top: 1.5px solid; border-left: 1.5px solid;
-}
-.cyber-corners::after {
-  bottom: 8px; right: 8px;
-  border-bottom: 1.5px solid; border-right: 1.5px solid;
-}
 .term-label {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
@@ -114,12 +74,6 @@
   font-family: 'JetBrains Mono', monospace;
   font-feature-settings: 'tnum' 1;
 }
-.cyber-divider {
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--color-cyber-cyan), transparent);
-  opacity: 0.4;
-}
-
 body { margin: 0; }
 
 #root {
@@ -193,76 +147,6 @@ body { margin: 0; }
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
 
-/* Animations */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-fadeIn { animation: fadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(20px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(-12px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-/* Staggered card entrances */
-.stagger-1 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both; }
-.stagger-2 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both; }
-.stagger-3 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both; }
-.stagger-4 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both; }
-.stagger-5 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.25s both; }
-.stagger-6 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.3s both; }
-.stagger-7 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both; }
-.stagger-8 { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.4s both; }
-
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.1); }
-  50% { box-shadow: 0 0 40px rgba(139, 92, 246, 0.25); }
-}
-.glow-pulse { animation: pulse-glow 3s ease-in-out infinite; }
-
-/* Shimmer loading effect */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-.shimmer {
-  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%);
-  background-size: 200% 100%;
-  animation: shimmer 2s ease-in-out infinite;
-}
-
-/* Gradient border glow on hover */
-@keyframes borderGlow {
-  0%, 100% { border-color: rgba(139, 92, 246, 0.15); }
-  50% { border-color: rgba(139, 92, 246, 0.35); }
-}
-
-/* Ambient background orbs */
-@keyframes float1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(30px, -20px) scale(1.05); }
-  66% { transform: translate(-15px, 15px) scale(0.95); }
-}
-@keyframes float2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(-25px, 25px) scale(0.95); }
-  66% { transform: translate(20px, -15px) scale(1.05); }
-}
-
-/* Number tick-up effect */
-@keyframes countPulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.02); }
-  100% { transform: scale(1); }
-}
-.count-done { animation: countPulse 0.3s ease-out; }
-
 /* Smooth section expand/collapse */
 .section-content {
   display: grid;
@@ -274,15 +158,6 @@ body { margin: 0; }
 }
 .section-content > div {
   overflow: hidden;
-}
-
-/* Active nav indicator */
-@keyframes navGlow {
-  0%, 100% { box-shadow: 0 0 8px rgba(139, 92, 246, 0); }
-  50% { box-shadow: 0 0 12px rgba(139, 92, 246, 0.15); }
-}
-.nav-active {
-  animation: navGlow 2s ease-in-out infinite;
 }
 
 /* Chat markdown styling */
@@ -306,110 +181,6 @@ body { margin: 0; }
 .chat-content td { background: rgba(255,255,255,0.02); }
 .chat-content tr:hover td { background: rgba(255,255,255,0.04); }
 .chat-content hr { border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 1em 0; }
-
-/* ────────────────────────────────────────────────────────────────────
-   TRON / CYBERPUNK / WALL STREET aesthetic layer
-   Used by the dashboard hero + data cards. Designed to feel like a
-   trading terminal had a baby with a Tron arcade cabinet.
-   ──────────────────────────────────────────────────────────────────── */
-
-/* Subtle circuit-grid backdrop — drop behind hero or page bg */
-.cyber-grid {
-  background-image:
-    linear-gradient(rgba(139, 109, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(139, 109, 255, 0.04) 1px, transparent 1px);
-  background-size: 32px 32px;
-  background-position: -1px -1px;
-}
-
-/* Scanline overlay — places horizontal moving lines over a parent */
-.cyber-scanlines {
-  position: relative;
-}
-.cyber-scanlines::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 3px,
-    rgba(139, 109, 255, 0.018) 3px,
-    rgba(139, 109, 255, 0.018) 4px
-  );
-  pointer-events: none;
-  border-radius: inherit;
-}
-.cyber-scanlines::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(139, 109, 255, 0.45), transparent);
-  animation: scanline-sweep 6s linear infinite;
-  pointer-events: none;
-  border-radius: inherit;
-}
-@keyframes scanline-sweep {
-  0%   { top: -2%; opacity: 0; }
-  10%  { opacity: 1; }
-  90%  { opacity: 1; }
-  100% { top: 102%; opacity: 0; }
-}
-
-/* HUD corner brackets — drop inside any positioned container */
-.cyber-corners::before,
-.cyber-corners::after {
-  content: '';
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border-color: var(--color-cyber-cyan);
-  pointer-events: none;
-  opacity: 0.7;
-}
-.cyber-corners::before {
-  top: 8px; left: 8px;
-  border-top: 1.5px solid;
-  border-left: 1.5px solid;
-}
-.cyber-corners::after {
-  bottom: 8px; right: 8px;
-  border-bottom: 1.5px solid;
-  border-right: 1.5px solid;
-}
-/* Second pair of corners via box-shadow trick — top-right + bottom-left */
-.cyber-corners > .cyber-corners-tr,
-.cyber-corners > .cyber-corners-bl {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border-color: var(--color-cyber-cyan);
-  pointer-events: none;
-  opacity: 0.7;
-}
-.cyber-corners > .cyber-corners-tr {
-  top: 8px; right: 8px;
-  border-top: 1.5px solid;
-  border-right: 1.5px solid;
-}
-.cyber-corners > .cyber-corners-bl {
-  bottom: 8px; left: 8px;
-  border-bottom: 1.5px solid;
-  border-left: 1.5px solid;
-}
-
-/* Neon edge glow — used on hero card */
-.cyber-glow {
-  box-shadow:
-    0 0 0 1px rgba(139, 109, 255, 0.18),
-    0 0 24px rgba(139, 109, 255, 0.06),
-    inset 0 0 60px rgba(139, 109, 255, 0.02);
-}
-.cyber-glow-magenta {
-  box-shadow:
-    0 0 0 1px rgba(255, 45, 146, 0.22),
-    0 0 24px rgba(255, 45, 146, 0.08);
-}
 
 /* Cyber chip — sharp-edged status pill */
 .cyber-chip {
@@ -435,25 +206,6 @@ body { margin: 0; }
   text-transform: uppercase;
   color: var(--color-cyber-cyan);
   opacity: 0.75;
-}
-
-/* Glitch flicker on hover — only on cyber-pulse class */
-@keyframes cyber-flicker {
-  0%, 100% { opacity: 1; text-shadow: 0 0 8px rgba(139, 109, 255, 0.4); }
-  3%       { opacity: 0.92; text-shadow: 0 0 4px rgba(139, 109, 255, 0.3), 2px 0 rgba(255, 45, 146, 0.4); }
-  7%       { opacity: 1; text-shadow: 0 0 12px rgba(139, 109, 255, 0.5); }
-  20%      { opacity: 0.95; }
-  60%      { text-shadow: 0 0 14px rgba(167, 139, 250, 0.5); }
-}
-.cyber-pulse:hover {
-  animation: cyber-flicker 1.6s ease-in-out infinite;
-}
-
-/* Animated gradient stroke for divider lines */
-.cyber-divider {
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--color-cyber-cyan), transparent);
-  opacity: 0.4;
 }
 
 /* Tabular mono numbers — for stat hero */

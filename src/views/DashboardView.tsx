@@ -17,22 +17,10 @@ import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
-/** Animate a number from 0 → target over ~700ms. Adds polish to hero stats. */
-function useAnimatedCounter(target: number, durationMs = 700): number {
-  const [value, setValue] = useState(0);
-  useEffect(() => {
-    if (target === 0) { setValue(0); return; }
-    const start = performance.now();
-    let raf = 0;
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / durationMs);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setValue(target * eased);
-      if (t < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, durationMs]);
+/** Return the value as-is (count-up animation removed — numbers render static). */
+function useAnimatedCounter(target: number): number {
+  const [value, setValue] = useState(target);
+  useEffect(() => { setValue(target); }, [target]);
   return value;
 }
 
@@ -170,7 +158,7 @@ export default function DashboardView() {
   return (
     <div className="space-y-6 animate-fadeIn max-w-7xl pb-8">
       {/* ════ HERO ═══════════════════════════════════════════════════════ */}
-      <div className="glass-card cyber-corners relative overflow-hidden">
+      <div className="glass-card relative overflow-hidden">
         <div className="aurora-blob aurora-a" />
         <div className="aurora-blob aurora-b" />
 
@@ -190,7 +178,6 @@ export default function DashboardView() {
               <span className="tabular-nums">{new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>
             </div>
           </div>
-          <div className="cyber-divider mb-5" />
 
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
             {/* Hero number */}

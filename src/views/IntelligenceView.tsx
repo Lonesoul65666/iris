@@ -211,7 +211,7 @@ export default function IntelligenceView() {
       {/* Grade + Summary Row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Portfolio Grade */}
-        <div className="glass-card cyber-grid cyber-corners cyber-scanlines p-5 flex items-center gap-4">
+        <div className="glass-card p-5 flex items-center gap-4">
           <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${GRADE_COLORS[report.portfolioGrade] || GRADE_COLORS.C} flex items-center justify-center text-3xl font-black text-white shadow-lg mono-num`}>
             {report.portfolioGrade}
           </div>
