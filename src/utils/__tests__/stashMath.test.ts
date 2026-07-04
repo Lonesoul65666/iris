@@ -2,7 +2,9 @@ import { describe, it, expect, afterEach } from 'vitest';
 import {
   monthsElapsedInclusive, computeStashStatus, totalStashContributions,
   stashAllocationsByCategory, stashesConfigured, seedDefaultStashes, applyStashLaneConfig,
+  committedReserves,
 } from '../stashMath';
+import type { DeployConfirmation } from '../../stores/budgetStore';
 import { laneOf, totalReserveSetAside, configureStashLanes, RESERVE_CATEGORIES, RESERVE_ALLOCATIONS } from '../budgetLanes';
 import type { Expense, Stash } from '../../types/budget';
 
@@ -33,6 +35,30 @@ function stash(partial: Partial<Stash>): Stash {
 // tests in this file see legacy behavior.
 afterEach(() => {
   configureStashLanes(RESERVE_CATEGORIES.filter(c => c !== 'travel_work'), { ...RESERVE_ALLOCATIONS });
+});
+
+describe('committedReserves', () => {
+  const dc = (month: string, lane: string, amount: number): DeployConfirmation =>
+    ({ month, lane, amount, confirmedAt: '2026-06-01T00:00:00Z' });
+
+  it('sums only stash-lane confirms for the given month', () => {
+    const confirms = [
+      dc('2026-06', 'stash-taxes', 1000),
+      dc('2026-06', 'stash-travel', 1000),
+      dc('2026-06', 'investing', 1500),   // not a stash lane — excluded
+      dc('2026-05', 'stash-taxes', 1000), // wrong month — excluded
+    ];
+    expect(committedReserves(confirms, '2026-06')).toBe(2000);
+  });
+
+  it('is $0 when nothing is committed (the commit-model starting point)', () => {
+    expect(committedReserves([], '2026-06')).toBe(0);
+    expect(committedReserves([dc('2026-06', 'investing', 1000)], '2026-06')).toBe(0);
+  });
+
+  it('empty month string matches nothing (the avg view)', () => {
+    expect(committedReserves([dc('2026-06', 'stash-taxes', 1000)], '')).toBe(0);
+  });
 });
 
 describe('monthsElapsedInclusive', () => {

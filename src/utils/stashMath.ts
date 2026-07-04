@@ -10,6 +10,7 @@
 // Pure functions, no React/IO.
 
 import type { Expense, Stash } from '../types/budget';
+import type { DeployConfirmation } from '../stores/budgetStore';
 import { currentMonthKey, computeMonthlySpending } from './transactionAnalysis';
 import { configureStashLanes, RESERVE_ALLOCATIONS } from './budgetLanes';
 
@@ -145,9 +146,24 @@ export function computeStashForecast(status: StashStatus, now: Date = new Date()
   return { target, remaining, percent, status: 'idle', projectedMonth: null, additionalNeeded: null, monthsToGo: null };
 }
 
-/** Σ monthly contributions — the Safe-to-Spend "reserve set-asides" line (D3). */
+/** Σ monthly contributions — the PLANNED set-aside (Safe-to-Spend default line).
+ *  In the "Make Every Dolla Holla" commit model this is intent, not money moved:
+ *  the live surfaces override it with committedReserves() (what actually left). */
 export function totalStashContributions(stashes: Stash[]): number {
   return stashes.reduce((s, f) => s + (f.monthlyContribution || 0), 0);
+}
+
+/** Σ of stash "moves" the user has COMMITTED (physically moved to savings) in a
+ *  given month — the committed-reserve number that replaces the old auto $2,000
+ *  set-aside. A stash lane is any DeployConfirmation whose lane is a stash id
+ *  (all stash ids are `stash-…`); 'investing' and other lanes are excluded. A
+ *  dollar only leaves the $15,800 once it's committed, so this starts at $0 and
+ *  climbs as pots are funded. Pure — feeds Money Map / Pulse / Safe-to-Spend. */
+export function committedReserves(confirms: DeployConfirmation[], month: string): number {
+  if (!month) return 0;
+  return confirms
+    .filter(c => c.month === month && c.lane.startsWith('stash-'))
+    .reduce((s, c) => s + (c.amount || 0), 0);
 }
 
 /** Per-category allocation map for the lane registry (configureStashLanes).

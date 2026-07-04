@@ -123,6 +123,30 @@ describe('computeSafeToSpend', () => {
     expect(lastDay.perDay).toBe(lastDay.amount);
   });
 
+  it('reserveOverride replaces the default set-aside (commit model)', () => {
+    // Commit model: nothing moved yet → $0 comes off the top (not the $2,000 plan).
+    const none = computeSafeToSpend(
+      [exp({ date: '2026-06-05', amount: 400, category: 'food_dining' })],
+      [],
+      15800,
+      NOW,
+      0,
+    );
+    expect(none.reserveSetAside).toBe(0);
+    expect(none.amount).toBe(15800 - 400);
+
+    // Commit two moves ($1,000 + $1,000) → they come off the top.
+    const committed = computeSafeToSpend(
+      [exp({ date: '2026-06-05', amount: 400, category: 'food_dining' })],
+      [],
+      15800,
+      NOW,
+      2000,
+    );
+    expect(committed.reserveSetAside).toBe(2000);
+    expect(committed.amount).toBe(15800 - 2000 - 400);
+  });
+
   it('amount can go negative when committed + spent exceed take-home', () => {
     const s = computeSafeToSpend(
       [exp({ date: '2026-06-05', amount: 4000, category: 'food_dining' })],

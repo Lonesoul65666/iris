@@ -17,9 +17,9 @@ interface Props {
   complete?: boolean;
   /** Month label ("June 2026") — shown instead of "Day N / M" when complete. */
   monthLabel?: string;
-  /** Reserve set-aside for the month (taxes/travel/stashes). Folded into the
-   *  full-base view so the Pulse reflects the WHOLE watermark ($15,800), not
-   *  just the operating caps — reserves are no longer held back. */
+  /** Committed stash moves for the month (funded pots). Folded into the
+   *  full-base view so the Pulse reflects the WHOLE watermark ($15,800): free =
+   *  base − everyday − investing − committed. Climbs from $0 as pots are funded. */
   reserveSetAside?: number;
   /** Have-To/Want-To pots, listed at the bottom with a per-month Commit toggle. */
   stashes?: Stash[];
@@ -158,7 +158,7 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
           </div>
           {hasBase && (
             <div className="mono-num text-[11px] text-text-muted mt-0.5">
-              {reserveSetAside > 0 && <>{formatCurrency(reserveSetAside)} reserved · </>}{formatCurrency(freeOfBase)} still free
+              {reserveSetAside > 0 && <>{formatCurrency(reserveSetAside)} committed · </>}{formatCurrency(freeOfBase)} still free
             </div>
           )}
           {projection && (

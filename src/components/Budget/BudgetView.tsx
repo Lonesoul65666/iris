@@ -10,7 +10,7 @@ import { getMonthlyInvestments, getSetting, saveSetting } from '../../stores/por
 import { computeGuaranteedBase } from '../../utils/savingsScorecard';
 import { computeSavingsRate } from '../../utils/savingsRate';
 import { computeSafeToSpend } from '../../utils/safeToSpend';
-import { applyStashLaneConfig, seedDefaultStashes } from '../../utils/stashMath';
+import { applyStashLaneConfig, seedDefaultStashes, committedReserves } from '../../utils/stashMath';
 import StashesCard from './StashesCard';
 import MoneyMap from './MoneyMap';
 import FunMoneyCard from './FunMoneyCard';
@@ -31,7 +31,7 @@ import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, saveMerchantMapping } from '../../stores/actionStore';
 import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, isRealExpense, isCompleteMonth, currentMonthKey, emptyMonthlySpending, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
 import { formatCurrency } from '../../utils/format';
-import { laneOf, isOverBudget, RESERVE_ALLOCATIONS, FLEX_APPROACHING, totalReserveSetAside, type BudgetLane } from '../../utils/budgetLanes';
+import { laneOf, isOverBudget, RESERVE_ALLOCATIONS, FLEX_APPROACHING, type BudgetLane } from '../../utils/budgetLanes';
 import ScoreRing from '../ui/ScoreRing';
 import EmptyState from '../ui/EmptyState';
 import { useHasRealData } from '../../hooks/useHasRealData';
@@ -507,12 +507,16 @@ export default function BudgetView() {
   const housingRatio = paycheck.netTakeHome > 0 ? (overviewBuckets.find(b => b.category === 'housing')?.monthlyActual || 0) / paycheck.netTakeHome * 100 : 0;
   const housingScore = housingRatio <= 30 ? 90 : housingRatio <= 40 ? 65 : 30;
   // ONE month over/under, matching the Money Map's whole-$15,800 view: base −
-  // everyday spent − investing − reserve set-aside. summary.surplus excludes the
-  // reserve set-aside (reserves are lumpy), so subtracting it here reconciles the
-  // Cash Flow score + the Saved/On-Pace tile to the Money Map — the page tells
-  // ONE story instead of "over $1,504" (map) vs "+$496" (cash flow). Set-asides
-  // ARE a job for the money; being over means everyday ran hot.
-  const reserveSetAside = totalReserveSetAside();
+  // everyday spent − investing − committed moves. "Make Every Dolla Holla" commit
+  // model: a dollar only leaves the base once it's COMMITTED (moved to savings),
+  // so this is Σ committed stash moves for the viewed month — NOT the old auto
+  // $2,000 set-aside. Starts at $0 and climbs as pots are funded; keeps the Cash
+  // Flow score + Saved/On-Pace tile reconciled to the Money Map (one story).
+  const committedForOverview = committedReserves(
+    deployConfirms,
+    resolvedOverviewMonth === 'avg' ? '' : resolvedOverviewMonth,
+  );
+  const reserveSetAside = committedForOverview;
   const monthSurplus = summary.surplus - reserveSetAside;
   const surplusScore = monthSurplus > 1000 ? 90 : monthSurplus > 0 ? 60 : 20;
   const overallBudgetScore = Math.round((savingsScore + overageScore + housingScore + surplusScore) / 4);
@@ -1051,10 +1055,13 @@ export default function BudgetView() {
         );
       })()}
 
-      {/* Safe to Spend — take-home − fixed bills − reserve set-asides − flexible spent so far */}
+      {/* Safe to Spend — take-home − fixed bills − committed moves − flexible spent so far */}
       {(() => {
         if (paycheck.netTakeHome <= 0) return null;
-        const sts = computeSafeToSpend(expenses, buckets, paycheck.netTakeHome);
+        // Safe-to-Spend is always about the LIVE month — only reserves committed
+        // (moved) this month come off the top (commit model), not the old auto set-aside.
+        const committedThisMonth = committedReserves(deployConfirms, curMonthKey);
+        const sts = computeSafeToSpend(expenses, buckets, paycheck.netTakeHome, new Date(), committedThisMonth);
         const pct = sts.takeHome > 0 ? Math.max(0, Math.min(100, (sts.amount / sts.takeHome) * 100)) : 0;
         return (
           <div className={`glass-card p-5 relative overflow-hidden ${sts.amount >= 0 ? '' : 'border-negative/40'}`}>
@@ -1076,7 +1083,7 @@ export default function BudgetView() {
               <div className="text-right text-sm space-y-1">
                 <div className="mono-num text-positive font-bold">{formatCurrency(sts.takeHome)} <span className="text-accent-light font-medium">take-home</span></div>
                 <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.fixedCommitment)} <span className="text-accent-light font-medium">fixed bills</span></div>
-                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.reserveSetAside)} <span className="text-accent-light font-medium">reserve set-asides</span></div>
+                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.reserveSetAside)} <span className="text-accent-light font-medium">committed to savings</span></div>
                 <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.flexSpent)} <span className="text-accent-light font-medium">flexible spent so far</span></div>
               </div>
             </div>
@@ -1122,7 +1129,7 @@ export default function BudgetView() {
             investingStatus={investingStatus}
             // Feed-validated deposits can't be un-confirmed; only manual planned/confirmed toggle.
             onToggleInvesting={confirmMonth && investingStatus !== 'feed' ? () => toggleInvestConfirm(confirmMonth, investingPlanned) : undefined}
-            reserveSetAside={totalReserveSetAside()}
+            reserveSetAside={committedForOverview}
             inProgress={overviewIsInProgress}
           />
         );
@@ -1155,7 +1162,8 @@ export default function BudgetView() {
           const compMonths = fullMonths.filter(m =>
             (resolvedOverviewMonth === 'latest' || resolvedOverviewMonth === 'avg') ? true : m.month < resolvedOverviewMonth);
           const prior = compMonths[compMonths.length - 1];
-          const savedPrior = prior ? Math.round(summary.netIncome - prior.totalOperating - investingAmt - reserveSetAside) : null;
+          // Prior month's own committed moves (not this view's) — apples to apples.
+          const savedPrior = prior ? Math.round(summary.netIncome - prior.totalOperating - investingAmt - committedReserves(deployConfirms, prior.month)) : null;
           const compLine = (current: number) => (prior && savedPrior !== null) ? (
             <div className="text-[11px] mt-1">
               <span className="text-text-muted">{prior.monthLabel}: </span>
@@ -1204,7 +1212,7 @@ export default function BudgetView() {
                 {saved >= 0 ? '+' : '−'}{formatCurrency(Math.abs(saved))}
               </div>
               <div className="text-text-secondary text-xs mt-0.5">
-                {saved < 0 ? 'Everyday ran hot — over your $15,800 after set-asides'
+                {saved < 0 ? 'Everyday ran hot — over your $15,800 after committed moves'
                   : 'Under your $15,800 after everything — the win to deploy'}
               </div>
               {compLine(saved)}
@@ -1280,8 +1288,8 @@ export default function BudgetView() {
                   {
                     name: 'Cash Flow', score: surplusScore,
                     msg: monthSurplus >= 0 ? `+${formatCurrency(monthSurplus)}` : formatCurrency(monthSurplus),
-                    detail: `${formatCurrency(paycheck.netTakeHome)} base − ${formatCurrency(totalBucketSpend)} spent − ${formatCurrency(reserveSetAside)} set aside`,
-                    action: monthSurplus < 0 ? 'Everyday ran hot — over base after set-asides' : monthSurplus > 1000 ? 'Healthy buffer — deploy to savings' : 'Tight but positive',
+                    detail: `${formatCurrency(paycheck.netTakeHome)} base − ${formatCurrency(totalBucketSpend)} spent − ${formatCurrency(reserveSetAside)} committed`,
+                    action: monthSurplus < 0 ? 'Everyday ran hot — over base after committed moves' : monthSurplus > 1000 ? 'Healthy buffer — deploy to savings' : 'Tight but positive',
                   },
                 ];
                 // Good news up top, the drag at the bottom — explains why the score is what it is.

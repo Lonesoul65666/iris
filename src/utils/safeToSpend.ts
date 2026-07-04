@@ -29,6 +29,10 @@ export function computeSafeToSpend(
   buckets: BudgetBucket[],
   netTakeHome: number,
   now: Date = new Date(),
+  /** Committed reserves for the month (Σ stash moves actually made). Defaults to
+   *  the planned set-aside so existing call-sites/tests are unchanged; the live
+   *  surfaces pass committedReserves() so a dollar only leaves once it's moved. */
+  reserveOverride?: number,
 ): SafeToSpend {
   const month = currentMonthKey(now);
   const mtd = computeMonthlySpending(expenses).find(m => m.month === month);
@@ -41,9 +45,10 @@ export function computeSafeToSpend(
     fixedCommitment += Math.max(b.monthlyBudget, spent);
   }
 
-  // Stash contributions when configured (set via configureStashLanes at app
-  // load), legacy reserve constants otherwise. One source of truth — D3.
-  const reserveSetAside = totalReserveSetAside();
+  // Committed reserves for the month when supplied (the commit model — only
+  // money actually moved comes off the top); otherwise the planned set-aside
+  // (stash contributions via configureStashLanes, legacy constants pre-config).
+  const reserveSetAside = reserveOverride ?? totalReserveSetAside();
 
   let flexSpent = 0;
   for (const [cat, amt] of Object.entries(byCat)) {
