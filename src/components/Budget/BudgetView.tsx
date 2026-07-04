@@ -113,13 +113,12 @@ function computeBudgetDiffs(
 export default function BudgetView() {
   const { hasIncome, hasExpenses } = useHasRealData();
   const hasBudgetData = hasIncome || hasExpenses;
-  const [section, setSection] = useState<'overview' | 'monthly' | 'expenses' | 'actions'>('overview');
-  // Honor a deep-link intent (e.g. the sidebar "open Budget" action-items chip)
-  // to open a specific tab, then clear it so normal nav still defaults to overview.
+  // The active Budget tab lives in shared context (budgetSection) so the sidebar
+  // sub-menu, the top tab-cards, and deep-links (action-items chip) all share one
+  // source of truth and stay in sync. Null → default Overview.
   const { budgetSection, setBudgetSection } = useAppData();
-  useEffect(() => {
-    if (budgetSection) { setSection(budgetSection); setBudgetSection(null); }
-  }, [budgetSection, setBudgetSection]);
+  const section = budgetSection ?? 'overview';
+  const setSection = setBudgetSection;
   const [selectedMonthIdx, setSelectedMonthIdx] = useState<number>(-1); // -1 = latest full month
   const [buckets, setBuckets] = useState<BudgetBucket[]>(defaultBudgetBuckets);
   const [sinkingFunds, setSinkingFunds] = useState<SinkingFund[]>(defaultSinkingFunds);
