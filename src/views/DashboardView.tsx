@@ -84,7 +84,14 @@ export default function DashboardView() {
       const d = vals[i] - vals[i - 1];
       if (d > jumpSize) { jumpSize = d; jumpIdx = i; }
     }
-    return jumpIdx > 0 && jumpSize > vals[jumpIdx] * 0.15 ? snaps.slice(jumpIdx) : snaps;
+    if (jumpIdx > 0 && jumpSize > vals[jumpIdx] * 0.15) {
+      // Start ONE past the jump — the jump-day point itself sits high then
+      // settles, which reads as "starting backwards / defeating". Beginning at
+      // the settled value normalizes the line so it can climb from there.
+      const start = snaps.length - (jumpIdx + 1) >= 2 ? jumpIdx + 1 : jumpIdx;
+      return snaps.slice(start);
+    }
+    return snaps;
   }, [netWorthSnapshots]);
 
   // Time-range window (1M/3M/6M/1Y/All) — the zoom control on the chart.
