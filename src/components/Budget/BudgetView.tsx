@@ -892,7 +892,7 @@ export default function BudgetView() {
               };
 
               const lanes: { id: BudgetLane; title: string; sub: string }[] = [
-                { id: 'fixed', title: '🔒 Fixed & On Target', sub: 'Non-negotiable bills — green = landed as expected' },
+                { id: 'fixed', title: '🔒 Essentials & On Target', sub: 'Non-negotiable bills (amounts vary) — green = landed as expected' },
                 { id: 'flexible', title: '🎯 Flexible Spending', sub: 'Where cutting actually moves the needle' },
                 { id: 'reserve', title: '🏦 Reserves', sub: 'Lumpy / annual — set aside monthly, not a monthly bust' },
               ];
@@ -1090,7 +1090,7 @@ export default function BudgetView() {
         );
       })()}
 
-      {/* Safe to Spend — take-home − fixed bills − committed moves − flexible spent so far */}
+      {/* Safe to Spend — take-home − essential bills − committed moves − flexible spent so far */}
       {(() => {
         if (paycheck.netTakeHome <= 0) return null;
         // Safe-to-Spend is always about the LIVE month — only reserves committed
@@ -1117,7 +1117,7 @@ export default function BudgetView() {
               </div>
               <div className="text-right text-sm space-y-1">
                 <div className="mono-num text-positive font-bold">{formatCurrency(sts.takeHome)} <span className="text-accent-light font-medium">take-home</span></div>
-                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.fixedCommitment)} <span className="text-accent-light font-medium">fixed bills</span></div>
+                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.fixedCommitment)} <span className="text-accent-light font-medium">essential bills</span></div>
                 <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.reserveSetAside)} <span className="text-accent-light font-medium">committed to savings</span></div>
                 <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.flexSpent)} <span className="text-accent-light font-medium">flexible spent so far</span></div>
               </div>
@@ -1570,7 +1570,7 @@ export default function BudgetView() {
 
         {/* Category rows — Essentials */}
         <div className="px-4 pt-3 pb-1">
-          <div className="term-label">Fixed / Essential</div>
+          <div className="term-label">Essentials</div>
         </div>
         {filteredBuckets.filter(b => isEssential(b.category)).map(b => {
           const over = b.monthlyBudget > 0 && b.monthlyActual > b.monthlyBudget;
