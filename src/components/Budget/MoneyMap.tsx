@@ -26,7 +26,7 @@ interface Props {
   investingPlanned: number;   // the intended monthly investing (Settings)
   investingStatus: InvestingStatus;
   onToggleInvesting?: () => void;
-  reserveSetAside: number;    // stash contributions (taxes + trips)
+  reserveSetAside: number;    // committed stash moves this month (funded pots)
   inProgress: boolean;        // is this the live, not-yet-complete month?
 }
 
@@ -54,8 +54,8 @@ export default function MoneyMap({
       // figure while it's pending so you can see the intent + confirm it.
       legendAmt: investingStatus === 'planned' ? Math.round(investingPlanned) : Math.round(investing),
       cls: 'from-violet-500 to-indigo-500', note: investNote },
-    { key: 'reserves',  label: 'Reserves',  amt: Math.round(reserveSetAside),  legendAmt: Math.round(reserveSetAside),
-      cls: 'from-amber-500 to-yellow-400',  note: 'taxes + trips set aside' },
+    { key: 'reserves',  label: 'Committed',  amt: Math.round(reserveSetAside),  legendAmt: Math.round(reserveSetAside),
+      cls: 'from-amber-500 to-yellow-400',  note: reserveSetAside > 0 ? 'moved to savings this month' : 'nothing moved yet' },
     { key: 'free',      label: win ? 'Free' : 'Over base', amt: Math.abs(leftover), legendAmt: Math.abs(leftover),
       cls: win ? 'from-emerald-500 to-teal-400' : 'from-red-600 to-red-500',
       note: win ? (inProgress ? 'still in play' : 'the win — deploy it') : 'trim to fit' },

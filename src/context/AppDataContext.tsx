@@ -22,14 +22,14 @@ import { defaultPaycheck, defaultBudgetBuckets, defaultSinkingFunds, defaultFunM
 import { isOverBudget } from '../utils/budgetLanes';
 import type { ActionItem } from '../components/ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, clearAllActionData } from '../stores/actionStore';
-import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getEarners, getPaycheck, getExpenses, getCustomCategories, clearAllExpenses, clearExpensesBySource, clearAllBudgetData } from '../stores/budgetStore';
+import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getEarners, getPaycheck, getExpenses, getCustomCategories, getDeployConfirmations, clearAllExpenses, clearExpensesBySource, clearAllBudgetData, type DeployConfirmation } from '../stores/budgetStore';
 import type { Expense, FunMoney, Earner } from '../types/budget';
 import { seedFunMoneyFromEarners, linkFunMoneyToEarners, computeFunMoneySpent } from '../utils/funMoney';
 import { setAuditActor } from '../stores/auditLogStore';
 import { applyTransactionsToBuckets, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, registerEarnerFunLabels, currentMonthKey } from '../utils/transactionAnalysis';
 import type { SpendingSummary, MonthComparison, MonthlySpending } from '../utils/transactionAnalysis';
 import { computeSafeToSpend, type SafeToSpend } from '../utils/safeToSpend';
-import { applyStashLaneConfig } from '../utils/stashMath';
+import { applyStashLaneConfig, committedReserves } from '../utils/stashMath';
 import { generateInsights } from '../utils/insightsEngine';
 import type { Insight } from '../utils/insightsEngine';
 import { reconcileActionItems } from '../utils/dynamicActions';
@@ -150,6 +150,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
   const [dashBuckets, setDashBuckets] = useState(defaultBudgetBuckets);
   const [dashPaycheck, setDashPaycheck] = useState(defaultPaycheck);
   const [dashSinkingFunds, setDashSinkingFunds] = useState(defaultSinkingFunds);
+  const [dashDeployConfirms, setDashDeployConfirms] = useState<DeployConfirmation[]>([]);
   const [spendingSummary, setSpendingSummary] = useState<SpendingSummary | null>(null);
   const [monthComparison, setMonthComparison] = useState<MonthComparison | null>(null);
   const [rawExpenses, setRawExpenses] = useState<any[]>([]);
@@ -355,6 +356,8 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       if (loadedSF.length > 0) setDashSinkingFunds(loadedSF);
       // Stash-linked categories drive the reserve lanes (no-op until configured)
       applyStashLaneConfig(loadedSF);
+      // Committed stash moves feed Safe-to-Spend (only moved money comes off the top).
+      setDashDeployConfirms(await getDeployConfirmations());
 
       // Register custom categories so analysis displays proper labels/icons
       const customCats = await getCustomCategories();
@@ -475,6 +478,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       const sf = await getSinkingFunds();
       if (sf.length > 0) setDashSinkingFunds(sf);
       applyStashLaneConfig(sf);
+      setDashDeployConfirms(await getDeployConfirmations());
       // Sync investing bucket to real Settings amount
       const invAmt = monthlyInv?.amount || 0;
       const syncInv = (buckets: typeof defaultBudgetBuckets) =>
@@ -544,11 +548,14 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
 
   const safeToSpend = useMemo(() => {
     if (dashPaycheck.netTakeHome <= 0) return null;
-    return computeSafeToSpend(rawExpenses, dashBuckets, dashPaycheck.netTakeHome);
+    // Commit model: only reserves COMMITTED (moved to savings) this month come
+    // off the top — not the old auto set-aside. Matches the Budget tab's number.
+    const committedThisMonth = committedReserves(dashDeployConfirms, currentMonthKey());
+    return computeSafeToSpend(rawExpenses, dashBuckets, dashPaycheck.netTakeHome, new Date(), committedThisMonth);
     // dashSinkingFunds is a dep because stash contributions feed the reserve
     // set-aside via the lane registry (applyStashLaneConfig).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawExpenses, dashBuckets, dashPaycheck.netTakeHome, dashSinkingFunds]);
+  }, [rawExpenses, dashBuckets, dashPaycheck.netTakeHome, dashSinkingFunds, dashDeployConfirms]);
 
   // Chat handler
   // Takes the message text as an argument — the input box state lives locally
