@@ -1970,56 +1970,9 @@ export default function BudgetView() {
       </>)}
 
       {!editMode && (<>
-      {/* Monthly Spending — collapsible. Avg tiles visible always; per-month bars expand on click. */}
-      {monthlyData.length > 0 && (
-        <details className="glass-card p-0 group">
-          <summary className="cursor-pointer p-6 list-none hover:bg-surface-2 transition-colors rounded-2xl">
-            <div className="flex items-start justify-between mb-4 gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-text-primary">Monthly Spending</h2>
-                <p className="text-xs text-text-muted mt-1">Real numbers from your imported transactions — {expenses.length} total across {monthlyData.length} months</p>
-              </div>
-              <span className="text-[10px] text-text-muted whitespace-nowrap flex-shrink-0 mt-1">
-                <span className="group-open:hidden">Show monthly bars ▾</span>
-                <span className="hidden group-open:inline">Hide monthly bars ▴</span>
-              </span>
-            </div>
-            {/* Avg tiles — always visible. Work expenses live in their own card; not duplicated here. */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { label: 'Avg Monthly Spend', value: formatCurrency(monthlyData.reduce((s, m) => s + m.totalExpenses, 0) / Math.max(monthlyData.filter(m => m.transactionCount > 10).length, 1)), color: 'text-text-primary' },
-                { label: 'Avg Monthly Income', value: formatCurrency(monthlyData.reduce((s, m) => s + m.totalIncome, 0) / Math.max(monthlyData.filter(m => m.transactionCount > 10).length, 1)), color: 'text-positive' },
-                { label: 'Avg Investments', value: formatCurrency(monthlyData.reduce((s, m) => s + m.totalInvestments, 0) / Math.max(monthlyData.filter(m => m.transactionCount > 10).length, 1)), color: 'text-accent-light' },
-                { label: 'Total Transactions', value: expenses.length.toString(), color: 'text-text-primary' },
-              ].map((s, i) => (
-                <div key={i} className="p-3 rounded-lg bg-white/[0.03] border border-glass-border">
-                  <div className="text-text-muted text-[10px] uppercase tracking-wider">{s.label}</div>
-                  <div className={`text-lg font-bold mt-0.5 ${s.color}`}>{s.value}</div>
-                </div>
-              ))}
-            </div>
-          </summary>
-          {/* Per-month bars — only on expand */}
-          <div className="px-6 pb-6 pt-4 border-t border-glass-border space-y-3">
-            {monthlyData.map(m => {
-              const maxExpense = Math.max(...monthlyData.map(mm => mm.totalExpenses), 1);
-              const pct = (m.totalExpenses / maxExpense) * 100;
-              return (
-                <div key={m.month} className="flex items-center gap-3">
-                  <span className="text-xs text-text-secondary w-16 text-right font-mono">{m.monthLabel.split(' ')[0]}</span>
-                  <div className="flex-1 bg-white/10 rounded-full h-6 relative overflow-hidden">
-                    <div className="h-6 rounded-full bg-gradient-to-r from-indigo-500 to-blue-400 flex items-center transition-all duration-500"
-                      style={{ width: `${Math.min(pct, 100)}%` }}>
-                      <span className="text-xs font-medium text-white pl-3 whitespace-nowrap">{formatCurrency(m.totalExpenses)}</span>
-                    </div>
-                  </div>
-                  <span className="text-xs text-text-muted w-16 text-right">{m.transactionCount} txns</span>
-                </div>
-              );
-            })}
-          </div>
-        </details>
-      )}
+      {/* (Removed the "Monthly Spending" avg-tiles block — redundant with the
+          Transactions card / Money Map / Monthly Detail, and its Avg Investments
+          pulled raw feed data that never matched the real $1,000/mo.) */}
 
       {/* Trigger Center — pace warnings, surplus available, etc. Fed TRUE
           month-to-date buckets (the audit found it judging calendar pace
