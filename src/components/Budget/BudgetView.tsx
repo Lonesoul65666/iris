@@ -1052,17 +1052,17 @@ export default function BudgetView() {
                 <div className={`text-4xl font-black mt-1 mono-num ${sts.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
                   {sts.amount >= 0 ? '' : '−'}{formatCurrency(Math.abs(sts.amount))}
                 </div>
-                <div className="text-xs text-text-muted mt-1">
+                <div className="text-sm text-text-secondary mt-1.5">
                   {sts.amount >= 0
-                    ? <>≈ <span className="text-text-secondary font-medium">{formatCurrency(sts.perDay)}/day</span> without breaking the watermark</>
+                    ? <>≈ <span className="text-positive font-bold">{formatCurrency(sts.perDay)}/day</span> without breaking the watermark</>
                     : 'Flexible spending is past the watermark for this month'}
                 </div>
               </div>
               <div className="text-right text-sm space-y-1">
-                <div className="mono-num text-positive font-bold">{formatCurrency(sts.takeHome)} <span className="text-text-secondary font-medium">take-home</span></div>
-                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.fixedCommitment)} <span className="text-text-muted font-normal">fixed bills</span></div>
-                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.reserveSetAside)} <span className="text-text-muted font-normal">reserve set-asides</span></div>
-                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.flexSpent)} <span className="text-text-muted font-normal">flexible spent so far</span></div>
+                <div className="mono-num text-positive font-bold">{formatCurrency(sts.takeHome)} <span className="text-accent-light font-medium">take-home</span></div>
+                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.fixedCommitment)} <span className="text-accent-light font-medium">fixed bills</span></div>
+                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.reserveSetAside)} <span className="text-accent-light font-medium">reserve set-asides</span></div>
+                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.flexSpent)} <span className="text-accent-light font-medium">flexible spent so far</span></div>
               </div>
             </div>
             <div className="mt-3 h-2 rounded-full bg-surface-2 overflow-hidden">
