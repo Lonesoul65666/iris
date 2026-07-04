@@ -82,9 +82,15 @@ export default function DashboardView() {
   const nwDomain = useMemo<[number, number]>(() => {
     if (netWorthTrend.length < 2) return [0, 1];
     const vals = netWorthTrend.map(d => d.value);
-    const min = Math.min(...vals), max = Math.max(...vals);
-    const pad = Math.max((max - min) * 0.25, max * 0.004) || 1;
-    return [min - pad, max + pad];
+    const last = vals[vals.length - 1];
+    // Robust "typical daily move" — the MEDIAN of day-to-day deltas ignores the
+    // one giant one-time step, so we can zoom the window tight around the recent
+    // level and let that step (and old lows) clip off-screen. Window = a handful
+    // of typical moves, floored so small $600–$2k swings stay clearly visible.
+    const deltas = vals.slice(1).map((v, i) => Math.abs(v - vals[i])).sort((a, b) => a - b);
+    const median = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 0;
+    const half = Math.max(median * 6, last * 0.004, 500);
+    return [last - half, last + half];
   }, [netWorthTrend]);
 
   // ── Spending breakdown by category — TRUE month-to-date ──────────────
@@ -251,7 +257,7 @@ export default function DashboardView() {
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="date" hide />
-                  <YAxis hide domain={nwDomain} />
+                  <YAxis hide domain={nwDomain} allowDataOverflow />
                   <Tooltip
                     contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
                     formatter={(v) => [formatCurrency(typeof v === 'number' ? v : Number(v) || 0), 'Net worth']}
@@ -261,7 +267,7 @@ export default function DashboardView() {
                     }}
                     labelStyle={{ color: '#888' }}
                   />
-                  <Area type="monotone" dataKey="value" stroke="url(#nwStroke)" strokeWidth={2.5} fill="url(#nwGradient)" baseValue="dataMin" />
+                  <Area type="monotone" dataKey="value" stroke="url(#nwStroke)" strokeWidth={2.5} fill="url(#nwGradient)" baseValue={nwDomain[0]} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
