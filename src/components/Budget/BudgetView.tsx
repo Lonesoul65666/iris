@@ -612,65 +612,90 @@ export default function BudgetView() {
         )}
       </div>
 
-      {/* Screen-switching Tabs */}
-      <div className="flex items-center gap-2">
-        {([
-          { id: 'overview' as const, label: 'Overview', icon: '📊' },
-          { id: 'monthly' as const, label: 'Monthly Detail', icon: '📅' },
-          { id: 'expenses' as const, label: 'Transactions', icon: '💳', badge: expenses.length > 0 ? `${expenses.length}` : undefined },
-          { id: 'actions' as const, label: 'Action Items', icon: '✅', badge: actionItems.filter(a => !a.completed).length > 0 ? `${actionItems.filter(a => !a.completed).length}` : undefined },
-        ]).map(t => (
-          <button key={t.id} onClick={() => setSection(t.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              section === t.id
-                ? 'bg-accent/15 text-accent-light border border-accent/30 shadow-sm shadow-accent/10'
-                : 'bg-surface-2 text-text-muted hover:bg-surface-3 hover:text-text-secondary border border-transparent'
-            }`}>
-            <span>{t.label}</span>
-            {'badge' in t && t.badge && (
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                section === t.id ? 'bg-accent/30 text-accent-light' : 'bg-white/10 text-text-muted'
-              }`}>{t.badge}</span>
-            )}
-          </button>
-        ))}
-        <div className="flex-1" />
-      </div>
+      {/* Rich tab cards — the section nav, each a glanceable analytic. Pinned
+          across the top; click a card to switch the view below. */}
+      {(() => {
+        const monthLabelFull = (m: string) => { const [y, mo] = m.split('-'); return new Date(+y, +mo - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); };
+        const idx = availMonths.indexOf(resolvedOverviewMonth);
+        const atStart = idx <= 0 || resolvedOverviewMonth === 'avg';
+        const atEnd = idx >= availMonths.length - 1 || resolvedOverviewMonth === 'avg';
 
-      {/* New Transactions banner — surfaces fresh imports + things needing review.
-          Visible on overview only; click jumps to the Transactions sub-tab. */}
-      {section === 'overview' && !editMode && (() => {
-        const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
-        // Spending transactions only (real expenses) — income/transfers/refunds
-        // don't get reviewed/categorized here, so counting them was misleading.
-        // parseLocalDate avoids the UTC off-by-one at the 7-day window edge.
-        const recent = expenses.filter(e => parseLocalDate(e.date) >= sevenDaysAgo && isRealExpense(e));
-        const needsReview = recent.filter(e => e.category === 'other' || !e.category);
-        if (recent.length === 0) return null;
-        const hasReview = needsReview.length > 0;
+        // Overview headline: safe-to-spend for the live month.
+        const sts = computeSafeToSpend(expenses, buckets, paycheck.netTakeHome, new Date(), committedReserves(deployConfirms, curMonthKey));
+
+        // Monthly Detail: last 6 complete months of spend → mini bars.
+        const bars = fullMonths.slice(-6).map(m => m.totalExpenses);
+        const barMax = Math.max(...bars, 1);
+
+        // Transactions: avg/mo over complete months + MoM on the last two + 7-day count.
+        const realTx = expenses.filter(isRealExpense);
+        const cnt: Record<string, number> = {};
+        realTx.forEach(e => { const k = e.date.slice(0, 7); cnt[k] = (cnt[k] || 0) + 1; });
+        const completeKeys = fullMonths.map(m => m.month);
+        const avgPerMonth = completeKeys.length ? Math.round(completeKeys.reduce((s, k) => s + (cnt[k] || 0), 0) / completeKeys.length) : realTx.length;
+        const lastK = completeKeys[completeKeys.length - 1], prevK = completeKeys[completeKeys.length - 2];
+        const momPct = lastK && prevK && cnt[prevK] ? Math.round(((cnt[lastK] - cnt[prevK]) / cnt[prevK]) * 100) : null;
+        const recent7 = expenses.filter(e => parseLocalDate(e.date) >= new Date(Date.now() - 7 * 86_400_000) && isRealExpense(e)).length;
+
+        // Action Items: pending + the top one.
+        const pending = actionItems.filter(a => !a.completed);
+
+        const base = 'text-left rounded-xl p-4 border transition-all cursor-pointer';
+        const activeCls = 'bg-accent/15 border-accent/40 shadow-sm shadow-accent/10';
+        const idleCls = 'bg-surface-2 border-transparent hover:bg-surface-3 hover:border-glass-border';
+        const step = (e: React.MouseEvent, to: number) => { e.stopPropagation(); if (to >= 0 && to < availMonths.length) setOverviewMonth(availMonths[to]); };
+
         return (
-          <button
-            type="button"
-            onClick={() => setSection('expenses')}
-            className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg border text-sm transition-colors ${
-              hasReview
-                ? 'bg-warning/10 border-warning/30 text-warning hover:bg-warning/15'
-                : 'bg-accent/8 border-accent/20 text-text-secondary hover:bg-accent/15'
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <span>
-                <strong>{recent.length}</strong> {recent.length === 1 ? 'transaction' : 'transactions'} in the last 7 days
-                {hasReview && (
-                  <>
-                    {' · '}
-                    <strong className="text-warning">{needsReview.length}</strong> need{needsReview.length === 1 ? 's' : ''} categorizing
-                  </>
-                )}
-              </span>
-            </span>
-            <span className="text-xs flex-shrink-0">{hasReview ? 'Review →' : 'View →'}</span>
-          </button>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Overview — hosts the month clicker + safe-to-spend */}
+            <div role="button" tabIndex={0} onClick={() => setSection('overview')} className={`${base} ${section === 'overview' ? activeCls : idleCls}`}>
+              <div className="term-label">Overview</div>
+              {availMonths.length > 0 && (
+                <div className="flex items-center gap-1 mt-1.5">
+                  <span onClick={e => step(e, idx - 1)} className={`w-6 h-6 rounded flex items-center justify-center text-xs flex-shrink-0 ${atStart ? 'opacity-20' : 'bg-surface-3 hover:bg-white/10 text-text-muted cursor-pointer'}`}>←</span>
+                  <span onClick={e => { e.stopPropagation(); setOverviewMonth(resolvedOverviewMonth === 'avg' ? 'latest' : 'avg'); }}
+                    title="Toggle the averaged-months view"
+                    className="text-xs font-semibold text-text-primary flex-1 text-center truncate cursor-pointer hover:text-accent-light">
+                    {resolvedOverviewMonth === 'avg' ? `Avg (${fullMonths.length} mo)` : monthLabelFull(resolvedOverviewMonth)}
+                  </span>
+                  <span onClick={e => step(e, idx + 1)} className={`w-6 h-6 rounded flex items-center justify-center text-xs flex-shrink-0 ${atEnd ? 'opacity-20' : 'bg-surface-3 hover:bg-white/10 text-text-muted'}`}>→</span>
+                </div>
+              )}
+              <div className={`text-lg font-black mono-num mt-1.5 ${sts.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
+                {sts.amount >= 0 ? '' : '−'}{formatCurrency(Math.abs(sts.amount))}
+              </div>
+              <div className="text-[10px] text-text-muted">safe to spend{overviewIsInProgress ? ' · in progress' : ''}</div>
+            </div>
+
+            {/* Monthly Detail — mini spend bars */}
+            <div role="button" tabIndex={0} onClick={() => setSection('monthly')} className={`${base} ${section === 'monthly' ? activeCls : idleCls}`}>
+              <div className="term-label">Monthly Detail</div>
+              <div className="flex items-end gap-1 h-9 mt-2">
+                {bars.length
+                  ? bars.map((v, i) => <div key={i} className="flex-1 rounded-t bg-accent/50" style={{ height: `${Math.max(8, (v / barMax) * 100)}%` }} />)
+                  : <span className="text-xs text-text-muted self-center">No full months yet</span>}
+              </div>
+              <div className="text-[10px] text-text-muted mt-1.5">{bars.length ? `spend · last ${bars.length} mo` : 'monthly breakdown'}</div>
+            </div>
+
+            {/* Transactions — avg/mo + MoM + last 7 days */}
+            <div role="button" tabIndex={0} onClick={() => setSection('expenses')} className={`${base} ${section === 'expenses' ? activeCls : idleCls}`}>
+              <div className="term-label">Transactions</div>
+              <div className="text-lg font-black text-text-primary mono-num mt-1.5">{avgPerMonth}<span className="text-xs text-text-muted font-normal">/mo avg</span></div>
+              <div className="text-[10px] text-text-muted">
+                {expenses.length.toLocaleString()} total
+                {momPct != null && <span className={momPct > 0 ? 'text-warning' : 'text-positive'}> · {momPct > 0 ? '↑' : '↓'}{Math.abs(momPct)}% vs last mo</span>}
+              </div>
+              {recent7 > 0 && <div className="text-[10px] text-accent-light mt-1">{recent7} in the last 7 days →</div>}
+            </div>
+
+            {/* Action Items — pending + top item */}
+            <div role="button" tabIndex={0} onClick={() => setSection('actions')} className={`${base} ${section === 'actions' ? activeCls : idleCls}`}>
+              <div className="term-label">Action Items</div>
+              <div className="text-lg font-black text-text-primary mono-num mt-1.5">{pending.length}<span className="text-xs text-text-muted font-normal"> pending</span></div>
+              <div className="text-[10px] text-text-muted truncate">{pending[0]?.text ?? 'All clear'}</div>
+            </div>
+          </div>
         );
       })()}
 
@@ -1065,41 +1090,7 @@ export default function BudgetView() {
       {/* ── Read-only daily view (hidden in edit mode) ── */}
       {!editMode && (<>
 
-      {/* Month Navigator */}
-      {availMonths.length > 0 && (() => {
-        const resolved = resolvedOverviewMonth;
-        const idx = availMonths.indexOf(resolved);
-        const monthLabel = (m: string) => {
-          const [y, mo] = m.split('-');
-          return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        };
-        return (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1">
-              <button onClick={() => { if (idx > 0) setOverviewMonth(availMonths[idx - 1]); }}
-                disabled={idx <= 0 || resolved === 'avg'}
-                className="w-8 h-8 rounded-lg bg-surface-2 border border-glass-border hover:bg-surface-3 disabled:opacity-20 flex items-center justify-center text-text-muted text-sm transition-colors">
-                ←
-              </button>
-              <button onClick={() => setOverviewMonth(resolved === 'avg' ? 'latest' : 'avg')}
-                className="px-4 py-1.5 rounded-lg bg-surface-2 border border-glass-border hover:bg-surface-3 text-sm text-text-primary font-semibold transition-colors min-w-[160px]">
-                {resolved === 'avg' ? `Average (${fullMonths.length} months)` : monthLabel(resolved)}
-                {overviewIsInProgress && <span className="ml-2 px-1.5 py-0.5 rounded-full bg-accent/15 text-accent text-[9px] font-bold uppercase tracking-wider align-middle">In progress</span>}
-              </button>
-              <button onClick={() => { if (idx < availMonths.length - 1) setOverviewMonth(availMonths[idx + 1]); }}
-                disabled={idx >= availMonths.length - 1 || resolved === 'avg'}
-                className="w-8 h-8 rounded-lg bg-surface-2 border border-glass-border hover:bg-surface-3 disabled:opacity-20 flex items-center justify-center text-text-muted text-sm transition-colors">
-                →
-              </button>
-            </div>
-            <span className="text-xs text-text-muted">
-              {resolved === 'avg' ? 'Showing averaged data across complete months'
-                : overviewIsInProgress ? 'Month in progress — spending so far'
-                : 'Showing actual spending for this month'}
-            </span>
-          </div>
-        );
-      })()}
+      {/* Month navigation lives in the Overview tab card now (consolidated). */}
 
       {/* Safe to Spend — take-home − essential bills − committed moves − flexible spent so far */}
       {(() => {
