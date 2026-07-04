@@ -39,17 +39,17 @@ const WANT_COLOR = '#a855f7'; // goals — violet
 // Scott & Claire's private app.
 function encouragement(kind: 'have_to' | 'want_to', percent: number): { msg: string; cls: string } {
   if (kind === 'have_to') {
-    if (percent >= 100) return { msg: '✅ Handled. One less thing to sweat — thank god.', cls: 'text-positive' };
+    if (percent >= 100) return { msg: 'Handled. One less thing to sweat — thank god.', cls: 'text-positive' };
     if (percent >= 75) return { msg: 'Almost off your plate — nearly fuckin’ done.', cls: 'text-warning' };
     if (percent >= 50) return { msg: 'Over halfway to covered. The grind’s working.', cls: 'text-text-secondary' };
     if (percent >= 25) return { msg: 'Making a dent in this one.', cls: 'text-text-secondary' };
     return { msg: 'Chipping away at it — every bit counts.', cls: 'text-text-muted' };
   }
-  if (percent >= 100) return { msg: '🙌 HELL YES — you crushed it. Go get it.', cls: 'text-positive' };
-  if (percent >= 75) return { msg: 'So damn close you can taste it. Don’t let up. 👀', cls: 'text-accent-light' };
-  if (percent >= 50) return { msg: 'Halfway there — you’re really doing this. 🔥', cls: 'text-accent-light' };
-  if (percent >= 25) return { msg: 'Building steam. Keep stacking. 💪', cls: 'text-accent-light' };
-  return { msg: 'Just getting rolling — let’s fuckin’ go. 🚀', cls: 'text-text-secondary' };
+  if (percent >= 100) return { msg: 'HELL YES — you crushed it. Go get it.', cls: 'text-positive' };
+  if (percent >= 75) return { msg: 'So damn close you can taste it. Don’t let up.', cls: 'text-accent-light' };
+  if (percent >= 50) return { msg: 'Halfway there — you’re really doing this.', cls: 'text-accent-light' };
+  if (percent >= 25) return { msg: 'Building steam. Keep stacking.', cls: 'text-accent-light' };
+  return { msg: 'Just getting rolling — let’s fuckin’ go.', cls: 'text-text-secondary' };
 }
 
 interface GoalCardData {
@@ -209,7 +209,6 @@ function GoalCard({ goal }: { goal: GoalCardData }) {
       {/* Encouragement — the whole point: make it feel like something. */}
       {done ? (
         <div className="flex items-center gap-2 rounded-lg bg-positive/15 px-3 py-2 animate-fadeIn">
-          <span className="text-lg">🙌</span>
           <span className="text-sm font-bold text-positive">{cheer.msg}</span>
         </div>
       ) : (

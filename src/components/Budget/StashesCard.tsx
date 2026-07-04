@@ -47,11 +47,11 @@ function forecastLine(f: StashForecast): { text: string; cls: string } {
 
   switch (f.status) {
     case 'met':
-      return { text: haveTo ? '✓ Fully funded for the next one' : '🎯 Goal met — this money is free to redeploy', cls: 'text-positive' };
+      return { text: haveTo ? 'Fully funded for the next one' : 'Goal met — this money is free to redeploy', cls: 'text-positive' };
     case 'on_track':
       return haveTo
         ? { text: `Next one ~${f.dueLabel} — on pace to cover it ✓`, cls: 'text-positive' }
-        : { text: `🎯 On pace to beat ${f.dueLabel} — there in ${eta}`, cls: 'text-positive' };
+        : { text: `On pace to beat ${f.dueLabel} — there in ${eta}`, cls: 'text-positive' };
     case 'behind':
       return haveTo
         ? { text: `Next one ~${f.dueLabel} — short ${formatCurrency(f.hitRemaining ?? f.remaining)}; bump to ${formatCurrency(f.requiredPerMonth || 0)}/mo`, cls: 'text-warning' }
@@ -60,7 +60,7 @@ function forecastLine(f: StashForecast): { text: string; cls: string } {
       return { text: `Past ${f.dueLabel} — ${formatCurrency(f.remaining)} short`, cls: 'text-negative' };
     case 'projecting':
       return eta
-        ? { text: haveTo ? `Covered in ${eta} at ${rate}/mo` : `🎯 ${eta} to go at ${rate}/mo${f.daysToFill! > 730 ? ' — bump it up?' : ''}`, cls: 'text-text-secondary' }
+        ? { text: haveTo ? `Covered in ${eta} at ${rate}/mo` : `${eta} to go at ${rate}/mo${f.daysToFill! > 730 ? ' — bump it up?' : ''}`, cls: 'text-text-secondary' }
         : { text: 'Set a $/mo amount to project a fill date', cls: 'text-text-muted' };
     case 'idle':
       return { text: 'Set a $/mo amount to project a fill date', cls: 'text-text-muted' };
@@ -72,6 +72,7 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
   // Inline two-click delete confirm — window.confirm() is a native dialog that
   // blocks the whole tab (and froze browser automation mid-session).
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [confirmingRetire, setConfirmingRetire] = useState<string | null>(null);
   const statuses = useMemo(() => computeAllStashes(stashes, expenses), [stashes, expenses]);
   const totalMonthly = totalStashContributions(stashes);
 
@@ -115,6 +116,28 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
     setConfirmingDelete(null);
     setExpanded(null);
     onChange(stashes.filter(s => s.id !== id));
+  };
+
+  // Retire a crushed goal — "we bought it." Two-click confirm. Snapshots the
+  // final balance for the trophy, then zeroes the moving parts so the stash goes
+  // inert (no contribution, no linked categories, no reserve draw) and drops out
+  // of active tracking + the $15,800 plan. Archived, not deleted.
+  const retireStash = (id: string, balanceSnapshot: number) => {
+    if (confirmingRetire !== id) {
+      setConfirmingRetire(id);
+      setTimeout(() => setConfirmingRetire(prev => (prev === id ? null : prev)), 4000);
+      return;
+    }
+    setConfirmingRetire(null);
+    setExpanded(null);
+    update(id, {
+      achievedAt: new Date().toISOString(),
+      currentBalance: Math.round(balanceSnapshot),
+      monthlyContribution: 0,
+      monthlyFill: 0,
+      categories: [],
+      startMonth: undefined,
+    });
   };
 
   return (
@@ -184,7 +207,7 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                   so it gets made up, with the current-drip recovery time. */}
               {shortfall && (
                 <div className="mb-2 rounded-lg border border-negative/40 bg-negative/10 px-2 py-1.5">
-                  <div className="text-[11px] font-bold text-negative">⚠️ {formatCurrency(shortfall.gap)} short</div>
+                  <div className="text-[11px] font-bold text-negative">{formatCurrency(shortfall.gap)} short</div>
                   <div className="text-[10px] text-text-secondary mt-0.5">
                     {shortfall.culprit
                       ? `The ${formatCurrency(shortfall.culprit.amount)} hit outran the pot. `
@@ -215,6 +238,17 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                 <button onClick={() => setExpanded(sf.id)}
                   className="text-[10px] text-accent/80 hover:underline mb-2 block">
                   + Set a goal to track progress
+                </button>
+              )}
+
+              {/* Crushed a want-to → confirm the purchase and retire it. */}
+              {kindOf(sf) === 'want_to' && forecast?.status === 'met' && (
+                <button onClick={() => retireStash(sf.id, balance)}
+                  className={`w-full mb-2 px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
+                    confirmingRetire === sf.id
+                      ? 'bg-positive/25 border-positive/60 text-positive'
+                      : 'bg-positive/15 border-positive/40 text-positive hover:bg-positive/25'}`}>
+                  {confirmingRetire === sf.id ? 'Tap again — mark it bought & retire this goal' : 'We bought it — mark done'}
                 </button>
               )}
 
@@ -332,18 +366,28 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                       </select>
                     </div>
                   )}
-                  <button onClick={() => removeStash(sf.id)}
-                    className={`text-[10px] ${confirmingDelete === sf.id ? 'px-2 py-0.5 rounded bg-negative/20 border border-negative/50 text-negative font-bold' : 'text-negative/80 hover:text-negative'}`}>
-                    {confirmingDelete === sf.id ? 'Click again to delete — transactions are untouched' : 'Delete stash'}
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {kindOf(sf) === 'want_to' && (
+                      <button onClick={() => retireStash(sf.id, balance)}
+                        className={`text-[10px] ${confirmingRetire === sf.id ? 'px-2 py-0.5 rounded bg-positive/20 border border-positive/50 text-positive font-bold' : 'text-positive/80 hover:text-positive'}`}>
+                        {confirmingRetire === sf.id ? 'Tap again — mark bought & retire' : 'Mark as bought'}
+                      </button>
+                    )}
+                    <button onClick={() => removeStash(sf.id)}
+                      className={`text-[10px] ${confirmingDelete === sf.id ? 'px-2 py-0.5 rounded bg-negative/20 border border-negative/50 text-negative font-bold' : 'text-negative/80 hover:text-negative'}`}>
+                      {confirmingDelete === sf.id ? 'Click again to delete — transactions are untouched' : 'Delete stash'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           );
         };
+        const active = statuses.filter(s => !s.stash.achievedAt);
+        const achieved = statuses.filter(s => s.stash.achievedAt);
         const groups = [
-          { key: 'have', label: "Have to's", color: HAVE_COLOR, hint: 'bills you pre-fund', list: statuses.filter(s => kindOf(s.stash) === 'have_to') },
-          { key: 'want', label: "Want to's", color: WANT_COLOR, hint: "goals you're saving toward", list: statuses.filter(s => kindOf(s.stash) === 'want_to') },
+          { key: 'have', label: "Have to's", color: HAVE_COLOR, hint: 'bills you pre-fund', list: active.filter(s => kindOf(s.stash) === 'have_to') },
+          { key: 'want', label: "Want to's", color: WANT_COLOR, hint: "goals you're saving toward", list: active.filter(s => kindOf(s.stash) === 'want_to') },
         ];
         return (
           <div className="mt-4 space-y-5">
@@ -359,6 +403,34 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                 </div>
               </div>
             ))}
+
+            {/* Crushed — the trophy shelf. Retired want-to's, bought and done. */}
+            {achieved.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-2 h-2 rounded-full bg-positive" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-positive">Crushed</span>
+                  <span className="text-[10px] text-text-muted">· bought &amp; done</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {achieved.map(({ stash: sf }) => (
+                    <div key={sf.id} className="p-3 rounded-xl bg-positive/5 border border-positive/25 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-text-primary truncate">{sf.name}</div>
+                        <div className="text-[10px] text-text-muted">
+                          saved {formatCurrency(sf.currentBalance || 0)}
+                          {sf.achievedAt ? ` · done ${new Date(sf.achievedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
+                        </div>
+                      </div>
+                      <button onClick={() => update(sf.id, { achievedAt: undefined })}
+                        className="text-[10px] text-text-muted hover:text-accent-light flex-shrink-0" title="Bring this goal back to active">
+                        undo
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}

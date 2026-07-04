@@ -279,6 +279,11 @@ export interface SinkingFund {
    *  Middle-ground precision: no exact day, so the countdown targets the 1st of
    *  this month's next occurrence. Ignored when cadence is 'custom'. */
   dueMonth?: number;
+  /** Set when a want-to is CRUSHED and bought — the goal is retired to the
+   *  trophy shelf. An achieved stash is inert (no contribution, no linked
+   *  categories, no reserve draw) and drops out of active tracking + totals;
+   *  currentBalance holds the final "saved toward it" snapshot for display. */
+  achievedAt?: string; // ISO timestamp
 }
 
 /** Preferred alias going forward. */
