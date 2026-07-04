@@ -100,9 +100,10 @@ export default function SyncStatus() {
   }
   return (
     <button onClick={() => void onSync()} title={lastPull}
-      className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors">
+      className="inline-flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-lg bg-accent/10 border border-accent/30 text-accent-light text-xs font-semibold hover:bg-accent/20 transition-colors">
       <span className="w-1.5 h-1.5 rounded-full bg-positive" />
-      Updated {lastSync ? ago(lastSync) : 'never'} · ↻
+      ↻ Update
+      <span className="text-text-muted font-normal">· updated {lastSync ? ago(lastSync) : 'never'}</span>
     </button>
   );
 }

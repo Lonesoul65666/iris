@@ -163,14 +163,14 @@ export default function DashboardView() {
         <div className="aurora-blob aurora-b" />
 
         <div className="relative p-6 md:p-7">
-          {/* HUD top strip — LIVE chip + greeting + timestamp */}
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-3">
-              <SyncStatus />
-              <span className="text-base">{flavor.icon}</span>
-              <span className="text-xs text-text-muted">
-                {flavor.greeting}{greetingNames ? <>, <span className="text-text-secondary font-medium">{greetingNames}</span></> : ''}.
+          {/* HUD top strip — greeting message, with the update button stacked
+              right underneath it (so the refresh reads as an actual button). */}
+          <div className="flex items-start justify-between mb-5">
+            <div className="flex flex-col items-start gap-2">
+              <span className="text-sm text-text-secondary">
+                {flavor.icon} {flavor.greeting}{greetingNames ? <>, <span className="text-text-primary font-medium">{greetingNames}</span></> : ''}.
               </span>
+              <SyncStatus />
             </div>
             <div className="hidden md:flex items-center gap-3 term-label">
               <span>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase()}</span>
