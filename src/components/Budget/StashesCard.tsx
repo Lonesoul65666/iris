@@ -244,8 +244,7 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                     </span>
                   </div>
                   {/* Cadence — when's it due? Drives the countdown + pace nudge.
-                      Category linking is handled at card creation (auto reserve
-                      lane), so no manual "cover a category" picker here. */}
+                      Category linking (below) only surfaces on an unlinked stash. */}
                   <div className="space-y-1.5">
                     <span>When's it due?</span>
                     <div className="flex gap-1">
@@ -287,6 +286,28 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                       </div>
                     )}
                   </div>
+                  {/* Link a category — shown ONLY when nothing's linked yet. A
+                      linked category drops this pot's spend into the reserve lane,
+                      so its bills draw the pot down instead of double-counting
+                      against Safe-to-Spend when you've already committed for them.
+                      Auto-created cards arrive pre-linked, so this stays hidden. */}
+                  {(sf.categories ?? []).length === 0 && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span title="So its bills draw from this pot instead of hitting Safe-to-Spend twice">Cover a category</span>
+                      <select
+                        value=""
+                        onChange={e => {
+                          const c = e.target.value;
+                          if (c) update(sf.id, { categories: [c] });
+                        }}
+                        className="bg-surface-2 border border-glass-border rounded px-1.5 py-1 text-[11px] text-text-secondary outline-none max-w-[160px]">
+                        <option value="">choose…</option>
+                        {CATEGORY_OPTIONS.map(c => (
+                          <option key={c.id} value={c.id}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <button onClick={() => removeStash(sf.id)}
                     className={`text-[10px] ${confirmingDelete === sf.id ? 'px-2 py-0.5 rounded bg-negative/20 border border-negative/50 text-negative font-bold' : 'text-negative/80 hover:text-negative'}`}>
                     {confirmingDelete === sf.id ? 'Click again to delete — transactions are untouched' : 'Delete stash'}
