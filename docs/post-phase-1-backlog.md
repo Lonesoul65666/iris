@@ -297,3 +297,21 @@ After Phase 1 ships, write a `docs/lessons-learned.md` capturing:
 - Anti-patterns identified (1500-line files, six-features-in-one-session, dismissing/confirming UX confusion, oversold aggregator coverage)
 
 This becomes a reference for Phase 2 and Phase 3 — and for anyone else who eventually contributes to Iris.
+
+## Weekly dynamic budget nudges (intelligence layer) — queued 2026-07-04
+
+**Status:** Future build. Same Phase-2 "intelligence layer" bucket as the paused notices card.
+
+**What Scott wants:** action items / prompts that surface on a cadence (~weekly) and give a *timely* thing to think about — "here's what to consider with your budget this week" — driven by recent spending/state, not a fixed onboarding checklist.
+
+**What exists today (the gap):**
+- Action items = `src/utils/dynamicActions.ts` — a FINITE catalog (~15 money-hygiene templates: backdoor Roth, umbrella, 401k rate, CPA, HYSA move, etc.) that surface when a state condition is met and remember completions. They react to data but don't regenerate; once cleared, the queue goes quiet.
+- Notices/insights = `src/utils/insightsEngine.ts` — real, data-derived, recomputed each load, but not scheduled and no dismiss/accept persistence (see the paused notices work).
+
+**Build sketch (when the phase opens):**
+- A recurring nudge engine that samples recent transactions/budget deltas and emits 1–2 timely prompts on a weekly cadence (last-fired timestamp in a collection, not a live recompute).
+- Dismiss/accept persistence (dismissed IDs collection) so nudges can be waved off and don't regenerate — the self-contained half we scoped for notices.
+- "Accept → file" needs a defined destination (Action Items) — decide the routing before building.
+
+**Deliberately NOT built now:** Scott is entering a "live with it for a month, micro-adapt" phase. This waits until the intelligence layer is the focus.
+
