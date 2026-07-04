@@ -130,7 +130,13 @@ export function guessCategory(desc: string): ExpenseCategory {
 
   if (d.includes('texashealth') || d.includes('hand and wrist') || d.includes('pharmacy') || d.includes('cvs') || d.includes('walgreen') || d.includes('doctor') || d.includes('medical') || d.includes('dental') || d.includes('optom') || d.includes('texas digestive') || d.includes("america's best") || d.includes('honeydew care') || d.includes('behance beauty med') || d.includes('saudi german') || d.includes('boots ') || d.includes('alivemoment')) return 'healthcare';
 
-  if (d.includes('state farm') || d.includes('allstate') || d.includes('geico') || d.includes('progressive') || d.includes('insurance') || d.includes('allianz travel')) return 'insurance';
+  // State Farm = home insurance — treated as a recurring monthly bill (Scott's
+  // call: it lives with lights/gas under Utilities, not its own insurance line).
+  if (d.includes('state farm')) return 'utilities';
+  // Allianz = trip insurance — a travel cost, not a standing insurance bill.
+  if (d.includes('allianz')) return 'travel_personal';
+  // Car insurance (Liberty Mutual, below) is its own lumpy Have-To pot category.
+  if (d.includes('allstate') || d.includes('geico') || d.includes('progressive')) return 'car_insurance';
 
   if (d.includes('autozone') || d.includes("o'reilly") || d.includes('jiffy') || d.includes('discount tire') || d.includes('links car wash') || d.includes('car wash') || d.includes('whitewater car wash') || d.includes('tommys express')) return 'car_maintenance';
 
@@ -174,8 +180,8 @@ export function guessCategory(desc: string): ExpenseCategory {
   // ── 2026-06-08 pass: merchants that were falling through to 'other' ──
   // Taxes
   if (d.includes('us treasury') || d.includes('treasury pmnt') || d.includes('treasury serv')) return 'taxes';
-  // Insurance
-  if (d.includes('liberty mutual')) return 'insurance';
+  // Car insurance — its own lumpy Have-To pot category (Liberty Mutual ~2x/yr).
+  if (d.includes('liberty mutual')) return 'car_insurance';
   // Phone / utilities
   if (d.includes('vz wireless') || d.includes('vzw webpay') || d.includes('vzw ')) return 'utilities';
   // Healthcare — clinics, docs, dental, OBGYN
