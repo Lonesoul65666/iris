@@ -511,7 +511,7 @@ export default function DashboardView() {
         // Budget Overview's StashesCard; duplicating them here is noise.
         const statuses = computeAllStashes(dashSinkingFunds, rawExpenses);
         const goalFunds = statuses
-          .filter(s => s.stash.targetAmount > 0 || s.stash.targetDate)
+          .filter(s => !s.stash.achievedAt && (s.stash.targetAmount > 0 || s.stash.targetDate))
           .map(s => ({ ...s.stash, currentBalance: s.balance }));
         if (goalFunds.length === 0) return null;
         return (
