@@ -4,8 +4,6 @@ import type { SinkingFund } from '../../types/budget';
 interface GoalTrackerProps {
   sinkingFunds: SinkingFund[];
   monthlyInvestmentAmount: number;
-  emergencyFundBalance: number;
-  monthlyExpenses: number;
 }
 
 function formatCurrency(v: number): string {
@@ -184,25 +182,10 @@ function GoalCard({ goal }: { goal: GoalCardData }) {
 export default function GoalTracker({
   sinkingFunds,
   monthlyInvestmentAmount,
-  emergencyFundBalance,
-  monthlyExpenses,
 }: GoalTrackerProps) {
-  const goals = useMemo(() => {
-    const fundGoals = sinkingFunds.map(computeGoalData);
-
-    // Emergency fund goal: target = 6 months of expenses
-    const efTarget = monthlyExpenses * 6;
-    const efGoal = computeGoalData({
-      id: '__emergency-fund__',
-      name: 'Emergency Fund (6 mo)',
-      targetAmount: efTarget,
-      currentBalance: emergencyFundBalance,
-      monthlyContribution: 0,
-      color: '#ef4444',
-    });
-
-    return [...fundGoals, efGoal];
-  }, [sinkingFunds, emergencyFundBalance, monthlyExpenses]);
+  // Only the user's real stashes (Have-To's / Want-To's) — no synthesized goals.
+  // An emergency fund, if wanted, is a real stash the user owns and can edit.
+  const goals = useMemo(() => sinkingFunds.map(computeGoalData), [sinkingFunds]);
 
   // Summary stats
   const totalTarget = goals.reduce((s, g) => s + g.targetAmount, 0);
