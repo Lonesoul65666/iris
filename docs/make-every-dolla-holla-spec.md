@@ -1,65 +1,55 @@
-# "Make Every Dolla Holla" — zero-based budget + Have-to/Want-to stashes
+# "Make Every Dolla Holla" — every dollar to work (v2, simpler)
 
-**Status:** SPEC — approved in concept 2026-07-04. Data move-list awaits Scott's sign-off (see §6) before any data mutation.
-**Supersedes/extends:** `budget-pulse` naming, `docs/stashes-design.md` (stash mechanic), `docs/money-map-design.md` (the $15,800 frame).
+**Status:** SPEC v2 — confirmed by Scott 2026-07-04. Replaces the v1 reserve-lane-cascade approach with a simpler, additive commit model. Extends `docs/stashes-design.md`, `docs/money-map-design.md`.
 
-## 1. The idea
-Give every dollar of the guaranteed base ($15,800) a job. At month-end, assigned ≈ $15,800 (or under). Under = dollars left idle → save more / adapt. YNAB-style, but fun.
+## The idea
+Give every dollar of the $15,800 base a job: everyday spending + investing + **committed** moves into Have-To/Want-To pots. "Reserved" (the old $2,000 auto-set-aside) goes away — a dollar only leaves the budget when you actually **move it** and hit **Commit**.
 
-## 2. Naming + look
-- **"Budget Pulse" card → titled "Make Every Dolla Holla"** (big purple title). Functional subline "how's the month going."
-- **Status chips redesigned** — the top summary filters ("7 on track / 16 untouched") AND the per-row status pills → one matching, attractive button style on both sides.
+## The pieces
 
-## 3. Layout — two stacked cards
-1. **"Make Every Dolla Holla"** (top): the month's spending pace (existing category rows, redesigned chips) + the Free nudge.
-2. **"Have-tos & Want-tos"** (big card, directly below — KEEP it big; it's the watch-it-grow surface):
-   - **Have-tos** group — obligations pre-funded monthly: Taxes, Insurance (annual chunk), Credit-card fees.
-   - **Want-tos** group — goals: Trips, and future dreams (remodel, Italy, …).
-   - Grouping is organizational only; the mechanic is identical for both.
+### 1. Rename "Stashes" → "Have To's / Want To's"
+Same card, new identity. Every pot has a `kind`:
+- **Have-to** — obligations you pre-fund: taxes, insurance, yearly things.
+- **Want-to** — goals: trips, theater room, kitchen table, office, a repair.
 
-## 4. The mechanic (ONE rule: a dollar leaves the $15,800 only when it's REAL)
-Generalizes the Investing confirm pattern (`deployConfirmations`, status feed/confirmed/planned) to stashes.
+Grouping only — the mechanic is identical. Cards differentiated by color/label. Playful, not clinical.
 
-Each stash has:
-- **planned monthly fill** (user-set per stash; the split is Scott's) — the one-tap default when confirming
-- **balance** + **goal/target** + **ETA**
-- **"Confirm moved"** (per stash, per month) → subtracts that amount from the month's $15,800, adds to balance, advances ETA
+### 2. "+ New Have-To / Want-To" button
+Was "+ New stash." On click, pick the kind; the new card shows which.
 
-Rules:
-- Planned-but-not-confirmed = **$0 impact** on the month. Skipping a month = **no penalty**, no distortion.
-- **Money Map "Reserves" slice = confirmed stash moves only** (same rule as investing), so the whole partition runs on "counts when real."
-- Month math: `Free = 15,800 − everyday spent − confirmed investing − confirmed stash moves`.
-- **Behavior change:** today reserves auto-deduct $2,000 regardless. New model = $0 until confirmed → Free reads higher until moves are confirmed. Correct and intended.
+### 3. They also list at the BOTTOM of the budget
+Inside "Make Every Dolla Holla," right under the last category (Transportation/Gas), a divider **"Have To's / Want To's,"** then each pot as a line like the budget rows. Shows **all** of them (have-tos + want-tos). Each line:
+- a **planned "move" amount** (one number; editable here OR on the big card — same value)
+- a **Commit** button
 
-## 5. Envelope truth
-Stashes are **virtual buckets over the ONE big savings (~$130k)**. Confirming = "earmarked $X of savings to this stash." App tracks the split; the real account holds the pool. Month-end: sweep leftover checking → savings, confirm the moves, app matches reality ("off the top").
+They live in TWO places: the big cards up top (create + watch grow) and these budget lines.
 
-## 6. Data move-list — NEEDS SCOTT'S SIGN-OFF before touching data
-Current monthly buckets + 2 stashes → target state:
+### 4. Commit mechanic (the core)
+- The planned move just sits there — it does **NOT** touch the $15,800.
+- Hit **Commit** = "I physically moved that cash from checking → savings." Now it:
+  - counts against the month's $15,800 (that dollar went to work),
+  - funds the pot (balance += amount),
+  - ticks the goal's ETA down.
+- Reuse the existing `DeployConfirmation` store (`{month, lane, amount}`) with `lane = stash.id` — already built for investing, comment says it extends to stash ids.
 
-| Item | Today | Proposed | Notes |
-|---|---|---|---|
-| **Taxes** | already a stash ($10k target, $1,000/mo) | **Have-to** stash (no move) | already correct |
-| **Trips** | already a stash ($1,000/mo, no target) | **Want-to** stash (no move) | maybe set a target for an ETA |
-| **Credit Card Memberships** | monthly bucket `credi_card_memberships` $70/mo | **Have-to** stash; remove monthly bucket | annual card fees — confirm total $/yr |
-| **Insurance** | monthly bucket `insurance` $450/mo | **SPLIT**: keep monthly bill in `insurance`, annual premium → **Have-to** stash | NEED real numbers ↓ |
+### 5. "Reserved" → "Committed"
+- Kill the $2,000 auto-`totalReserveSetAside` off the top.
+- Header "$2,000 reserved · $10,470 free" → **"$X committed · $Y free"**, starting at $0 and climbing as you move money.
+- Money Map "Reserves" slice → **committed moves this month**.
+- `Free = 15,800 − everyday spent − confirmed investing − committed moves`.
+- Touches: `safeToSpend.ts`, `MoneyMap.tsx`, `BudgetPulse.tsx` header, scorecard cash-flow line.
 
-**Numbers — CONFIRMED by Scott 2026-07-04:**
-- **Insurance split:** the monthly bill is **State Farm home insurance ~$68/mo** → keep in monthly spending (rename bucket to "Home Insurance", budget ~$68). **Car insurance ~$3,200/yr** (≈2 payments of ~$1,600) → new **Have-to** stash "Car Insurance" (~$267/mo fill). Distinct name from Taxes so they don't collide.
-- **Credit-card memberships:** ~**$595 + ~$130 = ~$725/yr** (one-time annual payments, exact TBD) → new **Have-to** stash "Credit Card Fees" (~$60/mo fill). Drop the monthly `credi_card_memberships` bucket.
-- **Structure:** every stash is its own card/entry, shown in BOTH the big stashes card (create + watch grow) AND as confirm lines at the bottom of "Make Every Dolla Holla." One data set, two surfaces; confirm from either syncs.
-- **Proposed default fills (Scott adjusts):** Taxes $1,000 · Car Insurance $267 · Credit Card Fees $60 (Have-tos) · Trips $1,000 (Want-to). Confirm-only-counts means unfunded months don't penalize, so the fills are targets, not forced deductions.
+### 6. Lumpy-bill alarm (SECOND layer — after the core)
+A lumpy bill (e.g. $1,600 car insurance) alarms **only if the pot didn't cover it**:
+- bill draws its Have-To pot down; pot ≥ bill → silent (you planned ahead); pot short → flag it.
+- Needs a bill→pot association (which category/merchant draws which pot). Build after the core lands.
 
-## 7. Free nudge
-When Free > 0 near month-end: adult-funny "give it a job" nudge (assign to a stash / investing / goal). Personality, not a scold.
+## Build order
+- **A (core, safe/additive):** `kind` on pots + tag Taxes=have_to, Trips=want_to; rename card + group + type-picker on +New. No reserve-math change.
+- **B:** budget-bottom "Have To's / Want To's" lines (move amount + Commit) + commit mechanic (DeployConfirmation lane=stashId) → funds pot + ETA.
+- **C:** "reserved → committed" across header / Money Map / Safe-to-Spend / scorecard.
+- **D:** lumpy-bill draw-down alarm (§6).
+- **E:** Free "give it a job" nudge, adult-funny.
 
-## 8. Build phases (after move-list sign-off)
-1. Rename card + redesign status buttons (cosmetic, safe).
-2. Stash model: add `kind: 'have_to' | 'want_to'` + `monthlyFill` + a per-month confirm (generalize `deployConfirmations` → stash confirmations). Have-to/Want-to grouping on the big card.
-3. Data moves (§6) — only after approval + a backup.
-4. Money Map Reserves → confirmed-only; Free nudge.
-5. Fun layer: ETA / "N months to goal" / growth animation on confirm (later, its own pass).
-
-## Open decisions carried in
-- Stashes rename to "Have-tos & Want-tos" grouping confirmed; the *collection* stays "sinkingFunds"/"stashes" internally for now.
-- Reconciliation of virtual stash balances against the real synced savings balance: later.
+## Dropped from v1 (deliberately)
+No reserve-lane category cascade, no Liberty-Mutual transaction recategorization required for the core. Simpler + safe.
