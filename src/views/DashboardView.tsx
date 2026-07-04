@@ -423,9 +423,6 @@ export default function DashboardView() {
         </div>
       )}
 
-      {/* ════ On-Target Earnings — comp received YTD vs the annual OTE target ═ */}
-      <OnTargetEarnings expenses={rawExpenses} />
-
       {/* ════ ROW: Spending donut + Investments donut ═══════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <DataCard title="Spending this month" subtitle={formatCurrency(totalSpending)} cta="Open Budget →" onClick={() => setView('budget')}>
@@ -521,6 +518,10 @@ export default function DashboardView() {
           />
         );
       })()}
+
+      {/* ════ On-Target Earnings — OTE over base, below the goals it feeds and
+          above where the money's spent. Not front-and-center by design. ═══ */}
+      <OnTargetEarnings expenses={rawExpenses} />
 
       {/* ════ SPEND BY ACCOUNT ══════════════════════════════════════════ */}
       <AccountBreakdown />
