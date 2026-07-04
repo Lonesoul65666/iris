@@ -1058,11 +1058,11 @@ export default function BudgetView() {
                     : 'Flexible spending is past the watermark for this month'}
                 </div>
               </div>
-              <div className="text-right text-xs text-text-muted space-y-0.5">
-                <div>{formatCurrency(sts.takeHome)} take-home</div>
-                <div>− {formatCurrency(sts.fixedCommitment)} fixed bills</div>
-                <div>− {formatCurrency(sts.reserveSetAside)} reserve set-asides</div>
-                <div>− {formatCurrency(sts.flexSpent)} flexible spent so far</div>
+              <div className="text-right text-sm space-y-1">
+                <div className="mono-num text-positive font-bold">{formatCurrency(sts.takeHome)} <span className="text-text-secondary font-medium">take-home</span></div>
+                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.fixedCommitment)} <span className="text-text-muted font-normal">fixed bills</span></div>
+                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.reserveSetAside)} <span className="text-text-muted font-normal">reserve set-asides</span></div>
+                <div className="mono-num text-text-primary font-semibold">− {formatCurrency(sts.flexSpent)} <span className="text-text-muted font-normal">flexible spent so far</span></div>
               </div>
             </div>
             <div className="mt-3 h-2 rounded-full bg-surface-2 overflow-hidden">
