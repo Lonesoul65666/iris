@@ -126,6 +126,25 @@ export function nextDueDate(stash: Stash, now: Date = new Date()): Date | null {
   return null;
 }
 
+/** The $/mo needed to hit a stash's goal by its due date, from where it stands
+ *  today — the auto-fill for the contribution field ("don't make me do the
+ *  math"). Spreads what's still needed over the months until the next due date.
+ *  Semiannual targets the per-cycle payment (half the annual goal). Returns null
+ *  when there's nothing to compute from (no goal, no due date, or already past
+ *  due / already funded) — callers leave the existing contribution untouched. */
+export function requiredMonthlyForGoal(stash: Stash, balance: number, now: Date = new Date()): number | null {
+  const target = stash.targetAmount || 0;
+  if (target <= 0) return null;
+  const due = nextDueDate(stash, now);
+  if (!due) return null;
+  const monthsLeft = (due.getTime() - now.getTime()) / MS_PER_DAY / DAYS_PER_MONTH;
+  if (monthsLeft <= 0) return null;
+  const cycleTarget = stash.cadence === 'semiannual' ? target / 2 : target;
+  const needed = Math.max(0, cycleTarget - balance);
+  if (needed <= 0) return null;
+  return Math.ceil(needed / monthsLeft);
+}
+
 /** Forward look at a stash vs its goal — built on the DERIVED balance, so the
  *  pots show "how full + when full" the same way they show their balance. Pure
  *  numbers + a status enum; the component formats the label (keeps this IO-free).

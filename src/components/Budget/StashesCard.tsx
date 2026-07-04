@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react';
 import type { Expense, Stash } from '../../types/budget';
 import { formatCurrency, formatDuration } from '../../utils/format';
-import { computeAllStashes, computeStashForecast, totalStashContributions, type StashForecast } from '../../utils/stashMath';
+import { computeAllStashes, computeStashForecast, totalStashContributions, requiredMonthlyForGoal, type StashForecast } from '../../utils/stashMath';
 import { currentMonthKey } from '../../utils/transactionAnalysis';
 import { defaultBudgetBuckets } from '../../stores/budgetDefaults';
 
@@ -77,6 +77,16 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
 
   const update = (id: string, patch: Partial<Stash>) => {
     onChange(stashes.map(s => (s.id === id ? { ...s, ...patch } : s)));
+  };
+
+  // Goal/date changes auto-fill the $/mo needed to hit the goal by the due date
+  // (Scott: "don't make me do the math") — the user can still override it after.
+  // No-op on the contribution when there's nothing to compute (no date/goal yet).
+  const updateAuto = (id: string, patch: Partial<Stash>, balance: number) => {
+    const sf = stashes.find(s => s.id === id);
+    if (!sf) return update(id, patch);
+    const req = requiredMonthlyForGoal({ ...sf, ...patch }, balance);
+    update(id, req != null ? { ...patch, monthlyContribution: req } : patch);
   };
 
   const addStash = (kind: 'have_to' | 'want_to') => {
@@ -239,7 +249,7 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                     <span>Goal (optional)</span>
                     <span className="flex items-center gap-0.5">$
                       <input type="number" value={sf.targetAmount}
-                        onChange={e => update(sf.id, { targetAmount: Number(e.target.value) || 0 })}
+                        onChange={e => updateAuto(sf.id, { targetAmount: Number(e.target.value) || 0 }, balance)}
                         className="w-20 bg-transparent border border-glass-border focus:border-accent/50 rounded px-1 py-0.5 text-right outline-none" />
                     </span>
                   </div>
@@ -257,9 +267,9 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                         const active = current === c;
                         return (
                           <button key={c}
-                            onClick={() => update(sf.id, c === 'custom'
+                            onClick={() => updateAuto(sf.id, c === 'custom'
                               ? { cadence: 'custom' }
-                              : { cadence: c, dueMonth: sf.dueMonth ?? (new Date().getMonth() + 1) })}
+                              : { cadence: c, dueMonth: sf.dueMonth ?? (new Date().getMonth() + 1) }, balance)}
                             className={`flex-1 px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${active ? 'bg-accent/20 border-accent/50 text-accent' : 'border-glass-border text-text-muted hover:text-text-secondary'}`}>
                             {label}
                           </button>
@@ -270,7 +280,7 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                       <div className="flex items-center justify-between gap-2">
                         <span>Which month{sf.cadence === 'semiannual' ? ' (repeats +6 mo)' : ''}?</span>
                         <select value={sf.dueMonth ?? ''}
-                          onChange={e => update(sf.id, { dueMonth: Number(e.target.value) || undefined })}
+                          onChange={e => updateAuto(sf.id, { dueMonth: Number(e.target.value) || undefined }, balance)}
                           className="bg-surface-2 border border-glass-border rounded px-1.5 py-1 text-[11px] text-text-secondary outline-none">
                           <option value="">choose…</option>
                           {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
@@ -281,7 +291,7 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                       <div className="flex items-center justify-between gap-2">
                         <span>Target date</span>
                         <input type="date" value={sf.targetDate ?? ''}
-                          onChange={e => update(sf.id, { targetDate: e.target.value || undefined })}
+                          onChange={e => updateAuto(sf.id, { targetDate: e.target.value || undefined }, balance)}
                           className="bg-surface-2 border border-glass-border rounded px-1.5 py-1 text-[11px] text-text-secondary outline-none" />
                       </div>
                     )}
