@@ -29,7 +29,7 @@ import { auditBudgetEdit, type BudgetDiff } from '../../stores/auditLogStore';
 import BucketGroupsManager from './BucketGroupsManager';
 import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, saveMerchantMapping } from '../../stores/actionStore';
-import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, isRealExpense, isCompleteMonth, currentMonthKey, emptyMonthlySpending, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
+import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, getCategoryLabel, isRealExpense, isCompleteMonth, currentMonthKey, emptyMonthlySpending, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
 import { formatCurrency } from '../../utils/format';
 import { laneOf, isOverBudget, RESERVE_ALLOCATIONS, FLEX_APPROACHING, type BudgetLane } from '../../utils/budgetLanes';
 import ScoreRing from '../ui/ScoreRing';
@@ -206,7 +206,7 @@ export default function BudgetView() {
     const fresh: BudgetBucket = {
       category: `custom_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
       label,
-      icon: newBucket.icon || '📦',
+      icon: newBucket.icon || '',
       monthlyBudget: budget,
       monthlyActual: 0,
       color: '#8b5cf6',
@@ -592,7 +592,6 @@ export default function BudgetView() {
             onClick={startEdit}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent/15 hover:bg-accent/25 border border-accent/30 text-accent-light text-sm font-semibold transition-colors flex-shrink-0"
           >
-            <span>✏️</span>
             Edit Budget
           </button>
         )}
@@ -612,7 +611,6 @@ export default function BudgetView() {
                 ? 'bg-accent/15 text-accent-light border border-accent/30 shadow-sm shadow-accent/10'
                 : 'bg-surface-2 text-text-muted hover:bg-surface-3 hover:text-text-secondary border border-transparent'
             }`}>
-            <span className="text-base">{t.icon}</span>
             <span>{t.label}</span>
             {'badge' in t && t.badge && (
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
@@ -646,7 +644,6 @@ export default function BudgetView() {
             }`}
           >
             <span className="flex items-center gap-2">
-              <span className="text-base">📥</span>
               <span>
                 <strong>{recent.length}</strong> {recent.length === 1 ? 'transaction' : 'transactions'} in the last 7 days
                 {hasReview && (
@@ -718,7 +715,7 @@ export default function BudgetView() {
           const bucket = monthBuckets.find(b => b.category === cat);
           catChanges.push({
             cat,
-            label: bucket?.label || cat,
+            label: bucket?.label || getCategoryLabel(cat),
             icon: bucket?.icon || '📦',
             current: Math.round(cur),
             prior: Math.round(prev),
@@ -785,7 +782,7 @@ export default function BudgetView() {
 
           {/* Context Banner */}
           <div className="flex items-center gap-4 px-4 py-2 rounded-lg bg-white/[0.02] border border-glass-border text-xs text-text-muted">
-            <span>📊 Year-to-date avg: <strong className="text-text-secondary">{formatCurrency(ytdSpend)}</strong> spend / <strong className="text-positive">{formatCurrency(ytdIncome)}</strong> income across {fullMonths.length} complete months</span>
+            <span>Year-to-date avg: <strong className="text-text-secondary">{formatCurrency(ytdSpend)}</strong> spend / <strong className="text-positive">{formatCurrency(ytdIncome)}</strong> income across {fullMonths.length} complete months</span>
             {isInProgress
               ? <span className="text-text-secondary">Month in progress — averages compare complete months only</span>
               : <>
@@ -814,7 +811,6 @@ export default function BudgetView() {
                   return (
                     <div key={c.cat} className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm w-6 text-center">{c.icon}</span>
                         <span className="text-xs text-text-secondary w-36 truncate">{c.label}</span>
                         <div className="flex-1 bg-white/10 rounded-full h-5 relative overflow-hidden">
                           <div className="h-5 rounded-full bg-gradient-to-r from-slate-500 to-slate-400 transition-all duration-500"
@@ -853,7 +849,6 @@ export default function BudgetView() {
                 return (
                   <div key={c.cat} className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm w-6 text-center">{c.icon}</span>
                       <span className="text-xs text-text-secondary w-36 truncate">{c.label}</span>
                       <div className="flex-1 bg-white/10 rounded-full h-5 relative overflow-hidden">
                         {prior && c.prior > 0 && (
@@ -892,9 +887,9 @@ export default function BudgetView() {
               };
 
               const lanes: { id: BudgetLane; title: string; sub: string }[] = [
-                { id: 'fixed', title: '🔒 Essentials & On Target', sub: 'Non-negotiable bills (amounts vary) — green = landed as expected' },
-                { id: 'flexible', title: '🎯 Flexible Spending', sub: 'Where cutting actually moves the needle' },
-                { id: 'reserve', title: '🏦 Reserves', sub: 'Lumpy / annual — set aside monthly, not a monthly bust' },
+                { id: 'fixed', title: 'Essentials & On Target', sub: 'Non-negotiable bills (amounts vary) — green = landed as expected' },
+                { id: 'flexible', title: 'Flexible Spending', sub: 'Where cutting actually moves the needle' },
+                { id: 'reserve', title: 'Reserves', sub: 'Lumpy / annual — set aside monthly, not a monthly bust' },
               ];
 
               return lanes.map(L => {
@@ -1278,7 +1273,6 @@ export default function BudgetView() {
           <h2 className="text-lg font-semibold text-text-primary mb-4">Budget Health</h2>
           {!hasBudgetData ? (
             <EmptyState
-              icon="🩺"
               title="Budget Health needs data first"
               description="Set your paycheck in Settings or import a bank statement, and Iris will score savings rate, adherence, housing ratio, and cash flow."
               ctaLabel="Set income"
@@ -1364,7 +1358,6 @@ export default function BudgetView() {
           </div>
           {overBudget.length === 0 ? (
             <div className="text-center py-6">
-              <div className="text-3xl mb-2">✅</div>
               <div className="text-sm text-positive font-medium">All categories on budget</div>
               <div className="text-xs text-text-muted mt-1">No categories exceed their allocated budget</div>
             </div>
@@ -1383,7 +1376,6 @@ export default function BudgetView() {
                 return (
                   <div key={b.category} className="flex items-center gap-3 p-3 rounded-lg bg-negative/5 border border-negative/15 cursor-pointer hover:bg-negative/10 transition-colors"
                     onClick={() => setDrilldownCategory(b.category)}>
-                    <span className="text-lg">{b.icon}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-text-primary">{b.label.split('(')[0].trim()}</div>
                       <div className="text-[10px] text-text-muted">{formatCurrency(b.monthlyActual)} spent vs {formatCurrency(b.monthlyBudget)} budget · {formatCurrency(b.monthlyActual * 12)}/yr at this pace</div>
@@ -1404,7 +1396,6 @@ export default function BudgetView() {
       {filteredBuckets.filter(b => b.monthlyActual > 0 || b.monthlyBudget > 0).length === 0 && (
         <div className="glass-card p-6 border-2 border-accent/40 bg-accent/5">
           <div className="flex items-center gap-4">
-            <span className="text-3xl flex-shrink-0">✏️</span>
             <div className="flex-1 min-w-0">
               <div className="text-base font-semibold text-text-primary">Your budget isn't set up yet</div>
               <div className="text-xs text-text-muted mt-0.5">Set monthly budgets per category, define stashes, and configure fun money. Takes a couple minutes.</div>
@@ -1589,7 +1580,6 @@ export default function BudgetView() {
                 backgroundColor: over ? 'rgba(239,68,68,0.10)' : pctUsed >= 80 ? 'rgba(245,158,11,0.08)' : 'transparent',
               }}
               onClick={() => setDrilldownCategory(drilldownCategory === b.category ? null : b.category)}>
-              <span className="text-base w-6 text-center">{b.icon}</span>
               <input type="text" defaultValue={b.label} onClick={e => e.stopPropagation()}
                 onBlur={e => { const v = e.target.value.trim(); if (v && v !== b.label) updateBucketLabel(b.category, v); }}
                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
@@ -1676,7 +1666,6 @@ export default function BudgetView() {
                 backgroundColor: over ? 'rgba(239,68,68,0.10)' : pctUsed >= 80 ? 'rgba(245,158,11,0.08)' : 'transparent',
               }}
               onClick={() => setDrilldownCategory(drilldownCategory === b.category ? null : b.category)}>
-              <span className="text-base w-6 text-center">{b.icon}</span>
               <input type="text" defaultValue={b.label} onClick={e => e.stopPropagation()}
                 onBlur={e => { const v = e.target.value.trim(); if (v && v !== b.label) updateBucketLabel(b.category, v); }}
                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
@@ -1774,7 +1763,7 @@ export default function BudgetView() {
         {editMode && (newBucket === null ? (
           <button
             type="button"
-            onClick={() => setNewBucket({ label: '', icon: '📦', monthlyBudget: '' })}
+            onClick={() => setNewBucket({ label: '', icon: '', monthlyBudget: '' })}
             className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent/10 transition-colors text-text-muted hover:text-accent-light text-sm border-t border-glass-border"
           >
             <span className="text-base w-6 text-center">+</span>
@@ -1782,14 +1771,6 @@ export default function BudgetView() {
           </button>
         ) : (
           <div className="px-4 py-3 flex flex-wrap items-center gap-2 bg-accent/5 border-y border-accent/20">
-            <input
-              type="text"
-              placeholder="📦"
-              value={newBucket.icon}
-              onChange={e => setNewBucket({ ...newBucket, icon: e.target.value })}
-              maxLength={2}
-              className="w-10 text-center bg-surface-2 border border-glass-border rounded px-1 py-1 text-sm"
-            />
             <input
               type="text"
               placeholder="Bucket name (e.g. Coffee)"
@@ -1897,7 +1878,7 @@ export default function BudgetView() {
             return (
               <div key={fm.earnerId ?? fm.person} className="p-4 rounded-xl bg-white/[0.03] border border-glass-border group">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="font-semibold text-text-primary">{fm.emoji ?? '🎯'} {fm.person}</span>
+                  <span className="font-semibold text-text-primary">{fm.person}</span>
                   <div className="flex items-center gap-0.5">
                     <span className="text-accent font-bold">$</span>
                     <input type="number" step="0.01" value={fm.monthlyBudget}
@@ -2034,7 +2015,6 @@ export default function BudgetView() {
             <div className="bg-surface-1 border border-glass-border rounded-xl w-full max-w-lg max-h-[70vh] overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
               <div className="p-4 border-b border-glass-border flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-xl">{bucket.icon}</span>
                   <div>
                     <h3 className="font-semibold text-text-primary">{bucket.label}</h3>
                     <p className="text-xs text-text-muted">{catTxns.length} transactions · {formatCurrency(total)} total{isAvgMode && monthsSpanned > 1 ? ` · ${formatCurrency(monthlyTotal)}/mo avg over ${monthsSpanned} months` : ''}</p>
@@ -2069,7 +2049,7 @@ export default function BudgetView() {
                           onChange={ev => setReclassify(r => r ? { ...r, cat: ev.target.value } : r)}
                           className="w-full bg-surface-2 border border-glass-border rounded px-2 py-1 text-xs text-text-primary outline-none focus:border-accent/50 disabled:opacity-50">
                           {buckets.map(b => (
-                            <option key={b.category} value={b.category}>{b.icon} {b.label.split('(')[0].trim()}</option>
+                            <option key={b.category} value={b.category}>{b.label.split('(')[0].trim()}</option>
                           ))}
                         </select>
                         <label className="flex items-center gap-2 text-[11px] text-text-secondary cursor-pointer">
@@ -2080,7 +2060,7 @@ export default function BudgetView() {
                         <label className="flex items-center gap-2 text-[11px] text-text-secondary cursor-pointer">
                           <input type="checkbox" checked={reclassify.work}
                             onChange={ev => setReclassify(r => r ? { ...r, work: ev.target.checked } : r)} />
-                          💼 Mark as work expense (moves out of spend)
+                          Mark as work expense (moves out of spend)
                         </label>
                         <div className="flex gap-2 justify-end pt-0.5">
                           <button onClick={() => setReclassify(null)}

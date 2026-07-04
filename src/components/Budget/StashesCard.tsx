@@ -180,7 +180,7 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                   const meta = catMeta(c);
                   return (
                     <span key={c} className="cyber-chip border bg-white/5 border-white/15 text-text-secondary text-[10px]">
-                      {meta.icon} {meta.label}
+                      {meta.label}
                       <button onClick={() => update(sf.id, { categories: (sf.categories ?? []).filter(x => x !== c) })}
                         className="ml-0.5 text-text-muted hover:text-negative" title="Unlink category">×</button>
                     </span>
@@ -234,7 +234,7 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                       className="bg-surface-2 border border-glass-border rounded px-1.5 py-1 text-[11px] text-text-secondary outline-none max-w-[160px]">
                       <option value="">choose…</option>
                       {CATEGORY_OPTIONS.filter(c => !(sf.categories ?? []).includes(c.id)).map(c => (
-                        <option key={c.id} value={c.id}>{c.icon} {c.label}</option>
+                        <option key={c.id} value={c.id}>{c.label}</option>
                       ))}
                     </select>
                   </div>

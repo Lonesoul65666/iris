@@ -225,7 +225,6 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
               onClick={() => onCategoryClick?.(b.category)}
               className="w-full flex items-center gap-3 py-2.5 px-1 hover:bg-white/[0.03] rounded transition-colors text-left"
             >
-              <span className="text-lg w-7 text-center flex-shrink-0">{b.icon}</span>
               <span className="text-sm text-text-secondary w-36 truncate flex-shrink-0">{b.label}</span>
               <span className="mono-num text-xs text-text-primary w-36 text-right whitespace-nowrap flex-shrink-0">
                 {formatCurrency(b.monthlyActual)}

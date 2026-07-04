@@ -26,7 +26,7 @@ interface EmptyStateProps {
 export default function EmptyState({
   title,
   description,
-  icon = '✨',
+  icon = '',
   ctaLabel = 'Add data',
   ctaTarget = 'portfolio',
   children,
@@ -38,7 +38,7 @@ export default function EmptyState({
   if (compact) {
     return (
       <div className="text-center py-6 px-4">
-        <div className="text-2xl mb-2 opacity-60">{icon}</div>
+        {icon && <div className="text-2xl mb-2 opacity-60">{icon}</div>}
         <div className="text-sm font-semibold text-text-primary mb-1">{title}</div>
         {description && <div className="text-xs text-text-muted mb-3">{description}</div>}
         {children}
@@ -54,7 +54,7 @@ export default function EmptyState({
 
   return (
     <div className="text-center py-10 px-6 rounded-xl border border-dashed border-glass-border bg-surface-1/50">
-      <div className="text-4xl mb-3 opacity-60">{icon}</div>
+      {icon && <div className="text-4xl mb-3 opacity-60">{icon}</div>}
       <h3 className="text-base font-semibold text-text-primary mb-2">{title}</h3>
       {description && <p className="text-sm text-text-muted mb-4 max-w-sm mx-auto">{description}</p>}
       {children}
