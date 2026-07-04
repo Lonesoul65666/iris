@@ -11,6 +11,7 @@ import AccountBreakdown from '../components/Dashboard/AccountBreakdown';
 import SavingsScorecard from '../components/Dashboard/SavingsScorecard';
 import SyncStatus from '../components/Dashboard/SyncStatus';
 import GoalTracker from '../components/Dashboard/GoalTracker';
+import OnTargetEarnings from '../components/Dashboard/OnTargetEarnings';
 import { computeAllStashes } from '../utils/stashMath';
 import { laneOf, isOverBudget } from '../utils/budgetLanes';
 import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
@@ -421,6 +422,9 @@ export default function DashboardView() {
           )}
         </div>
       )}
+
+      {/* ════ On-Target Earnings — comp received YTD vs the annual OTE target ═ */}
+      <OnTargetEarnings expenses={rawExpenses} />
 
       {/* ════ ROW: Spending donut + Investments donut ═══════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
