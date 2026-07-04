@@ -44,10 +44,11 @@ Current monthly buckets + 2 stashes → target state:
 | **Credit Card Memberships** | monthly bucket `credi_card_memberships` $70/mo | **Have-to** stash; remove monthly bucket | annual card fees — confirm total $/yr |
 | **Insurance** | monthly bucket `insurance` $450/mo | **SPLIT**: keep monthly bill in `insurance`, annual premium → **Have-to** stash | NEED real numbers ↓ |
 
-**Numbers to confirm:**
-1. **Insurance** — monthly recurring bill (you said ~$68) and the annual Liberty-Mutual premium (the current $450/mo bucket looks like it may already be amortizing the annual). What's the true monthly $ and annual $?
-2. **Credit-card memberships** — annual total (current bucket is $70/mo = ~$840/yr; confirm).
-3. **Per-stash fills** — you own the split. Default proposal to start: Taxes $1,000, Trips $1,000 (unchanged), + new CC and Insurance fills sized to their annual/12. You adjust freely.
+**Numbers — CONFIRMED by Scott 2026-07-04:**
+- **Insurance split:** the monthly bill is **State Farm home insurance ~$68/mo** → keep in monthly spending (rename bucket to "Home Insurance", budget ~$68). **Car insurance ~$3,200/yr** (≈2 payments of ~$1,600) → new **Have-to** stash "Car Insurance" (~$267/mo fill). Distinct name from Taxes so they don't collide.
+- **Credit-card memberships:** ~**$595 + ~$130 = ~$725/yr** (one-time annual payments, exact TBD) → new **Have-to** stash "Credit Card Fees" (~$60/mo fill). Drop the monthly `credi_card_memberships` bucket.
+- **Structure:** every stash is its own card/entry, shown in BOTH the big stashes card (create + watch grow) AND as confirm lines at the bottom of "Make Every Dolla Holla." One data set, two surfaces; confirm from either syncs.
+- **Proposed default fills (Scott adjusts):** Taxes $1,000 · Car Insurance $267 · Credit Card Fees $60 (Have-tos) · Trips $1,000 (Want-to). Confirm-only-counts means unfunded months don't penalize, so the fills are targets, not forced deductions.
 
 ## 7. Free nudge
 When Free > 0 near month-end: adult-funny "give it a job" nudge (assign to a stash / investing / goal). Personality, not a scold.
