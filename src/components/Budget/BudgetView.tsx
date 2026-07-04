@@ -1077,15 +1077,31 @@ export default function BudgetView() {
       {/* Money Map — where the whole base ($15,800) goes: everyday + investing +
           reserves + what's free. The Pulse below is the spending-pace detail. */}
       {paycheck.netTakeHome > 0 && (() => {
-        const everydayBudget = operatingBuckets.filter(b => b.category !== 'investing').reduce((s, b) => s + b.monthlyBudget, 0);
-        const everydaySpent = operatingBuckets.filter(b => b.category !== 'investing').reduce((s, b) => s + b.monthlyActual, 0);
+        // Decompose everyday spend into the top categories that are filling the
+        // base — a "where's it going" prism instead of one lumped Everyday slice.
+        const everydayCatBuckets = operatingBuckets
+          .filter(b => b.category !== 'investing' && b.monthlyActual > 0)
+          .sort((a, b) => b.monthlyActual - a.monthlyActual);
+        const everydaySpent = everydayCatBuckets.reduce((s, b) => s + b.monthlyActual, 0);
+        const TOP_N = 3;
+        const SPEND_CLS = ['from-rose-500 to-pink-500', 'from-fuchsia-500 to-pink-500', 'from-orange-500 to-rose-500'];
+        const topCats = everydayCatBuckets.slice(0, TOP_N).map((b, i) => ({
+          key: b.category,
+          label: (b.label || b.category).split('(')[0].trim(),
+          amount: Math.round(b.monthlyActual),
+          cls: SPEND_CLS[i],
+        }));
+        const otherAmt = Math.round(everydayCatBuckets.slice(TOP_N).reduce((s, b) => s + b.monthlyActual, 0));
+        const everydayCategories = otherAmt > 0
+          ? [...topCats, { key: 'other-everyday', label: 'Other', amount: otherAmt, cls: 'from-slate-600 to-slate-500' }]
+          : topCats;
         // 'avg' is a historical blend, not a live deposit → no per-month confirm.
         const confirmMonth = resolvedOverviewMonth === 'avg' ? '' : resolvedOverviewMonth;
         return (
           <MoneyMap
             income={paycheck.netTakeHome}
-            everydayBudget={everydayBudget}
             everydaySpent={everydaySpent}
+            everydayCategories={everydayCategories}
             investing={investingAmt}
             investingPlanned={investingPlanned}
             investingStatus={investingStatus}

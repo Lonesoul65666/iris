@@ -16,10 +16,12 @@ import { formatCurrency } from '../../utils/format';
  */
 type InvestingStatus = 'feed' | 'confirmed' | 'planned';
 
+interface EverydayCat { key: string; label: string; amount: number; cls: string }
+
 interface Props {
   income: number;             // base net take-home (the $15,800)
-  everydayBudget: number;     // operating budget, excl. investing (the target)
   everydaySpent: number;      // operating actual so far, excl. investing
+  everydayCategories: EverydayCat[]; // top spend categories (+ "Other") summing to everydaySpent
   investing: number;          // investing that COUNTS (real: feed or confirmed; else 0)
   investingPlanned: number;   // the intended monthly investing (Settings)
   investingStatus: InvestingStatus;
@@ -29,7 +31,7 @@ interface Props {
 }
 
 export default function MoneyMap({
-  income, everydayBudget, everydaySpent, investing, investingPlanned, investingStatus,
+  income, everydaySpent, everydayCategories, investing, investingPlanned, investingStatus,
   onToggleInvesting, reserveSetAside, inProgress,
 }: Props) {
   if (income <= 0) return null;
@@ -44,8 +46,9 @@ export default function MoneyMap({
     : 'planned — not moved yet';
 
   const segs = [
-    { key: 'everyday',  label: 'Everyday',  amt: Math.round(everydaySpent),   legendAmt: Math.round(everydaySpent),
-      cls: 'from-rose-500 to-pink-500',     note: `spent · ${formatCurrency(everydayBudget)} budget` },
+    ...everydayCategories.map(c => ({
+      key: c.key, label: c.label, amt: c.amount, legendAmt: c.amount, cls: c.cls, note: '',
+    })),
     { key: 'investing', label: 'Investing', amt: Math.round(investing),
       // Bar/leftover use the real (counted) amount; the legend shows the planned
       // figure while it's pending so you can see the intent + confirm it.
@@ -64,8 +67,8 @@ export default function MoneyMap({
     <div className="glass-card p-6">
       <div className="flex items-baseline justify-between gap-4 mb-1">
         <div>
-          <div className="term-label">How the month's going · vs your {formatCurrency(income)} base</div>
-          <h2 className="text-lg font-semibold text-text-primary mt-0.5">Where your {formatCurrency(income)} went</h2>
+          <div className="term-label">How the month's going</div>
+          <h2 className="text-lg font-semibold text-text-primary mt-0.5">Where your {formatCurrency(income)} is going</h2>
         </div>
         <div className="text-right flex-shrink-0">
           <div className="term-label">{win ? (inProgress ? 'Free so far' : 'You beat the base by') : 'Over base'}</div>
@@ -98,7 +101,7 @@ export default function MoneyMap({
                 <span className="text-[11px] text-text-muted uppercase tracking-wider">{s.label}</span>
               </div>
               <div className={`mono-num font-semibold ${pending ? 'text-text-muted' : 'text-text-primary'}`}>{formatCurrency(s.legendAmt)}</div>
-              <div className={`text-[10px] ${isRealInvest ? 'text-positive/80' : 'text-text-muted'}`}>{s.note}</div>
+              {s.note && <div className={`text-[10px] ${isRealInvest ? 'text-positive/80' : 'text-text-muted'}`}>{s.note}</div>}
               {s.key === 'investing' && investingPlanned > 0 && onToggleInvesting && (
                 <button
                   onClick={onToggleInvesting}
