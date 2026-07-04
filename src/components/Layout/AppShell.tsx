@@ -4,6 +4,7 @@ import { saveSetting } from '../../stores/portfolioStore';
 import type { View } from '../../types/views';
 import type { ActionItem } from '../ActionItems/ActionItems';
 import { useEnabledModules, visibleViews } from '../../hooks/useEnabledModules';
+import { useAppData } from '../../context/AppDataContext';
 
 interface AppShellProps {
   view: View;
@@ -23,6 +24,7 @@ export default function AppShell({
   actionItems, budgetSummary, overallScore, children,
 }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { setBudgetSection } = useAppData();
   const modules = useEnabledModules();
   const allowed = visibleViews(modules);
 
@@ -148,7 +150,7 @@ export default function AppShell({
         </nav>
         {!sidebarCollapsed && pendingActions > 0 && (
           <div className="mx-3 mb-2 p-2.5 rounded-lg bg-warning/10 border border-warning/20 cursor-pointer hover:bg-warning/15 transition-colors"
-            onClick={() => { setView('budget'); setMobileMenuOpen(false); }}>
+            onClick={() => { setBudgetSection('actions'); setView('budget'); setMobileMenuOpen(false); }}>
             <div className="text-[10px] font-bold text-warning uppercase tracking-wider">Action Items</div>
             <div className="text-xs text-text-secondary mt-0.5">{pendingActions} pending — open Budget</div>
           </div>
