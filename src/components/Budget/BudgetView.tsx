@@ -16,8 +16,6 @@ import MoneyMap from './MoneyMap';
 import { targetsForMonth, type BudgetTargetSnapshot } from '../../utils/budgetHistory';
 import { isGeminiInitialized } from '../../services/gemini';
 import ExpenseManager from './ExpenseManager';
-import RecurringBills from './RecurringBills';
-import IncomeSources from './IncomeSources';
 import InflowQuestions from './InflowQuestions';
 import TriggerCenter from './TriggerCenter';
 import BudgetPulse from './BudgetPulse';
@@ -1983,14 +1981,14 @@ export default function BudgetView() {
         onViewCategory={(cat) => setDrilldownCategory(cat)}
       />
 
-      {/* Inflow questions — one-tap classification for ambiguous deposits */}
+      {/* Inflow questions — one-tap classification for ambiguous deposits.
+          Self-hides when nothing needs a decision — the "surface it only when
+          there's something to look at" survivor of the income/bills cleanup. */}
       <InflowQuestions expenses={expenses} />
 
-      {/* Income Sources — detected paychecks, variable, side, dividends, reimbursements */}
-      <IncomeSources expenses={expenses} />
-
-      {/* Recurring Bills — auto-detected subscriptions, utilities, paychecks */}
-      <RecurringBills expenses={expenses} />
+      {/* (Removed the passive "Income Sources" + "Recurring Bills" auto-detection
+          lists — heuristic + inaccurate, not worth maintaining, and duplicated by
+          InflowQuestions for anything actionable.) */}
 
       {/* Action Items — shared with dashboard, uses the same data */}
       <div className="glass-card p-6">
