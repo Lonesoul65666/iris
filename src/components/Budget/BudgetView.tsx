@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppData } from '../../context/AppDataContext';
 import { createPortal } from 'react-dom';
 import { ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown } from '../../types/budget';
+import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown, CustomCategory } from '../../types/budget';
 import type { Expense, ExpenseCategory } from '../../types/budget';
 import { defaultBudgetBuckets, defaultSinkingFunds, defaultFunMoney, defaultPaycheck, calculateBudgetSummary } from '../../stores/budgetDefaults';
-import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, saveExpense, getCustomCategories, getBudgetTargetHistory, snapshotBudgetTargets, getDeployConfirmations, saveDeployConfirmation, clearDeployConfirmation, type DeployConfirmation } from '../../stores/budgetStore';
+import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, saveExpense, getCustomCategories, saveCustomCategory, getBudgetTargetHistory, snapshotBudgetTargets, getDeployConfirmations, saveDeployConfirmation, clearDeployConfirmation, type DeployConfirmation } from '../../stores/budgetStore';
 import { getMonthlyInvestments, getSetting, saveSetting } from '../../stores/portfolioStore';
 import { computeGuaranteedBase } from '../../utils/savingsScorecard';
 import { computeSavingsRate } from '../../utils/savingsRate';
@@ -202,14 +202,24 @@ export default function BudgetView() {
     const label = newBucket.label.trim();
     const budget = Number(newBucket.monthlyBudget);
     if (!label || !budget || budget <= 0) return;
+    // Slug the id from the label (same as ExpenseManager's "New Category" flow) so
+    // the new category is a REAL, registered category — selectable when
+    // categorizing a transaction and lane-aware — not an orphan budget line with a
+    // throwaway custom_<timestamp> id that nothing can ever be filed under.
+    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `custom_${Date.now()}`;
+    if (buckets.some(b => b.category === id)) { setNewBucket(null); return; } // already exists — don't dupe
+    const icon = newBucket.icon || '📌';
+    const custom: CustomCategory = { id, label, icon, color: '#8b5cf6' };
+    await saveCustomCategory(custom);
+    registerCustomCategories([custom]);
     const fresh: BudgetBucket = {
-      category: `custom_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+      category: id as ExpenseCategory,
       label,
-      icon: newBucket.icon || '',
+      icon,
       monthlyBudget: budget,
       monthlyActual: 0,
       color: '#8b5cf6',
-      guideline: '',
+      guideline: 'Custom category',
       guidelinePercent: 0,
     };
     const updated = [...buckets, fresh];
