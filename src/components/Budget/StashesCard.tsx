@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react';
 import type { Expense, Stash } from '../../types/budget';
 import { formatCurrency, formatDuration } from '../../utils/format';
-import { computeAllStashes, computeStashForecast, totalStashContributions, requiredMonthlyForGoal, computeShortfall, type StashForecast } from '../../utils/stashMath';
+import { computeAllStashes, computeStashForecast, totalStashContributions, requiredMonthlyForGoal, computeShortfall, monthsElapsedInclusive, type StashForecast } from '../../utils/stashMath';
 import { currentMonthKey } from '../../utils/transactionAnalysis';
 import { defaultBudgetBuckets } from '../../stores/budgetDefaults';
 
@@ -130,9 +130,20 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
     }
     setConfirmingRetire(null);
     setExpanded(null);
+    const sf = stashes.find(s => s.id === id);
+    const nowIso = new Date().toISOString();
+    const saved = Math.round(balanceSnapshot);
     update(id, {
-      achievedAt: new Date().toISOString(),
-      currentBalance: Math.round(balanceSnapshot),
+      achievedAt: nowIso,
+      currentBalance: saved,
+      // Durable trophy-room snapshot — captured before the live fields are zeroed.
+      achievement: {
+        savedAmount: saved,
+        targetAmount: sf?.targetAmount ?? 0,
+        startMonth: sf?.startMonth,
+        achievedAt: nowIso,
+        monthsSaving: sf?.startMonth ? monthsElapsedInclusive(sf.startMonth) : undefined,
+      },
       monthlyContribution: 0,
       monthlyFill: 0,
       categories: [],
@@ -418,8 +429,9 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-text-primary truncate">{sf.name}</div>
                         <div className="text-[10px] text-text-muted">
-                          saved {formatCurrency(sf.currentBalance || 0)}
-                          {sf.achievedAt ? ` · done ${new Date(sf.achievedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
+                          saved {formatCurrency(sf.achievement?.savedAmount ?? sf.currentBalance ?? 0)}
+                          {sf.achievement?.monthsSaving ? ` over ${sf.achievement.monthsSaving} mo` : ''}
+                          {sf.achievedAt ? ` · done ${new Date(sf.achievedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
                         </div>
                       </div>
                       <button onClick={() => update(sf.id, { achievedAt: undefined })}

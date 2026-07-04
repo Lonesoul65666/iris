@@ -284,6 +284,16 @@ export interface SinkingFund {
    *  categories, no reserve draw) and drops out of active tracking + totals;
    *  currentBalance holds the final "saved toward it" snapshot for display. */
   achievedAt?: string; // ISO timestamp
+  /** Durable snapshot captured AT retire — the trophy-room record. Retire zeroes
+   *  the live fields (to go inert), so this preserves the story we can't rebuild
+   *  later: what was saved, the goal, how long it took. Future "trophy wall". */
+  achievement?: {
+    savedAmount: number;
+    targetAmount: number;
+    startMonth?: string;   // 'YYYY-MM' when saving began
+    achievedAt: string;    // ISO
+    monthsSaving?: number;  // whole months from startMonth → completion
+  };
 }
 
 /** Preferred alias going forward. */
