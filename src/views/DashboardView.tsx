@@ -68,29 +68,52 @@ export default function DashboardView() {
   })();
 
   // ── Net worth trend + delta vs prior period ──────────────────────────
-  const netWorthTrend = useMemo(() => {
-    if (!netWorthSnapshots || netWorthSnapshots.length === 0) return [];
-    return netWorthSnapshots.slice(-30).map(s => ({ date: s.date, value: s.totalNetWorth }));
+  const [nwRange, setNwRange] = useState<'1M' | '3M' | '6M' | '1Y' | 'ALL'>('3M');
+
+  // Drop the one-time data-entry ARTIFACT: the huge early jump (e.g. ~$388k →
+  // ~$546k the day the house/car/investments were first entered) isn't real
+  // growth, so we start the series at that first realistic baseline. Only the
+  // single biggest jump, when it's > 15% of the level, counts as an artifact —
+  // normal day-to-day/monthly growth is never trimmed.
+  const realSnaps = useMemo(() => {
+    const snaps = netWorthSnapshots ?? [];
+    if (snaps.length < 3) return snaps;
+    const vals = snaps.map(s => s.totalNetWorth);
+    let jumpIdx = -1, jumpSize = 0;
+    for (let i = 1; i < vals.length; i++) {
+      const d = vals[i] - vals[i - 1];
+      if (d > jumpSize) { jumpSize = d; jumpIdx = i; }
+    }
+    return jumpIdx > 0 && jumpSize > vals[jumpIdx] * 0.15 ? snaps.slice(jumpIdx) : snaps;
   }, [netWorthSnapshots]);
+
+  // Time-range window (1M/3M/6M/1Y/All) — the zoom control on the chart.
+  const netWorthTrend = useMemo(() => {
+    if (realSnaps.length === 0) return [];
+    let rows = realSnaps;
+    if (nwRange !== 'ALL') {
+      const days = { '1M': 30, '3M': 91, '6M': 183, '1Y': 365 }[nwRange];
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      const filtered = realSnaps.filter(s => s.date >= cutoffStr);
+      if (filtered.length >= 2) rows = filtered; // never blank the chart on a tight window
+    }
+    return rows.map(s => ({ date: s.date, value: s.totalNetWorth }));
+  }, [realSnaps, nwRange]);
+
   const trendDelta = netWorthTrend.length >= 2
     ? netWorthTrend[netWorthTrend.length - 1].value - netWorthTrend[0].value : 0;
   const trendPct = netWorthTrend.length >= 2 && netWorthTrend[0].value > 0
     ? (trendDelta / netWorthTrend[0].value) * 100 : 0;
-  // Zoom the trend's Y-axis to the actual data range. Anchored at $0, a real
-  // $2–10k swing is invisible against a $500k+ total; padding around min/max
-  // makes the day-to-day variation that IS there actually show.
+  // Artifact trimmed, so a simple padded min/max keeps the axis zoomed to the
+  // real range so honest day-to-day movement reads clearly (no $0 anchor).
   const nwDomain = useMemo<[number, number]>(() => {
     if (netWorthTrend.length < 2) return [0, 1];
     const vals = netWorthTrend.map(d => d.value);
-    const last = vals[vals.length - 1];
-    // Robust "typical daily move" — the MEDIAN of day-to-day deltas ignores the
-    // one giant one-time step, so we can zoom the window tight around the recent
-    // level and let that step (and old lows) clip off-screen. Window = a handful
-    // of typical moves, floored so small $600–$2k swings stay clearly visible.
-    const deltas = vals.slice(1).map((v, i) => Math.abs(v - vals[i])).sort((a, b) => a - b);
-    const median = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 0;
-    const half = Math.max(median * 6, last * 0.004, 500);
-    return [last - half, last + half];
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const pad = Math.max((max - min) * 0.2, max * 0.003, 300);
+    return [min - pad, max + pad];
   }, [netWorthTrend]);
 
   // ── Spending breakdown by category — TRUE month-to-date ──────────────
@@ -242,9 +265,22 @@ export default function DashboardView() {
 
           {/* Net worth area chart */}
           {netWorthTrend.length >= 2 ? (
-            <div className="h-[160px] -mx-2 mt-5">
+            <>
+              <div className="flex items-center justify-end gap-1 mt-5 mb-1">
+                {(['1M', '3M', '6M', '1Y', 'ALL'] as const).map(r => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setNwRange(r)}
+                    className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors ${nwRange === r ? 'bg-accent/20 text-accent-light border border-accent/40' : 'text-text-muted hover:text-text-secondary border border-transparent'}`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+              <div className="h-[172px] -mx-2">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={netWorthTrend} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+                <AreaChart data={netWorthTrend} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
                   <defs>
                     <linearGradient id="nwGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.55} />
@@ -256,8 +292,18 @@ export default function DashboardView() {
                       <stop offset="100%" stopColor="#ec4899" />
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="date" hide />
-                  <YAxis hide domain={nwDomain} allowDataOverflow />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10, fill: '#6b7280' }}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={40}
+                    tickFormatter={(d) => {
+                      const dt = new Date(String(d) + 'T00:00:00');
+                      return isNaN(dt.getTime()) ? '' : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    }}
+                  />
+                  <YAxis hide domain={nwDomain} />
                   <Tooltip
                     contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
                     formatter={(v) => [formatCurrency(typeof v === 'number' ? v : Number(v) || 0), 'Net worth']}
@@ -270,9 +316,10 @@ export default function DashboardView() {
                   <Area type="monotone" dataKey="value" stroke="url(#nwStroke)" strokeWidth={2.5} fill="url(#nwGradient)" baseValue={nwDomain[0]} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
-            </div>
+              </div>
+            </>
           ) : (
-            <div className="h-[160px] mt-5 rounded-xl border border-dashed border-glass-border flex flex-col items-center justify-center text-center px-6">
+            <div className="h-[172px] mt-5 rounded-xl border border-dashed border-glass-border flex flex-col items-center justify-center text-center px-6">
               <div className="text-2xl mb-2 opacity-40">📈</div>
               <div className="text-sm text-text-secondary font-medium">Trend chart unlocks soon</div>
               <div className="text-xs text-text-muted mt-1">A line will appear here as your net worth ticks day to day.</div>
