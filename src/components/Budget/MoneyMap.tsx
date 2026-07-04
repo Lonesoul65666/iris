@@ -67,7 +67,7 @@ export default function MoneyMap({
     <div className="glass-card p-6">
       <div className="flex items-baseline justify-between gap-4 mb-1">
         <div>
-          <div className="term-label">How the month's going</div>
+          <div className="term-label">How's the month?</div>
           <h2 className="text-lg font-semibold text-text-primary mt-0.5">Where your {formatCurrency(income)} is going</h2>
         </div>
         <div className="text-right flex-shrink-0">
