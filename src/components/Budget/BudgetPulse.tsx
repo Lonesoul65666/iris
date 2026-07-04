@@ -142,8 +142,8 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div>
-          <div className="term-label">Budget Pulse</div>
-          <h2 className="text-lg font-semibold text-text-primary mt-0.5">{complete ? 'How the month went' : 'How the month is going'}</h2>
+          <h2 className="text-2xl font-black text-accent-light leading-tight">Make Every Dolla Holla</h2>
+          <div className="text-sm text-text-secondary mt-0.5">{complete ? 'How the month went' : "How's the month going"}</div>
         </div>
         <div className="text-right">
           <div className="term-label">{complete ? (monthLabel ?? 'Final') : `Day ${dayOfMonth} / ${daysInMonth}`}</div>
@@ -175,7 +175,7 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
               key={s}
               type="button"
               onClick={() => toggleFilter(s)}
-              className={`cyber-chip border transition-all ${isActive ? m.activePillCls : m.pillCls} hover:brightness-125 cursor-pointer`}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer hover:brightness-125 ${isActive ? m.activePillCls : m.pillCls}`}
               aria-pressed={isActive}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${m.dotCls}`} />
@@ -187,13 +187,13 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
           <button
             type="button"
             onClick={clearFilters}
-            className="cyber-chip border bg-white/5 border-white/20 text-text-muted hover:text-text-primary hover:bg-white/10 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-semibold border bg-white/5 border-white/20 text-text-muted hover:text-text-primary hover:bg-white/10 transition-colors"
           >
             × Clear
           </button>
         )}
         {filtering && (
-          <span className="term-label ml-1">
+          <span className="text-[11px] text-text-muted ml-1">
             Showing {visibleRows.length} of {allRows.length}
           </span>
         )}
@@ -244,7 +244,7 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
                   style={{ width: `${pct}%` }}
                 />
               </div>
-              <span className={`cyber-chip border ${m.pillCls} flex-shrink-0 text-[10px]`}>
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-semibold ${m.pillCls} flex-shrink-0`}>
                 <span className={`w-1 h-1 rounded-full ${m.dotCls}`} />
                 {m.label}
               </span>
