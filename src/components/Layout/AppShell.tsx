@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Icons } from '../ui/Icons';
 import { saveSetting } from '../../stores/portfolioStore';
 import type { View } from '../../types/views';
@@ -24,9 +24,23 @@ export default function AppShell({
   actionItems, budgetSummary, overallScore, children,
 }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { setBudgetSection } = useAppData();
+  const { budgetSection, setBudgetSection } = useAppData();
   const modules = useEnabledModules();
   const allowed = visibleViews(modules);
+
+  // Budget sub-menu (open/shut) — jump straight to a Budget tab from the sidebar.
+  const [budgetOpen, setBudgetOpen] = useState(false);
+  useEffect(() => { if (view === 'budget') setBudgetOpen(true); }, [view]);
+  const activeBudgetSection = budgetSection ?? 'overview';
+  const budgetSubs: { id: 'overview' | 'monthly' | 'expenses' | 'actions'; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'monthly', label: 'Monthly Detail' },
+    { id: 'expenses', label: 'Transactions' },
+    { id: 'actions', label: 'Action Items' },
+  ];
+  const goBudget = (sub: 'overview' | 'monthly' | 'expenses' | 'actions') => {
+    setBudgetSection(sub); setView('budget'); setMobileMenuOpen(false);
+  };
 
   const pendingActions = actionItems.filter(a => !a.completed).length;
   const allNavItems: { id: View; label: string; icon: React.ReactNode; badge?: string; badgeColor?: string; group?: string }[] = [
@@ -99,32 +113,67 @@ export default function AppShell({
           </button>
         </div>
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-          {navItems.filter(n => n.group === 'main').map(item => (
-            <button key={item.id} onClick={() => { setView(item.id); setMobileMenuOpen(false); }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 relative ${
-                view === item.id ? 'bg-accent/15 text-accent-light shadow-[0_0_12px_rgba(139,92,246,0.12)]' : 'text-text-secondary hover:bg-white/5 hover:text-text-primary'
-              } ${sidebarCollapsed ? 'md:justify-center' : ''}`}>
-              <span className="relative inline-flex">
-                {item.icon}
-                {/* Collapsed-sidebar mini-badge — small numeric pill in the corner of the icon. */}
-                {sidebarCollapsed && item.badge && (
-                  <span className={`hidden md:inline-flex absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 items-center justify-center rounded-full text-[9px] font-bold ${item.badgeColor}`}>
-                    {item.badge}
-                  </span>
+          {navItems.filter(n => n.group === 'main').map(item => {
+            const btn = (
+              <button key={item.id} onClick={() => {
+                setView(item.id);
+                if (item.id === 'budget') { setBudgetSection('overview'); setBudgetOpen(true); }
+                setMobileMenuOpen(false);
+              }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 relative ${
+                  view === item.id ? 'bg-accent/15 text-accent-light shadow-[0_0_12px_rgba(139,92,246,0.12)]' : 'text-text-secondary hover:bg-white/5 hover:text-text-primary'
+                } ${sidebarCollapsed ? 'md:justify-center' : ''}`}>
+                <span className="relative inline-flex">
+                  {item.icon}
+                  {/* Collapsed-sidebar mini-badge — small numeric pill in the corner of the icon. */}
+                  {sidebarCollapsed && item.badge && (
+                    <span className={`hidden md:inline-flex absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 items-center justify-center rounded-full text-[9px] font-bold ${item.badgeColor}`}>
+                      {item.badge}
+                    </span>
+                  )}
+                </span>
+                {!sidebarCollapsed && (
+                  <>
+                    <span className="flex-1 text-left">{item.label}</span>
+                    {item.badge && <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${item.badgeColor}`}>{item.badge}</span>}
+                    {/* Budget gets an open/shut chevron for its sub-menu. */}
+                    {item.id === 'budget' && (
+                      <span onClick={(e) => { e.stopPropagation(); setBudgetOpen(o => !o); }}
+                        className="p-0.5 -mr-1 text-text-muted hover:text-text-primary" title="Show budget sections">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                          className={`transition-transform ${budgetOpen ? 'rotate-180' : ''}`}><path d="M6 9l6 6 6-6" /></svg>
+                      </span>
+                    )}
+                  </>
                 )}
-              </span>
-              {!sidebarCollapsed && (
-                <>
-                  <span className="flex-1 text-left">{item.label}</span>
-                  {item.badge && <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${item.badgeColor}`}>{item.badge}</span>}
-                </>
-              )}
-              {/* Always show labels on mobile overlay regardless of collapse state */}
-              {sidebarCollapsed && (
-                <span className="flex-1 text-left md:hidden">{item.label}</span>
-              )}
-            </button>
-          ))}
+                {/* Always show labels on mobile overlay regardless of collapse state */}
+                {sidebarCollapsed && (
+                  <span className="flex-1 text-left md:hidden">{item.label}</span>
+                )}
+              </button>
+            );
+            if (item.id !== 'budget') return btn;
+            return (
+              <div key="budget-group">
+                {btn}
+                {/* Budget sub-menu — jump straight to a tab; active one highlighted. */}
+                {!sidebarCollapsed && budgetOpen && (
+                  <div className="ml-7 pl-2 border-l border-glass-border/60 space-y-0.5 mt-0.5 mb-1">
+                    {budgetSubs.map(s => (
+                      <button key={s.id} onClick={() => goBudget(s.id)}
+                        className={`w-full text-left px-3 py-1.5 rounded-md text-[13px] transition-colors ${
+                          view === 'budget' && activeBudgetSection === s.id
+                            ? 'text-accent-light bg-accent/10 font-medium'
+                            : 'text-text-muted hover:text-text-secondary hover:bg-white/5'
+                        }`}>
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <div className="my-2 mx-3 border-t border-glass-border" />
           {navItems.filter(n => n.group === 'ai').map(item => (
             <button key={item.id} onClick={() => { setView(item.id); setMobileMenuOpen(false); }}
