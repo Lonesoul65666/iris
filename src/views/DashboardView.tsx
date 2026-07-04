@@ -47,7 +47,7 @@ export default function DashboardView() {
     insights,
     netWorthSnapshots,
     dashBuckets, dashSinkingFunds, monthlyInv,
-    rawExpenses, spendingSummary,
+    rawExpenses,
     monthToDate, safeToSpend,
     setView,
     profile,
@@ -514,15 +514,10 @@ export default function DashboardView() {
           .filter(s => s.stash.targetAmount > 0 || s.stash.targetDate)
           .map(s => ({ ...s.stash, currentBalance: s.balance }));
         if (goalFunds.length === 0) return null;
-        const emergencyBalance = accounts
-          .filter(a => a.type === 'bank' && /sav/i.test(a.name))
-          .reduce((s, a) => s + a.totalValue, 0);
         return (
           <GoalTracker
             sinkingFunds={goalFunds}
             monthlyInvestmentAmount={monthlyInv?.amount || 0}
-            emergencyFundBalance={emergencyBalance}
-            monthlyExpenses={spendingSummary?.avgMonthlyExpenses ?? 0}
           />
         );
       })()}
