@@ -20,7 +20,7 @@
 
   --color-text-primary: #f0f0f5;
   --color-text-secondary: #9ca3af;
-  --color-text-muted: #6b7280;
+  --color-text-muted: #8b92a1;
 
   --color-glass-border: rgba(255, 255, 255, 0.08);
   --color-glass-bg: rgba(17, 17, 24, 0.7);
@@ -49,31 +49,31 @@
 }
 
 .term-label {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--color-cyber-cyan);
-  opacity: 0.95;
+  color: var(--color-text-muted);
 }
 .cyber-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   padding: 0.2rem 0.55rem;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-sans);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   border: 1px solid currentColor;
   background: color-mix(in srgb, currentColor 8%, transparent);
-  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  border-radius: 9999px;
 }
 .mono-num {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-sans);
   font-feature-settings: 'tnum' 1;
+  letter-spacing: -0.01em;
 }
 body { margin: 0; }
 
@@ -83,35 +83,44 @@ body { margin: 0; }
 }
 
 /* Glassmorphism card */
+/* Card "E": chrome edge lit from bottom-right + soft up-left elevation. The
+   double-background paints a surface fill (padding-box) under a metallic border
+   gradient (border-box) that darkens top-left → brightens bottom-right, so the
+   light reads as coming from below-right. */
 .glass-card {
-  background: var(--color-glass-bg);
-  backdrop-filter: blur(20px);
-  border: 1px solid var(--color-glass-border);
-  border-radius: 16px;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+  background:
+    linear-gradient(180deg, var(--color-surface-3), var(--color-surface-2)) padding-box,
+    linear-gradient(135deg, #31313d 0%, #6a6a78 52%, #eaeaf1 100%) border-box;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  box-shadow: inset -1px -1px 0 rgba(255,255,255,0.13), inset 1px 1px 0 rgba(0,0,0,0.38), -6px -6px 16px -4px rgba(0,0,0,0.6);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 .glass-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(139, 92, 246, 0.05);
+  box-shadow: inset -1px -1px 0 rgba(255,255,255,0.18), inset 1px 1px 0 rgba(0,0,0,0.4), -8px -8px 22px -6px rgba(0,0,0,0.7);
 }
 
 .glass-card-sm {
-  background: var(--color-glass-bg);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--color-glass-border);
+  background:
+    linear-gradient(180deg, var(--color-surface-3), var(--color-surface-2)) padding-box,
+    linear-gradient(135deg, #31313d 0%, #6a6a78 55%, #dcdce6 100%) border-box;
+  border: 1.5px solid transparent;
   border-radius: 12px;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: inset -1px -1px 0 rgba(255,255,255,0.10), inset 1px 1px 0 rgba(0,0,0,0.35), -4px -4px 12px -4px rgba(0,0,0,0.55);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 /* Premium stat card with gradient border on hover */
 .stat-card {
-  background: var(--color-glass-bg);
-  backdrop-filter: blur(20px);
-  border: 1px solid var(--color-glass-border);
-  border-radius: 16px;
+  background:
+    linear-gradient(180deg, var(--color-surface-3), var(--color-surface-2)) padding-box,
+    linear-gradient(135deg, #31313d 0%, #6a6a78 52%, #eaeaf1 100%) border-box;
+  border: 2px solid transparent;
+  border-radius: 14px;
   position: relative;
   overflow: hidden;
-  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+  box-shadow: inset -1px -1px 0 rgba(255,255,255,0.13), inset 1px 1px 0 rgba(0,0,0,0.38), -6px -6px 16px -4px rgba(0,0,0,0.6);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 .stat-card::before {
   content: '';
@@ -127,8 +136,8 @@ body { margin: 0; }
   pointer-events: none;
 }
 .stat-card:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 0 0 20px rgba(139, 92, 246, 0.08);
+  transform: translateY(-1px);
+  box-shadow: inset -1px -1px 0 rgba(255,255,255,0.18), inset 1px 1px 0 rgba(0,0,0,0.4), -8px -8px 22px -6px rgba(0,0,0,0.7);
 }
 .stat-card:hover::before {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0));
@@ -189,31 +198,30 @@ body { margin: 0; }
   align-items: center;
   gap: 0.4rem;
   padding: 0.2rem 0.55rem;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   border: 1px solid currentColor;
   background: color-mix(in srgb, currentColor 8%, transparent);
-  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  border-radius: 9999px;
 }
 
 /* Terminal-style label */
 .term-label {
-  font-family: var(--font-mono);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--color-cyber-cyan);
-  opacity: 0.95;
+  color: var(--color-text-muted);
 }
 
 /* Tabular mono numbers — for stat hero */
 .mono-num {
-  font-family: var(--font-mono);
-  font-feature-settings: 'tnum' 1, 'ss01' 1;
+  font-family: var(--font-sans);
+  font-feature-settings: 'tnum' 1;
   letter-spacing: -0.01em;
 }
 
