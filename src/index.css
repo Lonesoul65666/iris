@@ -89,7 +89,7 @@ body { margin: 0; }
    light reads as coming from below-right. */
 .glass-card {
   background:
-    linear-gradient(180deg, var(--color-surface-3), var(--color-surface-2)) padding-box,
+    linear-gradient(180deg, #15151d, #0e0e13) padding-box,
     linear-gradient(135deg, #31313d 0%, #6a6a78 52%, #eaeaf1 100%) border-box;
   border: 2px solid transparent;
   border-radius: 14px;
@@ -102,7 +102,7 @@ body { margin: 0; }
 
 .glass-card-sm {
   background:
-    linear-gradient(180deg, var(--color-surface-3), var(--color-surface-2)) padding-box,
+    linear-gradient(180deg, #15151d, #0e0e13) padding-box,
     linear-gradient(135deg, #31313d 0%, #6a6a78 55%, #dcdce6 100%) border-box;
   border: 1.5px solid transparent;
   border-radius: 12px;
@@ -113,7 +113,7 @@ body { margin: 0; }
 /* Premium stat card with gradient border on hover */
 .stat-card {
   background:
-    linear-gradient(180deg, var(--color-surface-3), var(--color-surface-2)) padding-box,
+    linear-gradient(180deg, #15151d, #0e0e13) padding-box,
     linear-gradient(135deg, #31313d 0%, #6a6a78 52%, #eaeaf1 100%) border-box;
   border: 2px solid transparent;
   border-radius: 14px;
