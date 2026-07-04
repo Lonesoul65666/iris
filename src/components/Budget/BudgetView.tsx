@@ -639,16 +639,24 @@ export default function BudgetView() {
         // Action Items: pending + the top one.
         const pending = actionItems.filter(a => !a.completed);
 
-        const base = 'text-left rounded-xl p-4 border transition-all cursor-pointer';
-        const activeCls = 'bg-accent/15 border-accent/40 shadow-sm shadow-accent/10';
-        const idleCls = 'bg-surface-2 border-transparent hover:bg-surface-3 hover:border-glass-border';
+        // Make these read as pressable buttons: a resting border, a hover LIFT +
+        // accent glow, and a press (scale-down) response. The active tab gets a
+        // solid accent ring so "you are here" is unmistakable.
+        const base = 'group text-left rounded-xl p-4 border transition-all duration-200 cursor-pointer active:scale-[0.98] active:translate-y-0';
+        const activeCls = 'bg-accent/15 border-accent/60 ring-1 ring-accent/40 shadow-lg shadow-accent/20';
+        const idleCls = 'bg-surface-2 border-glass-border hover:-translate-y-0.5 hover:border-accent/50 hover:bg-surface-3 hover:shadow-lg hover:shadow-accent/10';
         const step = (e: React.MouseEvent, to: number) => { e.stopPropagation(); if (to >= 0 && to < availMonths.length) setOverviewMonth(availMonths[to]); };
+        // Shared "go here" cue — muted at rest, lights up + nudges on hover.
+        const navArrow = (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+            className="text-text-muted/70 group-hover:text-accent-light group-hover:translate-x-0.5 transition-all flex-shrink-0"><path d="M9 6l6 6-6 6" /></svg>
+        );
 
         return (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {/* Overview — hosts the month clicker + safe-to-spend */}
             <div role="button" tabIndex={0} onClick={() => setSection('overview')} className={`${base} ${section === 'overview' ? activeCls : idleCls}`}>
-              <div className="term-label">Overview</div>
+              <div className="flex items-center justify-between"><span className="term-label">Overview</span>{navArrow}</div>
               {availMonths.length > 0 && (
                 <div className="flex items-center gap-1 mt-1.5">
                   <span onClick={e => step(e, idx - 1)} className={`w-6 h-6 rounded flex items-center justify-center text-xs flex-shrink-0 ${atStart ? 'opacity-20' : 'bg-surface-3 hover:bg-white/10 text-text-muted cursor-pointer'}`}>←</span>
@@ -668,7 +676,7 @@ export default function BudgetView() {
 
             {/* Monthly Detail — mini spend bars */}
             <div role="button" tabIndex={0} onClick={() => setSection('monthly')} className={`${base} ${section === 'monthly' ? activeCls : idleCls}`}>
-              <div className="term-label">Monthly Detail</div>
+              <div className="flex items-center justify-between"><span className="term-label">Monthly Detail</span>{navArrow}</div>
               <div className="flex items-end gap-1 h-9 mt-2">
                 {bars.length
                   ? bars.map((v, i) => <div key={i} className="flex-1 rounded-t bg-accent/50" style={{ height: `${Math.max(8, (v / barMax) * 100)}%` }} />)
@@ -679,7 +687,7 @@ export default function BudgetView() {
 
             {/* Transactions — avg/mo + MoM + last 7 days */}
             <div role="button" tabIndex={0} onClick={() => setSection('expenses')} className={`${base} ${section === 'expenses' ? activeCls : idleCls}`}>
-              <div className="term-label">Transactions</div>
+              <div className="flex items-center justify-between"><span className="term-label">Transactions</span>{navArrow}</div>
               <div className="text-lg font-black text-text-primary mono-num mt-1.5">{avgPerMonth}<span className="text-xs text-text-muted font-normal">/mo avg</span></div>
               <div className="text-[10px] text-text-muted">
                 {expenses.length.toLocaleString()} total
@@ -690,7 +698,7 @@ export default function BudgetView() {
 
             {/* Action Items — pending + top item */}
             <div role="button" tabIndex={0} onClick={() => setSection('actions')} className={`${base} ${section === 'actions' ? activeCls : idleCls}`}>
-              <div className="term-label">Action Items</div>
+              <div className="flex items-center justify-between"><span className="term-label">Action Items</span>{navArrow}</div>
               <div className="text-lg font-black text-text-primary mono-num mt-1.5">{pending.length}<span className="text-xs text-text-muted font-normal"> pending</span></div>
               <div className="text-[10px] text-text-muted truncate">{pending[0]?.text ?? 'All clear'}</div>
             </div>
