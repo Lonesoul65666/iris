@@ -270,6 +270,21 @@ export default function BudgetView() {
     }
   }, [deployConfirms]);
 
+  // Commit / un-commit a stash's monthly move (Have-To's / Want-To's). Same
+  // confirmation store as investing, lane = stash id. First tap = "I moved it to
+  // savings"; tap again undoes. (Chunk C flips the $15,800 to count these.)
+  const toggleStashCommit = useCallback(async (month: string, stashId: string, amount: number) => {
+    const existing = deployConfirms.find(c => c.month === month && c.lane === stashId);
+    if (existing) {
+      setDeployConfirms(prev => prev.filter(c => !(c.month === month && c.lane === stashId)));
+      await clearDeployConfirmation(month, stashId);
+    } else {
+      const c: DeployConfirmation = { month, lane: stashId, amount, confirmedAt: new Date().toISOString() };
+      setDeployConfirms(prev => [...prev, c]);
+      await saveDeployConfirmation(c);
+    }
+  }, [deployConfirms]);
+
   // Inline reclassify from the category drilldown. One-off by default (just this
   // txn); "apply to all" also moves every same-merchant txn AND writes a merchant
   // mapping so future imports follow. Work toggle moves it into the work lane
@@ -1369,6 +1384,8 @@ export default function BudgetView() {
         const pulseMonthLabel = resolvedOverviewMonth === 'avg'
           ? `${fullMonths.length}-mo average`
           : (() => { const [y, mo] = resolvedOverviewMonth.split('-'); return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); })();
+        const pulseCommitMonth = resolvedOverviewMonth === 'avg' ? '' : resolvedOverviewMonth;
+        const committedStashIds = new Set(deployConfirms.filter(c => c.month === pulseCommitMonth).map(c => c.lane));
         return (
           <BudgetPulse
             // Operating lanes only — reserve (taxes/travel) is lumpy with a $0 bucket
@@ -1381,6 +1398,9 @@ export default function BudgetView() {
             complete={!overviewIsInProgress}
             monthLabel={pulseMonthLabel}
             onCategoryClick={(cat) => setDrilldownCategory(cat)}
+            stashes={sinkingFunds}
+            committedStashIds={committedStashIds}
+            onCommitStash={pulseCommitMonth ? (id, amt) => toggleStashCommit(pulseCommitMonth, id, amt) : undefined}
           />
         );
       })()}
