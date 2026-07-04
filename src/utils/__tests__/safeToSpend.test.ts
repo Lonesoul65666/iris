@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeSafeToSpend } from '../safeToSpend';
+import { configureStashLanes, RESERVE_CATEGORIES, RESERVE_ALLOCATIONS } from '../budgetLanes';
 import { exp } from './fixtures';
 import type { BudgetBucket, ExpenseCategory } from '../../types/budget';
 
@@ -145,6 +146,31 @@ describe('computeSafeToSpend', () => {
     );
     expect(committed.reserveSetAside).toBe(2000);
     expect(committed.amount).toBe(15800 - 2000 - 400);
+  });
+
+  it('a committed stash bill is NOT double-counted when it posts (Scott: commit + the item coming in)', () => {
+    // Car Insurance stash links car_insurance → it lives in the reserve lane.
+    configureStashLanes(['car_insurance'], { car_insurance: 275 }, 275);
+    try {
+      const s = computeSafeToSpend(
+        [
+          exp({ date: '2026-06-04', amount: 1650, category: 'car_insurance' }), // the bill lands
+          exp({ date: '2026-06-05', amount: 400, category: 'food_dining' }),    // ordinary flex spend
+        ],
+        [],
+        15800,
+        NOW,
+        275, // committedReserves: the $275 Scott moved to the stash this month
+      );
+      // The $1,650 bill is a planned withdrawal from the pre-funded pot — it must
+      // NOT hit flexSpent, and only the $275 commit comes off the top. Counting
+      // both the commit AND the bill would double-charge the base.
+      expect(s.flexSpent).toBe(400);
+      expect(s.reserveSetAside).toBe(275);
+      expect(s.amount).toBe(15800 - 275 - 400); // the $1,650 appears nowhere
+    } finally {
+      configureStashLanes(RESERVE_CATEGORIES.filter(c => c !== 'travel_work'), { ...RESERVE_ALLOCATIONS });
+    }
   });
 
   it('amount can go negative when committed + spent exceed take-home', () => {
