@@ -31,9 +31,31 @@ function formatMonthYear(date: Date): string {
   return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
 
+const HAVE_COLOR = '#f59e0b'; // obligations — amber
+const WANT_COLOR = '#a855f7'; // goals — violet
+
+// Escalating encouragement by progress. Two arcs: Want-To's get hype (push to
+// save), Have-To's get relief (glad to be rid of it). Full-send voice — this is
+// Scott & Claire's private app.
+function encouragement(kind: 'have_to' | 'want_to', percent: number): { msg: string; cls: string } {
+  if (kind === 'have_to') {
+    if (percent >= 100) return { msg: '✅ Handled. One less thing to sweat — thank god.', cls: 'text-positive' };
+    if (percent >= 75) return { msg: 'Almost off your plate — nearly fuckin’ done.', cls: 'text-warning' };
+    if (percent >= 50) return { msg: 'Over halfway to covered. The grind’s working.', cls: 'text-text-secondary' };
+    if (percent >= 25) return { msg: 'Making a dent in this one.', cls: 'text-text-secondary' };
+    return { msg: 'Chipping away at it — every bit counts.', cls: 'text-text-muted' };
+  }
+  if (percent >= 100) return { msg: '🙌 HELL YES — you crushed it. Go get it.', cls: 'text-positive' };
+  if (percent >= 75) return { msg: 'So damn close you can taste it. Don’t let up. 👀', cls: 'text-accent-light' };
+  if (percent >= 50) return { msg: 'Halfway there — you’re really doing this. 🔥', cls: 'text-accent-light' };
+  if (percent >= 25) return { msg: 'Building steam. Keep stacking. 💪', cls: 'text-accent-light' };
+  return { msg: 'Just getting rolling — let’s fuckin’ go. 🚀', cls: 'text-text-secondary' };
+}
+
 interface GoalCardData {
   id: string;
   name: string;
+  kind: 'have_to' | 'want_to';
   targetAmount: number;
   currentBalance: number;
   monthlyContribution: number;
@@ -49,6 +71,7 @@ interface GoalCardData {
 function computeGoalData(fund: {
   id: string;
   name: string;
+  kind?: 'have_to' | 'want_to';
   targetAmount: number;
   currentBalance: number;
   monthlyContribution: number;
@@ -105,6 +128,7 @@ function computeGoalData(fund: {
   return {
     id: fund.id,
     name: fund.name,
+    kind: fund.kind ?? 'want_to',
     targetAmount: fund.targetAmount,
     currentBalance: fund.currentBalance,
     monthlyContribution: fund.monthlyContribution,
@@ -119,8 +143,14 @@ function computeGoalData(fund: {
 }
 
 function GoalCard({ goal }: { goal: GoalCardData }) {
+  const done = goal.percent >= 100;
+  const close = goal.percent >= 75 && !done;
+  const cheer = encouragement(goal.kind, goal.percent);
   return (
-    <div className="bg-surface-3 rounded-xl p-4 space-y-3">
+    <div className={`rounded-xl p-4 space-y-3 transition-shadow ${
+      done ? 'bg-positive/10 border border-positive/40'
+      : close ? 'bg-surface-3 border border-accent/30 shadow-[0_0_16px_-4px] shadow-accent/30'
+      : 'bg-surface-3 border border-transparent'}`}>
       {/* Header row: name + target */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -175,6 +205,16 @@ function GoalCard({ goal }: { goal: GoalCardData }) {
           )}
         </div>
       )}
+
+      {/* Encouragement — the whole point: make it feel like something. */}
+      {done ? (
+        <div className="flex items-center gap-2 rounded-lg bg-positive/15 px-3 py-2 animate-fadeIn">
+          <span className="text-lg">🙌</span>
+          <span className="text-sm font-bold text-positive">{cheer.msg}</span>
+        </div>
+      ) : (
+        <p className={`text-xs font-medium ${cheer.cls}`}>{cheer.msg}</p>
+      )}
     </div>
   );
 }
@@ -199,7 +239,7 @@ export default function GoalTracker({
     <div className="glass-card p-6 space-y-5">
       {/* Card header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-text-primary text-lg font-semibold">Goal Tracker</h2>
+        <h2 className="text-text-primary text-lg font-semibold">Have To's / Want To's</h2>
         <div className="flex items-center gap-3 text-xs text-text-muted">
           <span>
             {goalsComplete}/{goals.length} complete
@@ -239,12 +279,27 @@ export default function GoalTracker({
         )}
       </div>
 
-      {/* Goal cards grid */}
-      <div className="grid gap-3">
-        {goals.map((goal) => (
-          <GoalCard key={goal.id} goal={goal} />
-        ))}
-      </div>
+      {/* Grouped by kind — Have-To's (amber) then Want-To's (violet), matching
+          the Budget page so the two surfaces read as one system. */}
+      {([
+        { kind: 'have_to' as const, label: "Have to's", color: HAVE_COLOR, hint: 'bills you pre-fund' },
+        { kind: 'want_to' as const, label: "Want to's", color: WANT_COLOR, hint: "goals you're saving toward" },
+      ]).map(group => {
+        const list = goals.filter(g => g.kind === group.kind);
+        if (list.length === 0) return null;
+        return (
+          <div key={group.kind} className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full" style={{ background: group.color }} />
+              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: group.color }}>{group.label}</span>
+              <span className="text-[10px] text-text-muted">· {group.hint}</span>
+            </div>
+            <div className="grid gap-3">
+              {list.map((goal) => <GoalCard key={goal.id} goal={goal} />)}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
