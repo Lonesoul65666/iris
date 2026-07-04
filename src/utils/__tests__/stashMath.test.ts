@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import {
   monthsElapsedInclusive, computeStashStatus, totalStashContributions,
   stashAllocationsByCategory, stashesConfigured, seedDefaultStashes, applyStashLaneConfig,
-  committedReserves, nextDueDate, computeStashForecast,
+  committedReserves, nextDueDate, computeStashForecast, requiredMonthlyForGoal,
 } from '../stashMath';
 import { formatDuration } from '../format';
 import type { DeployConfirmation } from '../../stores/budgetStore';
@@ -232,6 +232,30 @@ describe('computeStashForecast — gamified ETA + pace', () => {
     expect(f.expectedHit).toBe(1650);
     expect(f.hitRemaining).toBe(1650);      // half the annual goal, not the full $3,300
     expect(f.remaining).toBe(3300);          // the goal bar still tracks the full year
+  });
+});
+
+describe('requiredMonthlyForGoal — auto-fill the $/mo', () => {
+  it('spreads the goal over the months to a custom date (Kitchen Table $1,200 by Oct 19)', () => {
+    // Jun 11 → Oct 19, 2026 = 130 days ≈ 4.27 mo → ceil(1200 / 4.27) = 281.
+    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 0, NOW)).toBe(281);
+  });
+
+  it('accounts for what is already saved', () => {
+    // Only $600 of the $1,200 still to raise over the same window.
+    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 600, NOW)).toBe(141);
+  });
+
+  it('semiannual targets the per-cycle payment, not the full-year goal', () => {
+    // $3,300/yr, next hit Oct 1 → raise ~$1,650 over ~3.68 mo = 449, not ~897.
+    expect(requiredMonthlyForGoal(stash({ targetAmount: 3300, cadence: 'semiannual', dueMonth: 10 }), 0, NOW)).toBe(449);
+  });
+
+  it('returns null when there is nothing to compute', () => {
+    expect(requiredMonthlyForGoal(stash({ targetAmount: 0, cadence: 'custom', targetDate: '2026-10-19' }), 0, NOW)).toBeNull(); // no goal
+    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200 }), 0, NOW)).toBeNull();                                          // no due date
+    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-01-01' }), 0, NOW)).toBeNull(); // past due
+    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 1200, NOW)).toBeNull(); // already funded
   });
 });
 
