@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useAppData } from '../../context/AppDataContext';
 import { createPortal } from 'react-dom';
 import { ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown } from '../../types/budget';
@@ -114,6 +115,12 @@ export default function BudgetView() {
   const { hasIncome, hasExpenses } = useHasRealData();
   const hasBudgetData = hasIncome || hasExpenses;
   const [section, setSection] = useState<'overview' | 'monthly' | 'expenses' | 'actions'>('overview');
+  // Honor a deep-link intent (e.g. the sidebar "open Budget" action-items chip)
+  // to open a specific tab, then clear it so normal nav still defaults to overview.
+  const { budgetSection, setBudgetSection } = useAppData();
+  useEffect(() => {
+    if (budgetSection) { setSection(budgetSection); setBudgetSection(null); }
+  }, [budgetSection, setBudgetSection]);
   const [selectedMonthIdx, setSelectedMonthIdx] = useState<number>(-1); // -1 = latest full month
   const [buckets, setBuckets] = useState<BudgetBucket[]>(defaultBudgetBuckets);
   const [sinkingFunds, setSinkingFunds] = useState<SinkingFund[]>(defaultSinkingFunds);

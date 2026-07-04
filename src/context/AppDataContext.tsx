@@ -62,6 +62,9 @@ interface AppDataContextValue {
   insights: Insight[];
   insightsExpanded: boolean;
   setInsightsExpanded: React.Dispatch<React.SetStateAction<boolean>>;
+  /** Deep-link intent: which Budget sub-tab to open on next navigation to Budget. */
+  budgetSection: 'overview' | 'monthly' | 'expenses' | 'actions' | null;
+  setBudgetSection: React.Dispatch<React.SetStateAction<'overview' | 'monthly' | 'expenses' | 'actions' | null>>;
   netWorthSnapshots: PortfolioSnapshot[];
   priceRefreshing: boolean;
   lastPriceRefresh: string | null;
@@ -152,6 +155,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
   const [rawExpenses, setRawExpenses] = useState<any[]>([]);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [insightsExpanded, setInsightsExpanded] = useState(false);
+  const [budgetSection, setBudgetSection] = useState<'overview' | 'monthly' | 'expenses' | 'actions' | null>(null);
   const [netWorthSnapshots, setNetWorthSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [priceRefreshing, setPriceRefreshing] = useState(false);
   const [lastPriceRefresh, setLastPriceRefresh] = useState<string | null>(null);
@@ -707,6 +711,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     actionItems, dashBuckets, dashPaycheck, dashSinkingFunds,
     spendingSummary, monthComparison, rawExpenses,
     insights, insightsExpanded, setInsightsExpanded,
+    budgetSection, setBudgetSection,
     netWorthSnapshots, priceRefreshing, lastPriceRefresh,
     llmReady, refreshLlmReady,
     chatEndRef, fileInputRef,
