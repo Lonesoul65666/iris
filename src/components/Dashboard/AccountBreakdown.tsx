@@ -104,25 +104,21 @@ export default function AccountBreakdown() {
 
   return (
     <div className="glass-card p-6 relative overflow-hidden group">
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyber-cyan/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
-      {/* Header */}
+      {/* Header — matches the "Have To's / Want To's" section for continuity:
+          bold text-lg title, muted subtitle, accent (violet) link. */}
       <div className="flex items-start justify-between mb-5">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-xl flex-shrink-0">🗂️</span>
-          <div className="min-w-0">
-            <div className="term-label">Spend by account</div>
-            <div className="text-base font-bold text-text-primary mt-1 mono-num">
-              {formatCurrency(cycleTotalAll)}
-              <span className="text-xs text-text-muted font-normal ml-2">
-                {cycle ? monthLabel(cycle) : ''} · {activeAccounts} active
-              </span>
-            </div>
-          </div>
+        <div className="min-w-0">
+          <h2 className="text-text-primary text-lg font-semibold">Spend by account</h2>
+          <p className="text-xs text-text-muted mt-0.5">
+            <span className="mono-num text-text-secondary font-semibold">{formatCurrency(cycleTotalAll)}</span>
+            {' · '}{cycle ? monthLabel(cycle) : ''} · {activeAccounts} active
+          </p>
         </div>
         <button
           onClick={() => setView('budget')}
-          className="text-[10px] font-mono uppercase tracking-[0.18em] text-cyber-cyan/70 flex-shrink-0 hover:text-cyber-cyan transition-colors">
+          className="text-xs font-medium text-accent hover:text-accent-light transition-colors flex-shrink-0">
           Open Budget →
         </button>
       </div>
