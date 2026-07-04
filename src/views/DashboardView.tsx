@@ -181,7 +181,7 @@ export default function DashboardView() {
   // Recent activity card — rendered either beside "Spending this month" (when
   // the investments donut isn't shown, filling that slot) or in the bottom row.
   const recentActivityCard = (className: string) => (
-    <DataCard title="Recent activity" subtitle={`Last ${recentTx.length} transactions`} icon="🔁" cta="See all →" onClick={() => setView('budget')} className={className}>
+    <DataCard title="Recent activity" subtitle={`Last ${recentTx.length} transactions`} cta="See all →" onClick={() => setView('budget')} className={className}>
       <div className="space-y-1">
         {recentTx.map((tx: { id: string; date: string; description: string; amount: number; category?: string }) => (
           <div key={tx.id} className="flex items-center gap-3 py-2.5 border-b border-glass-border/50 last:border-0">
@@ -213,8 +213,8 @@ export default function DashboardView() {
               right underneath it (so the refresh reads as an actual button). */}
           <div className="flex items-start justify-between mb-5">
             <div className="flex flex-col items-start gap-2">
-              <span className="text-sm text-text-secondary">
-                {flavor.icon} {flavor.greeting}{greetingNames ? <>, <span className="text-text-primary font-medium">{greetingNames}</span></> : ''}.
+              <span className="text-lg text-text-secondary">
+                {flavor.icon} {flavor.greeting}{greetingNames ? <>, <span className="text-text-primary font-semibold">{greetingNames}</span></> : ''}.
               </span>
               <SyncStatus />
             </div>
@@ -392,7 +392,7 @@ export default function DashboardView() {
 
       {/* ════ ROW: Spending donut + Investments donut ═══════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <DataCard title="Spending this month" subtitle={formatCurrency(totalSpending)} icon="🧾" cta="Open Budget →" onClick={() => setView('budget')}>
+        <DataCard title="Spending this month" subtitle={formatCurrency(totalSpending)} cta="Open Budget →" onClick={() => setView('budget')}>
           {spendingByCategory.length > 0 ? (
             <div className="grid grid-cols-[160px_1fr] gap-5 items-center">
               <DonutWithCenterLabel
@@ -610,7 +610,7 @@ function DataCard({
 }: {
   title: string;
   subtitle?: string;
-  icon: string;
+  icon?: string;
   cta: string;
   onClick: () => void;
   children: React.ReactNode;
@@ -626,7 +626,7 @@ function DataCard({
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyber-cyan/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-xl flex-shrink-0">{icon}</span>
+          {icon && <span className="text-xl flex-shrink-0">{icon}</span>}
           <div className="min-w-0">
             <div className="term-label">{title}</div>
             {subtitle && <div className="text-base font-bold text-text-primary mt-1 truncate mono-num">{subtitle}</div>}
