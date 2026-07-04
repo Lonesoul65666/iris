@@ -12,7 +12,7 @@ import SavingsScorecard from '../components/Dashboard/SavingsScorecard';
 import SyncStatus from '../components/Dashboard/SyncStatus';
 import GoalTracker from '../components/Dashboard/GoalTracker';
 import { computeAllStashes } from '../utils/stashMath';
-import { laneOf, isOverBudget, totalReserveSetAside } from '../utils/budgetLanes';
+import { laneOf, isOverBudget } from '../utils/budgetLanes';
 import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ export default function DashboardView() {
   const {
     accounts, equity, totalLiquid, equityValue, totalNetWorth,
     allocations, overallScore,
-    budgetSummary, actionItems,
+    actionItems,
     insights,
     netWorthSnapshots,
     dashBuckets, dashSinkingFunds, monthlyInv,
@@ -452,59 +452,6 @@ export default function DashboardView() {
         ) : null}
       </div>
 
-      {/* ════ CASH FLOW BAR — true month-to-date, like-for-like ═════════════ */}
-      {(() => {
-        if (budgetSummary.netIncome <= 0 && !monthToDate) return null;
-        // Month-to-date operating spend from real transactions. Investing is a
-        // separate segment (synced from Settings, not in bank transactions), so
-        // it is NOT inside `spent` — the old version double-subtracted it.
-        const mtdSpent = Math.max(0, Math.round(monthToDate?.totalOperating ?? 0));
-        // Time-axis fix: spend is month-to-date (~half a month in), but income and
-        // investing were full-month figures — comparing them overstated "left this
-        // month" by roughly half a paycheck. Prorate income + investing to the SAME
-        // elapsed-month fraction so the bar is like-for-like, relabel to "left so
-        // far", and show an honest on-pace projection for month-end.
-        const today = new Date();
-        const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-        const frac = Math.min(1, Math.max(0.0001, today.getDate() / daysInMonth));
-        const proratedIncome = Math.round(budgetSummary.netIncome * frac);
-        const proratedInvesting = Math.round(budgetSummary.investing * frac);
-        // Reserve set-aside is a job for the $15,800 (taxes/trips), same as on the
-        // Budget page's Money Map — subtract it here too so the two pages agree
-        // instead of the Dashboard reading "surplus" while Budget reads "over".
-        const reserveSetAside = totalReserveSetAside();
-        const proratedReserve = Math.round(reserveSetAside * frac);
-        const mtdSurplus = proratedIncome - mtdSpent - proratedInvesting - proratedReserve;
-        const projectedSpend = Math.round(mtdSpent / frac);
-        const projectedSurplus = Math.round(budgetSummary.netIncome - projectedSpend - budgetSummary.investing - reserveSetAside);
-        // Pacing/outcome framing — NOT "spendable left" (that's Safe to Spend's job).
-        // First week: linear extrapolation of a near-empty month is noise (matches
-        // the Budget page's guard), so hold the projection until the pace firms up.
-        const dayOfMonth = today.getDate();
-        const paceTxt = dayOfMonth < 7
-          ? `day ${dayOfMonth} of ${daysInMonth} — too early to call`
-          : projectedSurplus >= 0
-          ? `on pace to save ${formatCurrency(projectedSurplus)} by month-end`
-          : `on pace to be ${formatCurrency(Math.abs(projectedSurplus))} over by month-end`;
-        return (
-          <DataCard
-            title="Cash flow this month"
-            subtitle={`${formatCurrency(mtdSpent)} spent so far · ${paceTxt}`}
-            icon="💸"
-            cta="Open Budget →"
-            onClick={() => setView('budget')}
-            tone={dayOfMonth < 7 || mtdSurplus >= 0 ? 'default' : 'warning'}
-          >
-            <CashFlowBar
-              income={proratedIncome}
-              spent={mtdSpent}
-              investing={proratedInvesting}
-              reserves={proratedReserve}
-            />
-          </DataCard>
-        );
-      })()}
-
       {/* ════ LIVING UNDER THE GUARANTEE (savings scorecard) ════════════ */}
       <SavingsScorecard />
 
@@ -682,62 +629,3 @@ function DonutWithCenterLabel({
   );
 }
 
-function CashFlowBar({ income, spent, investing, reserves }: { income: number; spent: number; investing: number; reserves: number }) {
-  // Same partition as the Budget page's Money Map: income = spent + investing +
-  // reserves + surplus. Reserves (taxes/trips set-aside) is its own segment so a
-  // "surplus" here can't quietly ignore money that's already committed.
-  const total = Math.max(income, spent + investing + reserves, 1);
-  const spentPct = (spent / total) * 100;
-  const investingPct = (investing / total) * 100;
-  const reservesPct = (reserves / total) * 100;
-  const surplus = income - spent - investing - reserves;
-  const surplusPct = surplus > 0 ? (surplus / total) * 100 : 0;
-  const overage = surplus < 0 ? Math.abs(surplus) : 0;
-
-  return (
-    <div>
-      <div className="flex h-9 rounded-lg overflow-hidden bg-surface-2 border border-glass-border">
-        {spentPct > 0 && (
-          <div className="bg-gradient-to-r from-rose-500 to-pink-500 transition-all"
-            style={{ width: `${spentPct}%` }} title={`Spent: ${formatCurrency(spent)}`} />
-        )}
-        {investingPct > 0 && (
-          <div className="bg-gradient-to-r from-violet-500 to-indigo-500 transition-all border-l border-black/20"
-            style={{ width: `${investingPct}%` }} title={`Investing: ${formatCurrency(investing)}`} />
-        )}
-        {reservesPct > 0 && (
-          <div className="bg-gradient-to-r from-amber-500 to-yellow-400 transition-all border-l border-black/20"
-            style={{ width: `${reservesPct}%` }} title={`Reserves set aside: ${formatCurrency(reserves)}`} />
-        )}
-        {surplusPct > 0 && (
-          <div className="bg-gradient-to-r from-emerald-500 to-teal-500 transition-all border-l border-black/20"
-            style={{ width: `${surplusPct}%` }} title={`Surplus: ${formatCurrency(surplus)}`} />
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-        <CashFlowSegment color="from-rose-500 to-pink-500" label="Spent" value={spent} />
-        <CashFlowSegment color="from-violet-500 to-indigo-500" label="Investing" value={investing} />
-        <CashFlowSegment color="from-amber-500 to-yellow-400" label="Reserves" value={reserves} />
-        {overage > 0
-          ? <CashFlowSegment color="bg-negative" label="Over base" value={overage} negative solid />
-          : <CashFlowSegment color="from-emerald-500 to-teal-500" label="Surplus" value={surplus} positive />
-        }
-      </div>
-    </div>
-  );
-}
-
-function CashFlowSegment({ color, label, value, positive, negative, solid }: { color: string; label: string; value: number; positive?: boolean; negative?: boolean; solid?: boolean }) {
-  const valueClass = positive ? 'text-positive' : negative ? 'text-negative' : 'text-text-primary';
-  const swatchClass = solid ? color : `bg-gradient-to-r ${color}`;
-  return (
-    <div>
-      <div className="flex items-center gap-2 mb-1">
-        <div className={`w-2.5 h-2.5 rounded-sm ${swatchClass}`} />
-        <span className="text-[11px] text-text-muted uppercase tracking-wider">{label}</span>
-      </div>
-      <div className={`text-lg font-bold tabular-nums ${valueClass}`}>{formatCurrency(Math.abs(value))}</div>
-    </div>
-  );
-}
