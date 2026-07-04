@@ -92,6 +92,40 @@ export function computeAllStashes(stashes: Stash[], expenses: Expense[], now: Da
   return stashes.map(s => computeStashStatus(s, expenses, now));
 }
 
+const DAYS_PER_MONTH = 30.44;
+const MS_PER_DAY = 86_400_000;
+
+/** Resolve a stash's NEXT due date from its cadence — the anchor the countdown
+ *  and pace math run against. Pure (no IO):
+ *   - 'custom' (or a legacy targetDate with no cadence) → the one-time targetDate.
+ *   - 'annual' → the next 1st-of-`dueMonth` strictly after `now`.
+ *   - 'semiannual' → the sooner of `dueMonth` and `dueMonth`+6, next occurrence.
+ *  Returns null when the cadence has no usable anchor (unset month / date). */
+export function nextDueDate(stash: Stash, now: Date = new Date()): Date | null {
+  const cadence = stash.cadence;
+  if (cadence === 'custom' || (!cadence && stash.targetDate)) {
+    return stash.targetDate ? new Date(`${stash.targetDate}T00:00:00`) : null;
+  }
+  if ((cadence === 'annual' || cadence === 'semiannual') && stash.dueMonth) {
+    const m = stash.dueMonth - 1; // 0-indexed month
+    const cands: Date[] = [];
+    const push = (year: number, month: number) => {
+      const d = new Date(year, month, 1); // JS normalizes month overflow into the next year
+      if (d.getTime() > now.getTime()) cands.push(d);
+    };
+    push(now.getFullYear(), m);
+    push(now.getFullYear() + 1, m);
+    if (cadence === 'semiannual') {
+      push(now.getFullYear() - 1, m + 6);
+      push(now.getFullYear(), m + 6);
+      push(now.getFullYear() + 1, m + 6);
+    }
+    cands.sort((a, b) => a.getTime() - b.getTime());
+    return cands[0] ?? null;
+  }
+  return null;
+}
+
 /** Forward look at a stash vs its goal — built on the DERIVED balance, so the
  *  pots show "how full + when full" the same way they show their balance. Pure
  *  numbers + a status enum; the component formats the label (keeps this IO-free).
@@ -102,48 +136,83 @@ export interface StashForecast {
   percent: number;                // 0..100 of goal funded
   status: 'met' | 'past_due' | 'on_track' | 'behind' | 'projecting' | 'idle';
   projectedMonth: string | null;  // "Mar 2027" — when it fills at the current rate
-  additionalNeeded: number | null;// extra $/mo to make a set targetDate
+  additionalNeeded: number | null;// extra $/mo to make a set deadline
   monthsToGo: number | null;      // months to fill at the current contribution
+  // ── gamified / cadence layer ──
+  kind: 'have_to' | 'want_to';
+  contribution: number;           // the current $/mo drip (for the label)
+  daysToFill: number | null;      // days to reach target at the drip (0 when met, null when no drip)
+  dueLabel: string | null;        // "Oct 1, 2026" — resolved next due date
+  daysToDue: number | null;       // days until the due date (null when no deadline)
+  requiredPerMonth: number | null;// $/mo needed to hit the deadline in time
+  expectedHit: number | null;     // recurring have-to: size of the next bill (biggest past draw)
+  hitRemaining: number | null;    // recurring have-to: $ still needed to cover the NEXT hit (vs the full-year goal in `remaining`)
 }
 
 export function computeStashForecast(status: StashStatus, now: Date = new Date()): StashForecast | null {
-  const { stash, balance } = status;
+  const { stash, balance, biggestDraw } = status;
   const target = stash.targetAmount || 0;
   if (target <= 0) return null;
 
   const remaining = Math.max(0, target - balance);
   const percent = Math.max(0, Math.min(100, Math.round((balance / target) * 100)));
   const contribution = stash.monthlyContribution || 0;
+  const kind = stash.kind ?? 'want_to';
   const fmtMonth = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  const fmtDay = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const expectedHit = biggestDraw?.amount
+    ?? (kind === 'have_to' ? Math.round(target / (stash.cadence === 'semiannual' ? 2 : 1)) : null);
+
+  // Days to reach the goal at the current drip — the gamified "how long" number.
+  const daysToFill = remaining <= 0 ? 0
+    : contribution > 0 ? Math.round((remaining / contribution) * DAYS_PER_MONTH)
+    : null;
+
+  const due = nextDueDate(stash, now);
+  const dueLabel = due ? fmtDay(due) : null;
+  const daysToDue = due ? Math.round((due.getTime() - now.getTime()) / MS_PER_DAY) : null;
+
+  // A recurring have-to's deadline is about covering the NEXT payment (annual =
+  // the whole goal; semiannual = half), not topping up the full-year reserve.
+  const isRecurring = stash.cadence === 'annual' || stash.cadence === 'semiannual';
+  const hitTarget = (isRecurring && expectedHit) ? expectedHit : target;
+  const hitRemaining = isRecurring ? Math.max(0, hitTarget - balance) : null;
+
+  const base = { target, remaining, percent, kind, contribution, daysToFill, dueLabel, daysToDue, expectedHit, hitRemaining };
 
   if (balance >= target) {
-    return { target, remaining: 0, percent: 100, status: 'met', projectedMonth: null, additionalNeeded: null, monthsToGo: 0 };
+    return { ...base, status: 'met', projectedMonth: null, additionalNeeded: null, monthsToGo: 0, daysToFill: 0, requiredPerMonth: null };
   }
 
-  // Anchored to an explicit deadline: are we pacing to make it?
-  if (stash.targetDate) {
-    const td = new Date(stash.targetDate);
-    const monthsLeft = (td.getFullYear() - now.getFullYear()) * 12 + (td.getMonth() - now.getMonth());
-    const projectedMonth = fmtMonth(td);
-    if (monthsLeft <= 0) {
-      return { target, remaining, percent, status: 'past_due', projectedMonth, additionalNeeded: null, monthsToGo: null };
+  // Anchored to a cadence deadline: are we pacing to make it?
+  if (due && daysToDue !== null) {
+    // Recurring pots pace against the next payment; one-time goals against the goal.
+    const needed = isRecurring ? Math.max(0, hitTarget - balance) : remaining;
+    if (daysToDue <= 0) {
+      return { ...base, status: 'past_due', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo: null, requiredPerMonth: null };
     }
-    const requiredPerMonth = remaining / monthsLeft;
+    if (needed <= 0) {
+      // Already hold enough for the next hit — nothing more to do this cycle.
+      return { ...base, status: 'on_track', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo: Math.max(1, Math.round(daysToDue / DAYS_PER_MONTH)), requiredPerMonth: 0 };
+    }
+    const monthsLeft = daysToDue / DAYS_PER_MONTH;
+    const requiredPerMonth = Math.ceil(needed / monthsLeft);
+    const monthsToGo = Math.max(1, Math.round(monthsLeft));
     if (contribution >= requiredPerMonth) {
-      return { target, remaining, percent, status: 'on_track', projectedMonth, additionalNeeded: null, monthsToGo: monthsLeft };
+      return { ...base, status: 'on_track', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo, requiredPerMonth };
     }
-    return { target, remaining, percent, status: 'behind', projectedMonth, additionalNeeded: Math.ceil(requiredPerMonth - contribution), monthsToGo: monthsLeft };
+    return { ...base, status: 'behind', projectedMonth: fmtMonth(due), additionalNeeded: Math.max(1, requiredPerMonth - contribution), monthsToGo, requiredPerMonth };
   }
 
   // No deadline: project a fill date from the monthly drip.
   if (contribution > 0) {
     const monthsToGo = Math.ceil(remaining / contribution);
     const projected = new Date(now.getFullYear(), now.getMonth() + monthsToGo, 1);
-    return { target, remaining, percent, status: 'projecting', projectedMonth: fmtMonth(projected), additionalNeeded: null, monthsToGo };
+    return { ...base, status: 'projecting', projectedMonth: fmtMonth(projected), additionalNeeded: null, monthsToGo, requiredPerMonth: null };
   }
 
   // A goal with no funding path — can't project; nudge to set a contribution.
-  return { target, remaining, percent, status: 'idle', projectedMonth: null, additionalNeeded: null, monthsToGo: null };
+  return { ...base, status: 'idle', projectedMonth: null, additionalNeeded: null, monthsToGo: null, requiredPerMonth: null };
 }
 
 /** Σ monthly contributions — the PLANNED set-aside (Safe-to-Spend default line).

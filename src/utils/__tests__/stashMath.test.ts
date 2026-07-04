@@ -2,8 +2,9 @@ import { describe, it, expect, afterEach } from 'vitest';
 import {
   monthsElapsedInclusive, computeStashStatus, totalStashContributions,
   stashAllocationsByCategory, stashesConfigured, seedDefaultStashes, applyStashLaneConfig,
-  committedReserves,
+  committedReserves, nextDueDate, computeStashForecast,
 } from '../stashMath';
+import { formatDuration } from '../format';
 import type { DeployConfirmation } from '../../stores/budgetStore';
 import { laneOf, totalReserveSetAside, configureStashLanes, RESERVE_CATEGORIES, RESERVE_ALLOCATIONS } from '../budgetLanes';
 import type { Expense, Stash } from '../../types/budget';
@@ -149,6 +150,100 @@ describe('lane registry wiring (design D2/D3)', () => {
     expect(laneOf('taxes')).toBe('reserve');
     expect(totalReserveSetAside()).toBe(2000);
   });
+});
+
+describe('nextDueDate — cadence anchoring', () => {
+  it('custom cadence resolves the one-time targetDate', () => {
+    const d = nextDueDate(stash({ cadence: 'custom', targetDate: '2026-09-18' }), NOW)!;
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(8); // September (0-indexed)
+    expect(d.getDate()).toBe(18);
+  });
+
+  it('legacy targetDate (no cadence) still resolves', () => {
+    expect(nextDueDate(stash({ targetDate: '2026-12-25' }), NOW)!.getMonth()).toBe(11);
+  });
+
+  it('annual picks this year when the month is still ahead', () => {
+    const d = nextDueDate(stash({ cadence: 'annual', dueMonth: 12 }), NOW)!;
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(11);
+  });
+
+  it('annual rolls to next year once the month has passed', () => {
+    const d = nextDueDate(stash({ cadence: 'annual', dueMonth: 3 }), NOW)!; // Mar already gone in June
+    expect(d.getFullYear()).toBe(2027);
+    expect(d.getMonth()).toBe(2);
+  });
+
+  it('semiannual takes the sooner of the month and its +6 sibling', () => {
+    // dueMonth Apr → Apr 2027 is far, but Apr+6 = Oct 2026 is the next hit.
+    const d = nextDueDate(stash({ cadence: 'semiannual', dueMonth: 4 }), NOW)!;
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(9); // October
+  });
+
+  it('returns null when a recurring cadence has no month set', () => {
+    expect(nextDueDate(stash({ cadence: 'annual' }), NOW)).toBeNull();
+  });
+});
+
+describe('computeStashForecast — gamified ETA + pace', () => {
+  const fc = (partial: Partial<Stash>) =>
+    computeStashForecast(computeStashStatus(stash(partial), [], NOW), NOW)!;
+
+  it('returns null with no goal set', () => {
+    expect(computeStashForecast(computeStashStatus(stash({ targetAmount: 0 }), [], NOW), NOW)).toBeNull();
+  });
+
+  it('met when the balance covers the goal', () => {
+    const f = fc({ targetAmount: 1000, currentBalance: 1200 });
+    expect(f.status).toBe('met');
+    expect(f.percent).toBe(100);
+    expect(f.daysToFill).toBe(0);
+  });
+
+  it('projecting (no deadline) reports day-granular time to fill', () => {
+    const f = fc({ targetAmount: 6000, currentBalance: 0, monthlyContribution: 500 });
+    expect(f.status).toBe('projecting');
+    expect(f.monthsToGo).toBe(12);
+    expect(f.daysToFill).toBe(Math.round(12 * 30.44)); // 365
+  });
+
+  it('behind a custom deadline surfaces the required $/mo to make it', () => {
+    const f = fc({ kind: 'want_to', targetAmount: 4000, currentBalance: 0, monthlyContribution: 200, cadence: 'custom', targetDate: '2026-09-18' });
+    expect(f.status).toBe('behind');
+    expect(f.dueLabel).toContain('Sep');
+    expect(f.requiredPerMonth).toBeGreaterThan(200);
+    expect(f.additionalNeeded).toBe(f.requiredPerMonth! - 200);
+  });
+
+  it('on_track when the balance already covers the next hit', () => {
+    // Annual $3,300 goal, semiannual → next payment is ~$1,650; $3,100 saved covers it.
+    const f = fc({ kind: 'have_to', targetAmount: 3300, currentBalance: 3100, monthlyContribution: 275, cadence: 'semiannual', dueMonth: 10 });
+    expect(f.status).toBe('on_track');
+    expect(f.kind).toBe('have_to');
+    expect(f.requiredPerMonth).toBeLessThanOrEqual(275);
+  });
+
+  it('semiannual paces against the per-cycle payment, not the full-year goal', () => {
+    // $3,300/yr paid twice → next hit ~$1,650, not $3,300. hitRemaining reflects the half.
+    const f = fc({ kind: 'have_to', targetAmount: 3300, currentBalance: 0, monthlyContribution: 275, cadence: 'semiannual', dueMonth: 10 });
+    expect(f.expectedHit).toBe(1650);
+    expect(f.hitRemaining).toBe(1650);      // half the annual goal, not the full $3,300
+    expect(f.remaining).toBe(3300);          // the goal bar still tracks the full year
+  });
+});
+
+describe('formatDuration — the fun countdown', () => {
+  it('days under a month', () => expect(formatDuration(12)).toBe('12 days'));
+  it('months + days in the mid range', () => expect(formatDuration(347)).toBe('11 months, 12 days'));
+  it('clean month boundary drops the days', () => expect(formatDuration(61)).toBe('2 months'));
+  it('coarsens to half-years past two years', () => {
+    expect(formatDuration(365 * 3)).toBe('~3 years');
+    expect(formatDuration(Math.round(365.25 * 2.5))).toBe('~2.5 years');
+  });
+  it('zero or negative reads "now"', () => expect(formatDuration(0)).toBe('now'));
 });
 
 describe('seedDefaultStashes (design D5)', () => {
