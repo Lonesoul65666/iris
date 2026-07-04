@@ -187,7 +187,7 @@ export default function ActionItemsView({ items, onItemsChange, filter = 'all' }
         <div>
           <button onClick={() => setShowCompleted(!showCompleted)}
             className="text-xs text-text-muted hover:text-text-secondary transition-colors">
-            {showCompleted ? '▼' : '▶'} {completed.length} completed
+            {showCompleted ? '▼' : '▶'} {completed.length} knocked out
           </button>
           {showCompleted && completed.map(item => (
             <div key={item.id} className="mt-2 p-3 rounded-xl bg-positive/5 border border-positive/10 flex items-center gap-3">
