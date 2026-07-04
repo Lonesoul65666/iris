@@ -49,6 +49,7 @@ function ymLabel(ym: string): string {
 
 export default function WorkReimbursementsCard({ expenses, now = new Date(), onViewTransactions }: Props) {
   const [sources, setSources] = useState<IncomeSource[]>([]);
+  const [monthsOpen, setMonthsOpen] = useState(false);
   useEffect(() => { getIncomeSources().then(setSources); }, [expenses]);
 
   const reimbIds = useMemo(() => buildReimbursementIds(sources), [sources]);
@@ -91,7 +92,7 @@ export default function WorkReimbursementsCard({ expenses, now = new Date(), onV
       <div className="flex items-start justify-between mb-4 gap-4">
         <div>
           <div className="term-label">Work — money in / out</div>
-          <h2 className="text-lg font-semibold text-text-primary mt-0.5">The work float</h2>
+          <h2 className="text-lg font-semibold text-text-primary mt-0.5">The Work Float</h2>
           <p className="text-xs text-text-muted mt-1">
             Real money out until it comes back. Kept out of your base budget — tracked here so nothing hides.
           </p>
@@ -121,8 +122,17 @@ export default function WorkReimbursementsCard({ expenses, now = new Date(), onV
         </div>
       </div>
 
-      {/* Month-by-month IN / OUT — the ratio over time (June-forward is the real record) */}
-      <div className="space-y-1">
+      {/* Month-by-month IN / OUT — collapsed by default; the top stats carry the
+          story, this is the drill-down for when you want the month-over-month. */}
+      <button onClick={() => setMonthsOpen(o => !o)}
+        className="flex items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-text-primary transition-colors">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+          className={`transition-transform ${monthsOpen ? 'rotate-90' : ''}`}><path d="M9 6l6 6-6 6" /></svg>
+        Monthly breakdown
+        <span className="text-text-muted font-normal">· {months.length} mo</span>
+      </button>
+      {monthsOpen && (
+      <div className="space-y-1 mt-3">
         <div className="flex items-center gap-3 px-1 pb-1 text-[10px] uppercase tracking-wider text-text-muted">
           <span className="w-14">Month</span>
           <span className="flex-1 text-right">Out</span>
@@ -140,6 +150,7 @@ export default function WorkReimbursementsCard({ expenses, now = new Date(), onV
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
