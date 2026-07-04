@@ -262,6 +262,14 @@ export interface SinkingFund {
   startMonth?: string;
   /** What was already set aside when accrual started. User-edited; can be 0. */
   openingBalance?: number;
+  /** Have-to = obligation you pre-fund (taxes, insurance, card fees);
+   *  Want-to = goal you're saving toward (trips, remodel). Grouping only —
+   *  the fill + confirm mechanic is identical for both. */
+  kind?: 'have_to' | 'want_to';
+  /** Planned monthly move into this stash — the one-tap default when confirming
+   *  ("Make Every Dolla Holla"). Distinct from the legacy monthlyContribution so
+   *  we can migrate without disturbing existing reserve math. */
+  monthlyFill?: number;
 }
 
 /** Preferred alias going forward. */
