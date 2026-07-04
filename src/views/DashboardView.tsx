@@ -69,6 +69,7 @@ export default function DashboardView() {
 
   // ── Net worth trend + delta vs prior period ──────────────────────────
   const [nwRange, setNwRange] = useState<'1M' | '3M' | '6M' | '1Y' | 'ALL'>('3M');
+  const [nwBreakdown, setNwBreakdown] = useState(false);
 
   // Drop the one-time data-entry ARTIFACT: the huge early jump (e.g. ~$388k →
   // ~$546k the day the house/car/investments were first entered) isn't real
@@ -228,7 +229,16 @@ export default function DashboardView() {
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
             {/* Hero number */}
             <div>
-              <div className="term-label">Net worth · all sources</div>
+              <button onClick={() => setNwBreakdown(v => !v)}
+                className="term-label flex items-center gap-1.5 hover:text-text-secondary transition-colors"
+                title="How is this calculated?" aria-expanded={nwBreakdown}>
+                <span>Net worth · all sources</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                  className={`transition-transform ${nwBreakdown ? 'rotate-180' : ''}`}>
+                  <circle cx="12" cy="12" r="10" strokeWidth="1.5" opacity="0.4" />
+                  <path d="M8 11l4 4 4-4" />
+                </svg>
+              </button>
               <div className="flex items-baseline gap-3 mt-2">
                 <div className="text-5xl md:text-6xl font-black text-text-primary leading-none tracking-tight mono-num"
                   style={{ textShadow: '0 0 16px rgba(139,109,255,0.35)' }}>
@@ -269,6 +279,28 @@ export default function DashboardView() {
               </div>
             )}
           </div>
+
+          {/* Net worth breakdown — the itemized derivation of "all sources", on
+              demand. Every row sums exactly to the headline total. */}
+          {nwBreakdown && (
+            <div className="mt-5 rounded-xl border border-glass-border bg-white/[0.02] p-4 animate-fadeIn">
+              <div className="term-label mb-3">How it's calculated</div>
+              <div className="space-y-1.5 text-sm max-w-xl">
+                {accounts.map(a => (
+                  <NwRow key={a.id} label={a.name} sub={a.institution} value={a.totalValue} />
+                ))}
+                {equityValue > 0 && <NwRow label="Equity / RSUs" value={equityValue} />}
+                {(profile?.homeValue ?? 0) > 0 && <NwRow label="Home value" value={profile!.homeValue!} />}
+                {(profile?.mortgageBalance ?? 0) > 0 && <NwRow label="Mortgage balance" value={-(profile!.mortgageBalance!)} negative />}
+                {carValue > 0 && <NwRow label="Car" value={carValue} />}
+                <div className="border-t border-glass-border my-2" />
+                <NwRow label="Net worth · all sources" value={totalNetWorth} bold />
+              </div>
+              <p className="text-[11px] text-text-muted mt-3">
+                Live figures — cash & investment balances from your linked accounts, equity from your comp profile, home value minus mortgage, and your car. Update values in <button onClick={() => setView('settings')} className="text-accent-light hover:underline">Settings</button>.
+              </p>
+            </div>
+          )}
 
           {/* Net worth area chart */}
           {netWorthTrend.length >= 2 ? (
@@ -538,6 +570,20 @@ function TrendChip({ pct, delta }: { pct: number; delta: number }) {
     <div className={`cyber-chip ${positive ? 'text-positive' : 'text-negative'}`}>
       <span>{positive ? '▲' : '▼'}</span>
       <span className="mono-num">{positive ? '+' : ''}{pct.toFixed(2)}%</span>
+    </div>
+  );
+}
+
+// One line of the Net Worth "how it's calculated" ledger.
+function NwRow({ label, sub, value, negative, bold }: { label: string; sub?: string; value: number; negative?: boolean; bold?: boolean }) {
+  return (
+    <div className={`flex items-baseline justify-between gap-3 ${bold ? 'text-text-primary font-bold' : 'text-text-secondary'}`}>
+      <span className="truncate">
+        {label}{sub ? <span className="text-text-muted text-xs font-normal"> · {sub}</span> : ''}
+      </span>
+      <span className={`mono-num tabular-nums flex-shrink-0 ${negative ? 'text-negative' : bold ? 'text-text-primary' : 'text-text-primary'}`}>
+        {negative ? '−' : ''}{formatCurrency(Math.abs(value))}
+      </span>
     </div>
   );
 }
