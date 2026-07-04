@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
-  PieChart, Pie, Cell, ResponsiveContainer,
+  ResponsiveContainer,
   AreaChart, Area, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { useAppData, formatCurrency } from '../context/AppDataContext';
@@ -433,15 +433,27 @@ export default function DashboardView() {
                 centerSubtitle="of budget"
                 centerTone={spentPctOfBudget > 100 ? 'negative' : spentPctOfBudget > 90 ? 'warning' : 'positive'}
               />
-              <div className="space-y-1.5">
-                {spendingByCategory.map((c: { name: string; value: number; budget: number; icon?: string; over: boolean }, i: number) => (
-                  <div key={i} className="flex items-center gap-2 text-xs">
-                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: SECTOR_COLORS[i % SECTOR_COLORS.length] }} />
-                    {c.icon && <span className="text-sm">{c.icon}</span>}
-                    <span className="text-text-secondary flex-1 truncate">{c.name}</span>
-                    <span className={`font-semibold tabular-nums ${c.over ? 'text-negative' : 'text-text-primary'}`}>{formatCurrency(c.value)}</span>
-                  </div>
-                ))}
+              <div className="space-y-2">
+                {spendingByCategory.map((c: { name: string; value: number; budget: number; icon?: string; over: boolean }, i: number) => {
+                  const color = SECTOR_COLORS[i % SECTOR_COLORS.length];
+                  const pct = c.budget > 0 ? Math.min(100, (c.value / c.budget) * 100) : (c.value > 0 ? 100 : 0);
+                  return (
+                    <div key={i}>
+                      <div className="flex items-center gap-2 text-xs">
+                        {c.icon
+                          ? <span className="w-4 text-center text-sm flex-shrink-0">{c.icon}</span>
+                          : <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />}
+                        <span className="text-text-secondary flex-1 truncate">{c.name}</span>
+                        <span className={`font-semibold tabular-nums flex-shrink-0 ${c.over ? 'text-negative' : 'text-text-primary'}`}>{formatCurrency(c.value)}</span>
+                      </div>
+                      {/* mini spend-vs-budget bar, tinted by the segment color */}
+                      <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden mt-1 ml-6">
+                        <div className="h-full rounded-full transition-[width] duration-700"
+                          style={{ width: `${pct}%`, background: c.over ? '#ef4444' : color }} />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ) : (
@@ -641,6 +653,9 @@ function DataCardEmpty({ icon, line }: { icon: string; line: string }) {
   );
 }
 
+// Modern animated donut — hand-drawn SVG so we own the look: gradient segments,
+// rounded caps, a faint track, and a staggered clockwise sweep-in on mount.
+// Crisp at any DPI (pure vector), and far cleaner than the old flat recharts pie.
 function DonutWithCenterLabel({
   data, centerLabel, centerSubtitle, centerTone,
 }: {
@@ -649,26 +664,57 @@ function DonutWithCenterLabel({
   centerSubtitle: string;
   centerTone: 'positive' | 'negative' | 'warning';
 }) {
-  const toneColor = {
-    positive: 'text-positive',
-    negative: 'text-negative',
-    warning: 'text-warning',
-  }[centerTone];
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setMounted(true), 60); return () => clearTimeout(t); }, []);
+
+  const SIZE = 160, STROKE = 18, R = (SIZE - STROKE) / 2 - 1, CX = SIZE / 2, CY = SIZE / 2;
+  const C = 2 * Math.PI * R;
+  const total = data.reduce((s, d) => s + (d.value > 0 ? d.value : 0), 0) || 1;
+  const GAP = data.length > 1 ? C * 0.012 : 0; // small breather between segments
+
+  let cum = 0;
+  const segs = data.map((d, i) => {
+    const frac = Math.max(0, d.value) / total;
+    const len = Math.max(0, frac * C - GAP);
+    const rotation = cum * 360 - 90; // start at 12 o'clock, go clockwise
+    cum += frac;
+    return { len, rotation, color: d.color || SECTOR_COLORS[i % SECTOR_COLORS.length], i };
+  });
+
+  const toneColor = { positive: 'text-positive', negative: 'text-negative', warning: 'text-warning' }[centerTone];
+
   return (
-    <div className="relative h-[160px]">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie data={data} dataKey="value" cx="50%" cy="50%" outerRadius={70} innerRadius={52} paddingAngle={2} strokeWidth={0}>
-            {data.map((d, i) => <Cell key={i} fill={d.color || SECTOR_COLORS[i % SECTOR_COLORS.length]} />)}
-          </Pie>
-          <Tooltip
-            contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
-            formatter={(v, name) => [formatCurrency(typeof v === 'number' ? v : Number(v) || 0), String(name ?? '')]}
+    <div className="relative mx-auto" style={{ width: SIZE, height: SIZE }}>
+      <svg width={SIZE} height={SIZE} className="block overflow-visible">
+        <defs>
+          {segs.map(s => (
+            <linearGradient key={s.i} id={`donut-seg-${s.i}`} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor={s.color} stopOpacity="1" />
+              <stop offset="100%" stopColor={s.color} stopOpacity="0.6" />
+            </linearGradient>
+          ))}
+        </defs>
+        {/* faint track behind the ring */}
+        <circle cx={CX} cy={CY} r={R} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={STROKE} />
+        {segs.map(s => (
+          <circle
+            key={s.i}
+            cx={CX} cy={CY} r={R} fill="none"
+            stroke={`url(#donut-seg-${s.i})`}
+            strokeWidth={STROKE}
+            strokeLinecap="round"
+            strokeDasharray={`${mounted ? s.len : 0} ${C}`}
+            transform={`rotate(${s.rotation} ${CX} ${CY})`}
+            style={{
+              transition: 'stroke-dasharray 900ms cubic-bezier(0.22,1,0.36,1)',
+              transitionDelay: `${s.i * 90}ms`,
+              filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.35))',
+            }}
           />
-        </PieChart>
-      </ResponsiveContainer>
+        ))}
+      </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-        <div className={`text-2xl font-extrabold ${toneColor} leading-none tracking-tight tabular-nums`}>{centerLabel}</div>
+        <div className={`text-3xl font-black ${toneColor} leading-none tracking-tight tabular-nums`}>{centerLabel}</div>
         <div className="text-[10px] text-text-muted uppercase tracking-wider mt-1">{centerSubtitle}</div>
       </div>
     </div>
