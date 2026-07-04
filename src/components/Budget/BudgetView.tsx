@@ -124,6 +124,9 @@ export default function BudgetView() {
   const [buckets, setBuckets] = useState<BudgetBucket[]>(defaultBudgetBuckets);
   const [sinkingFunds, setSinkingFunds] = useState<SinkingFund[]>(defaultSinkingFunds);
   const [funMoney, setFunMoney] = useState<FunMoney[]>(defaultFunMoney);
+  // Custom categories — the single source of truth, shared with ExpenseManager so
+  // adding one anywhere (here or the txn categorizer) shows up instantly, no reload.
+  const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [paycheck, setPaycheck] = useState<PaycheckBreakdown>(defaultPaycheck);
   const [overviewMonth, setOverviewMonth] = useState<string>('latest'); // 'avg', 'latest', or 'YYYY-MM'
   const [loaded, setLoaded] = useState(false);
@@ -212,6 +215,7 @@ export default function BudgetView() {
     const custom: CustomCategory = { id, label, icon, color: '#8b5cf6' };
     await saveCustomCategory(custom);
     registerCustomCategories([custom]);
+    setCustomCategories(prev => [...prev, custom]); // instant — ExpenseManager sees it now
     const fresh: BudgetBucket = {
       category: id as ExpenseCategory,
       label,
@@ -411,8 +415,10 @@ export default function BudgetView() {
 
       setDeployConfirms(await getDeployConfirmations());
 
-      // Register custom categories for proper label display
+      // Register custom categories for proper label display + hold them in state
+      // (shared with ExpenseManager) so new ones appear instantly without a reload.
       const cc = await getCustomCategories();
+      setCustomCategories(cc);
       if (cc.length > 0) registerCustomCategories(cc);
 
       setLoaded(true);
@@ -670,7 +676,8 @@ export default function BudgetView() {
 
       {/* Transactions Section */}
       {section === 'expenses' && (
-        <ExpenseManager expenses={expenses} onExpensesChanged={loadExpenses} geminiAvailable={isGeminiInitialized()} />
+        <ExpenseManager expenses={expenses} onExpensesChanged={loadExpenses} geminiAvailable={isGeminiInitialized()}
+          customCategories={customCategories} setCustomCategories={setCustomCategories} />
       )}
 
       {/* Action Items Section */}
