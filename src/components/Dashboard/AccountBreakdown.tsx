@@ -41,7 +41,20 @@ interface RawTx {
  *     budget. Work charges get a 💼 marker.
  */
 export default function AccountBreakdown() {
-  const { rawExpenses, setView } = useAppData();
+  const { rawExpenses, accounts, setView } = useAppData();
+
+  // Current balances (as of last sync), keyed by the expense `source`. Synced
+  // accounts use id `teller-<source>`, so strip the prefix to join. Only the
+  // BoA bank accounts sync a balance today; credit cards import transactions
+  // but no balance, so they simply won't have one here.
+  const balanceBySource = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of accounts || []) {
+      if (a.status === 'closed') continue;
+      m.set(a.id.replace(/^teller-/, ''), a.totalValue);
+    }
+    return m;
+  }, [accounts]);
 
   const { stats, cycle, cycleTotalAll } = useMemo(() => {
     const outflows: RawTx[] = (rawExpenses || []).filter(
@@ -121,6 +134,7 @@ export default function AccountBreakdown() {
             key={stat.source}
             stat={stat}
             shareOfTotal={cycleTotalAll > 0 ? stat.cycleTotal / cycleTotalAll : 0}
+            balance={balanceBySource.get(stat.source)}
           />
         ))}
       </div>
@@ -128,13 +142,18 @@ export default function AccountBreakdown() {
   );
 }
 
-function AccountPanel({ stat, shareOfTotal }: { stat: AccountStat; shareOfTotal: number }) {
+function AccountPanel({ stat, shareOfTotal, balance }: { stat: AccountStat; shareOfTotal: number; balance?: number }) {
   const meta = accountMeta(stat.source);
   const kindBadge = { credit: 'Card', checking: 'Checking', savings: 'Savings' }[meta.kind];
+  const hasBalance = balance != null;
   const empty = stat.recent.length === 0;
+  // Dim only truly-blank cards: no charges AND no balance to show.
+  const dim = empty && !hasBalance;
+  // Credit-card "balance" is money owed; bank balance is money held.
+  const balanceLabel = meta.kind === 'credit' ? 'Balance owed' : 'Balance';
 
   return (
-    <div className={`rounded-xl border border-glass-border bg-white/[0.02] p-4 ${empty ? 'opacity-60' : ''}`}>
+    <div className={`rounded-xl border border-glass-border bg-white/[0.02] p-4 ${dim ? 'opacity-60' : ''}`}>
       {/* Account identity */}
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2 min-w-0">
@@ -147,10 +166,19 @@ function AccountPanel({ stat, shareOfTotal }: { stat: AccountStat; shareOfTotal:
         </span>
       </div>
 
-      {/* This-cycle total + share bar */}
+      {/* Current balance (as of last sync) — the headline */}
       <div className="flex items-baseline justify-between">
         <div className="text-2xl font-black text-text-primary tracking-tight tabular-nums mono-num">
-          {formatCurrency(stat.cycleTotal)}
+          {hasBalance ? formatCurrency(balance) : '—'}
+        </div>
+        <div className="text-[11px] text-text-muted uppercase tracking-wider">
+          {hasBalance ? balanceLabel : 'balance not synced'}
+        </div>
+      </div>
+      {/* Spend this cycle + share bar */}
+      <div className="flex items-baseline justify-between mt-1.5">
+        <div className="text-sm font-semibold text-text-secondary tabular-nums mono-num">
+          {formatCurrency(stat.cycleTotal)} spent
         </div>
         <div className="text-[11px] text-text-muted">
           {stat.cycleCount} charge{stat.cycleCount === 1 ? '' : 's'} this cycle
