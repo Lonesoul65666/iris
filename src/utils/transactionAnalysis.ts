@@ -293,6 +293,15 @@ const CATEGORY_INFO: Record<string, { label: string; icon: string }> = {
   other: { label: 'Other', icon: '📦' },
 };
 
+/** Display label for a category id — the registered/custom label when known,
+ *  otherwise a humanized fallback ("car_insurance" → "Car Insurance") so a
+ *  bucket-less category never shows a raw snake_case id. */
+export function getCategoryLabel(cat: string): string {
+  const known = CATEGORY_INFO[cat]?.label;
+  if (known) return known;
+  return cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 /** Merge user-created custom categories into the lookup table so trends/comparisons show proper labels */
 export function registerCustomCategories(cats: CustomCategory[]): void {
   for (const c of cats) {
