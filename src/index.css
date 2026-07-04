@@ -50,11 +50,12 @@
 
 .term-label {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 0.18em;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--color-cyber-cyan);
-  opacity: 0.8;
+  opacity: 0.95;
 }
 .cyber-chip {
   display: inline-flex;
@@ -201,11 +202,12 @@ body { margin: 0; }
 /* Terminal-style label */
 .term-label {
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.18em;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--color-cyber-cyan);
-  opacity: 0.75;
+  opacity: 0.95;
 }
 
 /* Tabular mono numbers — for stat hero */
