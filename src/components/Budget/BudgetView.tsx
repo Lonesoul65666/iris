@@ -1370,39 +1370,89 @@ export default function BudgetView() {
               }
             </span>
           </div>
-          {overBudget.length === 0 ? (
-            <div className="text-center py-6">
-              <div className="text-sm text-positive font-medium">All categories on budget</div>
-              <div className="text-xs text-text-muted mt-1">No categories exceed their allocated budget</div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-xs text-negative font-medium">
-                <span>{overBudget.length} {overBudget.length === 1 ? 'category' : 'categories'} over</span>
-                <span className="text-text-muted">·</span>
-                <span>{formatCurrency(totalOverage)}/mo overage</span>
-                <span className="text-text-muted">·</span>
-                <span>{formatCurrency(totalOverage * 12)}/yr if unchanged</span>
-              </div>
-              {overBudget.sort((a, b) => (b.monthlyActual - b.monthlyBudget) - (a.monthlyActual - a.monthlyBudget)).map(b => {
-                const overage = b.monthlyActual - b.monthlyBudget;
-                const overPct = Math.round((b.monthlyActual / b.monthlyBudget) * 100);
-                return (
-                  <div key={b.category} className="flex items-center gap-3 p-3 rounded-lg bg-negative/5 border border-negative/15 cursor-pointer hover:bg-negative/10 transition-colors"
-                    onClick={() => setDrilldownCategory(b.category)}>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-text-primary">{b.label.split('(')[0].trim()}</div>
-                      <div className="text-[10px] text-text-muted">{formatCurrency(b.monthlyActual)} spent vs {formatCurrency(b.monthlyBudget)} budget · {formatCurrency(b.monthlyActual * 12)}/yr at this pace</div>
+          {(() => {
+            const periodWord = resolvedOverviewMonth === 'avg' ? 'on average' : 'this month';
+            // Where you're winning — operating categories comfortably under budget.
+            const wins = operatingBuckets
+              .filter(b => b.category !== 'investing' && b.monthlyBudget > 0 && b.monthlyActual > 0 && b.monthlyActual <= b.monthlyBudget * 0.85)
+              .map(b => ({ category: b.category, label: b.label, saved: Math.round(b.monthlyBudget - b.monthlyActual), pctUnder: Math.round((1 - b.monthlyActual / b.monthlyBudget) * 100) }))
+              .sort((a, z) => z.saved - a.saved).slice(0, 3);
+            // Prior month per-category actuals → "you're slipping less than last month".
+            const keys = monthlyData.map(m => m.month).sort();
+            const pIdx = keys.indexOf(resolvedOverviewMonth);
+            const priorByCat: Record<string, number> = pIdx > 0 ? (monthlyData.find(m => m.month === keys[pIdx - 1])?.byCategory ?? {}) : {};
+
+            // Early in a live month everything is trivially "under" — only crown
+            // real wins on a completed month or the average, not month-to-date.
+            const showWins = !overviewIsInProgress && wins.length > 0;
+            if (overBudget.length === 0) {
+              return (
+                <div className="space-y-4">
+                  <div className="rounded-lg bg-positive/10 border border-positive/30 px-4 py-3">
+                    <div className="text-sm font-bold text-positive">
+                      {overviewIsInProgress ? "Nothing over budget yet — keep it rolling." : "Every category's in the green — let's fucking go."}
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="text-sm font-bold text-negative">+{formatCurrency(overage)}</div>
-                      <div className="text-[10px] text-negative/70">{overPct}% of budget</div>
+                    <div className="text-xs text-text-secondary mt-0.5">
+                      {overviewIsInProgress ? 'Still early in the month, but you’re pacing clean.' : `Not a single category over ${periodWord}. You’re actually doing this.`}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  {showWins && (
+                    <div>
+                      <div className="term-label mb-2">Where you're kicking ass</div>
+                      <div className="space-y-1.5">
+                        {wins.map(w => (
+                          <div key={w.category} className="flex items-center justify-between text-sm">
+                            <span className="text-text-secondary">{w.label.split('(')[0].trim()}</span>
+                            <span className="text-positive font-semibold">{w.pctUnder}% under · {formatCurrency(w.saved)} saved</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-negative font-medium">
+                  <span>{overBudget.length} {overBudget.length === 1 ? 'category' : 'categories'} over</span>
+                  <span className="text-text-muted">·</span>
+                  <span>{formatCurrency(totalOverage)}/mo overage</span>
+                  <span className="text-text-muted">·</span>
+                  <span>{formatCurrency(totalOverage * 12)}/yr if unchanged</span>
+                </div>
+                {/* Still celebrate the wins even when a few are over. */}
+                {showWins && (
+                  <div className="rounded-lg bg-positive/10 border border-positive/25 px-3 py-2 text-xs">
+                    <span className="text-positive font-semibold">Still kicking ass in </span>
+                    <span className="text-text-secondary">{wins.map(w => w.label.split('(')[0].trim()).join(', ')}</span>
+                    <span className="text-text-muted"> — don't lose that.</span>
+                  </div>
+                )}
+                {overBudget.sort((a, b) => (b.monthlyActual - b.monthlyBudget) - (a.monthlyActual - a.monthlyBudget)).map(b => {
+                  const overage = b.monthlyActual - b.monthlyBudget;
+                  const overPct = Math.round((b.monthlyActual / b.monthlyBudget) * 100);
+                  const prior = priorByCat[b.category] || 0;
+                  const improving = prior > 0 && b.monthlyActual < prior;
+                  return (
+                    <div key={b.category} className="flex items-center gap-3 p-3 rounded-lg bg-negative/5 border border-negative/15 cursor-pointer hover:bg-negative/10 transition-colors"
+                      onClick={() => setDrilldownCategory(b.category)}>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-text-primary">{b.label.split('(')[0].trim()}</div>
+                        <div className="text-[10px] text-text-muted">{formatCurrency(b.monthlyActual)} spent vs {formatCurrency(b.monthlyBudget)} budget · {formatCurrency(b.monthlyActual * 12)}/yr at this pace</div>
+                        {improving && <div className="text-[10px] text-positive font-semibold mt-0.5">↓ better than last month — keep chipping at it</div>}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-sm font-bold text-negative">+{formatCurrency(overage)}</div>
+                        <div className="text-[10px] text-negative/70">{overPct}% of budget</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
