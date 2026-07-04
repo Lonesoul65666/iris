@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
-  AreaChart, Area, Tooltip,
+  AreaChart, Area, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { useAppData, formatCurrency } from '../context/AppDataContext';
 import { useHasRealData } from '../hooks/useHasRealData';
@@ -76,6 +76,16 @@ export default function DashboardView() {
     ? netWorthTrend[netWorthTrend.length - 1].value - netWorthTrend[0].value : 0;
   const trendPct = netWorthTrend.length >= 2 && netWorthTrend[0].value > 0
     ? (trendDelta / netWorthTrend[0].value) * 100 : 0;
+  // Zoom the trend's Y-axis to the actual data range. Anchored at $0, a real
+  // $2–10k swing is invisible against a $500k+ total; padding around min/max
+  // makes the day-to-day variation that IS there actually show.
+  const nwDomain = useMemo<[number, number]>(() => {
+    if (netWorthTrend.length < 2) return [0, 1];
+    const vals = netWorthTrend.map(d => d.value);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const pad = Math.max((max - min) * 0.25, max * 0.004) || 1;
+    return [min - pad, max + pad];
+  }, [netWorthTrend]);
 
   // ── Spending breakdown by category — TRUE month-to-date ──────────────
   // Reads this month's actual transactions (monthToDate), not the multi-month
@@ -240,12 +250,18 @@ export default function DashboardView() {
                       <stop offset="100%" stopColor="#ec4899" />
                     </linearGradient>
                   </defs>
+                  <XAxis dataKey="date" hide />
+                  <YAxis hide domain={nwDomain} />
                   <Tooltip
                     contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
                     formatter={(v) => [formatCurrency(typeof v === 'number' ? v : Number(v) || 0), 'Net worth']}
+                    labelFormatter={(label) => {
+                      const d = new Date(String(label) + 'T00:00:00');
+                      return isNaN(d.getTime()) ? String(label) : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                    }}
                     labelStyle={{ color: '#888' }}
                   />
-                  <Area type="monotone" dataKey="value" stroke="url(#nwStroke)" strokeWidth={2.5} fill="url(#nwGradient)" />
+                  <Area type="monotone" dataKey="value" stroke="url(#nwStroke)" strokeWidth={2.5} fill="url(#nwGradient)" baseValue="dataMin" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
