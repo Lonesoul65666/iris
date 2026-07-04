@@ -194,6 +194,9 @@ export default function BudgetView() {
   // Inline "+ Add bucket" form state. null = collapsed (button visible);
   // object = form open with these field values.
   const [newBucket, setNewBucket] = useState<{ label: string; icon: string; monthlyBudget: string } | null>(null);
+  // Which category row is armed for deletion (two-click confirm — a stray click
+  // shouldn't nuke a category). Edit-mode Cancel also restores from the snapshot.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const addBucket = useCallback(async () => {
     if (!newBucket) return;
@@ -215,6 +218,33 @@ export default function BudgetView() {
     await saveBudgetBuckets(updated);
     setNewBucket(null);
   }, [newBucket, buckets]);
+
+  // Delete a budget category (bucket). Reversible: edit-mode Cancel restores the
+  // snapshot; Save commits. Does NOT touch the transactions in that category —
+  // just removes the budget line. (replaceCollection makes the deletion persist.)
+  const deleteBucket = useCallback(async (category: string) => {
+    const updated = buckets.filter(b => b.category !== category);
+    setBuckets(updated);
+    setPendingDelete(null);
+    await saveBudgetBuckets(updated);
+  }, [buckets]);
+
+  // Rename a category's label in-place (fix a typo / clarify).
+  const updateBucketLabel = useCallback(async (category: string, label: string) => {
+    const updated = buckets.map(b => b.category === category ? { ...b, label } : b);
+    setBuckets(updated);
+    await saveBudgetBuckets(updated);
+  }, [buckets]);
+
+  // Edit a pot's planned monthly move from the Edit Budget screen — same value as
+  // the card (monthlyFill/monthlyContribution kept in lockstep), so the zero-based
+  // allocation and the Have-To/Want-To card never disagree.
+  const updatePotFill = useCallback(async (id: string, fill: number) => {
+    const updated = sinkingFunds.map(f => f.id === id ? { ...f, monthlyFill: fill, monthlyContribution: fill } : f);
+    setSinkingFunds(updated);
+    applyStashLaneConfig(updated);
+    await saveSinkingFunds(updated);
+  }, [sinkingFunds]);
 
   // Track dirty state via shallow stringify-compare against snapshot.
   useEffect(() => {
@@ -493,7 +523,12 @@ export default function BudgetView() {
 
   // Budget allocation tracking
   const totalAllocated = filteredBuckets.reduce((s, b) => s + b.monthlyBudget, 0);
-  const unallocated = paycheck.netTakeHome - totalAllocated;
+  // Zero-based plan: planned Have-To/Want-To moves are allocations too — they lay
+  // claim to part of the $15,800 before they're ever committed. Counting them here
+  // is what makes "add until only a small gap is left = budget done" tell the truth
+  // (the old leftover ignored the pots and read ~$2k too high).
+  const plannedPotFills = sinkingFunds.reduce((s, f) => s + Math.round(f.monthlyFill ?? f.monthlyContribution ?? 0), 0);
+  const unallocated = paycheck.netTakeHome - totalAllocated - plannedPotFills;
 
   // Essential vs discretionary category lists
   const essentialCats = ['housing', 'investing', 'childcare', 'utilities', 'insurance', 'healthcare', 'kids', 'transportation', 'food_groceries'];
@@ -1497,6 +1532,7 @@ export default function BudgetView() {
             const discretionaryBudgeted = filteredBuckets.filter(b => !isEssential(b.category)).reduce((s, b) => s + b.monthlyBudget, 0);
             const essentialPct = paycheck.netTakeHome > 0 ? (essentialBudgeted / paycheck.netTakeHome) * 100 : 0;
             const discretionaryPct = paycheck.netTakeHome > 0 ? (discretionaryBudgeted / paycheck.netTakeHome) * 100 : 0;
+            const potsPct = paycheck.netTakeHome > 0 ? (plannedPotFills / paycheck.netTakeHome) * 100 : 0;
             return (
               <div>
                 <div className="flex items-center justify-between text-xs mb-1">
@@ -1510,10 +1546,13 @@ export default function BudgetView() {
                     style={{ width: `${Math.min(essentialPct, 100)}%` }} />
                   <div className={`h-3 transition-all duration-500 ${unallocated < 0 ? 'bg-gradient-to-r from-red-500 to-red-400' : 'bg-gradient-to-r from-violet-500 to-purple-400'}`}
                     style={{ width: `${Math.min(discretionaryPct, 100 - Math.min(essentialPct, 100))}%` }} />
+                  <div className="h-3 bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-500"
+                    style={{ width: `${Math.max(0, Math.min(potsPct, 100 - essentialPct - discretionaryPct))}%` }} />
                 </div>
                 <div className="flex items-center gap-4 mt-1 text-[10px] text-text-muted">
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-blue-500 inline-block" /> Essential {formatCurrency(essentialBudgeted)}</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-violet-500 inline-block" /> Lifestyle {formatCurrency(discretionaryBudgeted)}</span>
+                  {plannedPotFills > 0 && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block" /> Have/Want {formatCurrency(plannedPotFills)}</span>}
                   {unallocated > 0 && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-white/10 inline-block" /> Unallocated {formatCurrency(unallocated)}</span>}
                 </div>
               </div>
@@ -1551,7 +1590,11 @@ export default function BudgetView() {
               }}
               onClick={() => setDrilldownCategory(drilldownCategory === b.category ? null : b.category)}>
               <span className="text-base w-6 text-center">{b.icon}</span>
-              <span className="text-sm text-text-primary flex-1 min-w-0 truncate">{b.label.split('(')[0].trim()}</span>
+              <input type="text" defaultValue={b.label} onClick={e => e.stopPropagation()}
+                onBlur={e => { const v = e.target.value.trim(); if (v && v !== b.label) updateBucketLabel(b.category, v); }}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                title="Click to rename this category"
+                className="text-sm text-text-primary flex-1 min-w-0 bg-transparent border border-transparent hover:border-glass-border focus:border-accent/50 rounded px-1 py-0.5 outline-none" />
               {showCompare && b.monthlyActual > 0 && (
                 <span className={`text-xs font-bold w-20 text-right ${annualized > 10000 ? 'text-warning' : 'text-text-secondary'}`}>
                   {formatCurrency(annualized)}<span className="text-[9px] font-normal text-text-muted">/yr</span>
@@ -1598,6 +1641,16 @@ export default function BudgetView() {
                   {b.monthlyBudget > 0 ? `${Math.round(pctUsed)}%` : ''}
                 </div>
               </div>
+              {/* Delete category — investing is synced from Settings, so it's not deletable here. */}
+              {b.category !== 'investing' && (pendingDelete === b.category ? (
+                <span className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => deleteBucket(b.category)} className="text-[10px] font-bold px-1.5 py-1 rounded bg-negative/20 text-negative hover:bg-negative/30 transition-colors">Delete</button>
+                  <button onClick={() => setPendingDelete(null)} className="text-[10px] px-1.5 py-1 rounded bg-white/5 text-text-muted hover:bg-white/10 transition-colors">✕</button>
+                </span>
+              ) : (
+                <button onClick={e => { e.stopPropagation(); setPendingDelete(b.category); }} title="Delete this category"
+                  className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-sm text-text-muted/40 hover:text-negative hover:bg-negative/10 transition-colors">✕</button>
+              ))}
             </div>
           );
         })}
@@ -1624,7 +1677,11 @@ export default function BudgetView() {
               }}
               onClick={() => setDrilldownCategory(drilldownCategory === b.category ? null : b.category)}>
               <span className="text-base w-6 text-center">{b.icon}</span>
-              <span className="text-sm text-text-primary flex-1 min-w-0 truncate">{b.label.split('(')[0].trim()}</span>
+              <input type="text" defaultValue={b.label} onClick={e => e.stopPropagation()}
+                onBlur={e => { const v = e.target.value.trim(); if (v && v !== b.label) updateBucketLabel(b.category, v); }}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                title="Click to rename this category"
+                className="text-sm text-text-primary flex-1 min-w-0 bg-transparent border border-transparent hover:border-glass-border focus:border-accent/50 rounded px-1 py-0.5 outline-none" />
               {showCompare && b.monthlyActual > 0 && (
                 <span className={`text-xs font-bold w-20 text-right ${annualized > 5000 ? 'text-warning' : 'text-text-secondary'}`}>
                   {formatCurrency(annualized)}<span className="text-[9px] font-normal text-text-muted">/yr</span>
@@ -1671,9 +1728,47 @@ export default function BudgetView() {
                   {b.monthlyBudget > 0 ? `${Math.round(pctUsed)}%` : ''}
                 </div>
               </div>
+              {/* Delete category — investing is synced from Settings, so it's not deletable here. */}
+              {b.category !== 'investing' && (pendingDelete === b.category ? (
+                <span className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => deleteBucket(b.category)} className="text-[10px] font-bold px-1.5 py-1 rounded bg-negative/20 text-negative hover:bg-negative/30 transition-colors">Delete</button>
+                  <button onClick={() => setPendingDelete(null)} className="text-[10px] px-1.5 py-1 rounded bg-white/5 text-text-muted hover:bg-white/10 transition-colors">✕</button>
+                </span>
+              ) : (
+                <button onClick={e => { e.stopPropagation(); setPendingDelete(b.category); }} title="Delete this category"
+                  className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-sm text-text-muted/40 hover:text-negative hover:bg-negative/10 transition-colors">✕</button>
+              ))}
             </div>
           );
         })}
+
+        {/* Have-To's / Want-To's — planned monthly moves, part of the zero-based plan.
+            Edited here or on the card (same value); counts against the $15,800. */}
+        {sinkingFunds.length > 0 && (<>
+          <div className="px-4 pt-4 pb-1 flex items-center justify-between">
+            <div className="term-label">Have-To's / Want-To's · planned moves</div>
+            <div className="text-[10px] text-text-muted">{formatCurrency(plannedPotFills)} of your {formatCurrency(paycheck.netTakeHome)}</div>
+          </div>
+          {sinkingFunds.map(f => {
+            const isHave = (f.kind ?? 'want_to') === 'have_to';
+            const kc = isHave ? '#f59e0b' : '#a855f7';
+            const fill = Math.round(f.monthlyFill ?? f.monthlyContribution ?? 0);
+            return (
+              <div key={f.id} className="px-4 py-2.5 flex items-center gap-3">
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: kc + '22', color: kc }}>{isHave ? 'Have' : 'Want'}</span>
+                <span className="text-sm text-text-primary flex-1 min-w-0 truncate">{f.name}</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-text-muted">$</span>
+                  <input type="number" step="0.01" defaultValue={fill}
+                    onBlur={e => { const v = Math.max(0, Number(e.target.value) || 0); if (v !== fill) updatePotFill(f.id, v); }}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    className="w-20 bg-transparent border border-transparent hover:border-glass-border focus:border-accent/50 rounded px-1 py-0.5 text-sm text-right text-text-primary outline-none" />
+                  <span className="text-xs text-text-muted">/mo</span>
+                </div>
+              </div>
+            );
+          })}
+        </>)}
 
         {/* Inline "+ Add bucket" — only visible in edit mode */}
         {editMode && (newBucket === null ? (
@@ -1735,10 +1830,22 @@ export default function BudgetView() {
 
         {/* Allocation footer */}
         <div className="p-4 border-t border-glass-border space-y-1.5">
+          {plannedPotFills > 0 && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-text-muted">Category budgets {formatCurrency(totalAllocated)} + Have-To/Want-To moves {formatCurrency(plannedPotFills)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between text-sm">
-            <span className="text-text-muted">Total budgeted</span>
+            <span className="text-text-muted">Total allocated</span>
             <span className={`font-bold ${unallocated < 0 ? 'text-negative' : 'text-text-primary'}`}>
-              {formatCurrency(totalAllocated)} of {formatCurrency(paycheck.netTakeHome)}
+              {formatCurrency(totalAllocated + plannedPotFills)} of {formatCurrency(paycheck.netTakeHome)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-text-muted">{unallocated >= 0 ? 'Left to allocate' : 'Over-allocated'}</span>
+            <span className={`font-bold ${unallocated < 0 ? 'text-negative' : unallocated < 500 ? 'text-positive' : 'text-warning'}`}>
+              {unallocated >= 0 ? formatCurrency(unallocated) : `−${formatCurrency(Math.abs(unallocated))}`}
+              {unallocated >= 0 && unallocated < 500 && <span className="text-[10px] text-text-muted font-normal ml-1">✓ budget complete</span>}
             </span>
           </div>
           <div className="flex items-center justify-between text-sm">
