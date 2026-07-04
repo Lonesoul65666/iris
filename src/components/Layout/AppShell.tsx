@@ -178,7 +178,7 @@ export default function AppShell({
           items default to `min-height: auto` and grow to fit content, defeating
           internal scroll). This is what pins the sidebar visually. */}
       <main className="flex-1 w-full min-w-0 min-h-0 h-full overflow-y-auto pt-12 md:pt-0 pb-16 md:pb-0 relative z-[1]">
-        <div className="w-full p-4 md:p-6 lg:px-8">
+        <div className="w-full max-w-[1600px] mx-auto p-4 md:p-6 lg:px-8">
           {children}
         </div>
       </main>

@@ -202,7 +202,7 @@ export default function DashboardView() {
   const recentNextToSpending = !modules.investments && recentTx.length > 0;
 
   return (
-    <div className="space-y-6 animate-fadeIn max-w-7xl pb-8">
+    <div className="space-y-6 animate-fadeIn pb-8">
       {/* ════ HERO ═══════════════════════════════════════════════════════ */}
       <div className="glass-card relative overflow-hidden">
         <div className="aurora-blob aurora-a" />
