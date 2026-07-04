@@ -10,6 +10,9 @@ import { computeOteStatus } from '../../utils/oteEarnings';
 import { formatCurrency } from '../../utils/format';
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Tallest bar tops out at this % of the plot height, leaving room for the value
+// label above it (and the average line + its label to sit inside the plot).
+const BAR_SCALE = 85;
 
 // Group by the EMPLOYER (the part before "DES:") so one employer's deposits stay
 // together even as the DES: memo changes (PAYROLL### / XXXXX### / EDIPYMENTS),
@@ -94,24 +97,39 @@ export default function OnTargetEarnings({ expenses, now = new Date() }: { expen
         )}
       </div>
 
-      {/* The graph — each month's overage (the second, end-of-month check above base) */}
-      <div className="mt-5">
-        <div className="flex items-end gap-3 h-32">
+      {/* The graph — each month's overage (the second, end-of-month check above
+          base), with the average drawn as the benchmark line to plan against. */}
+      <div className="mt-6">
+        <div className="relative flex items-end gap-3 h-32">
+          {/* average reference line — "what to expect in a typical month" */}
+          {avg > 0 && (
+            <div className="absolute inset-x-0 border-t border-dashed border-amber-300/60 z-10 pointer-events-none"
+              style={{ bottom: `${(avg / maxBar) * BAR_SCALE}%` }}>
+              <span className="absolute right-0 -top-4 text-[9px] font-semibold text-amber-300/90 whitespace-nowrap">avg {formatCurrency(avg)}</span>
+            </div>
+          )}
           {ote.byMonth.map(m => {
-            const mi = Number(m.month.slice(5, 7)) - 1;
             const hasOver = m.commission > 1;
-            const h = (m.commission / maxBar) * 100;
+            const h = (m.commission / maxBar) * BAR_SCALE;
             return (
-              <div key={m.month} className="flex-1 flex flex-col items-center justify-end gap-1 h-full">
-                <span className={`text-[10px] mono-num ${hasOver ? 'text-positive font-semibold' : 'text-text-muted/50'}`}>
-                  {hasOver ? formatCurrency(m.commission) : '—'}
-                </span>
-                <div className="w-full rounded-t bg-gradient-to-t from-emerald-600 to-teal-400 transition-[height] duration-700"
-                  style={{ height: `${hasOver ? Math.max(h, 3) : 0}%` }}
-                  title={`${MONTH_ABBR[mi]}: ${formatCurrency(m.commission)} over base`} />
-                <span className="text-[10px] text-text-muted">{MONTH_ABBR[mi]}</span>
+              <div key={m.month} className="flex-1 flex items-end h-full">
+                <div className="w-full rounded-t bg-gradient-to-t from-emerald-600 to-teal-400 transition-[height] duration-700 relative"
+                  style={{ height: `${hasOver ? Math.max(h, 2) : 0}%` }}
+                  title={`${formatCurrency(m.commission)} over base`}>
+                  {hasOver && (
+                    <span className="absolute -top-4 inset-x-0 text-center text-[10px] mono-num text-positive font-semibold whitespace-nowrap">
+                      {formatCurrency(m.commission)}
+                    </span>
+                  )}
+                </div>
               </div>
             );
+          })}
+        </div>
+        <div className="flex gap-3 mt-1.5">
+          {ote.byMonth.map(m => {
+            const mi = Number(m.month.slice(5, 7)) - 1;
+            return <div key={m.month} className="flex-1 text-center text-[10px] text-text-muted">{MONTH_ABBR[mi]}</div>;
           })}
         </div>
       </div>
