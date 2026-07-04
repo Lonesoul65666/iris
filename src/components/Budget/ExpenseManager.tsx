@@ -637,7 +637,7 @@ export default function ExpenseManager({ expenses, onExpensesChanged }: ExpenseM
   const TYPE_BADGES: Record<string, { label: string; color: string }> = {
     expense: { label: 'Expense', color: 'text-text-secondary bg-white/5' },
     income: { label: 'Income', color: 'text-positive bg-positive/10' },
-    reimbursement: { label: 'Reimb.', color: 'text-cyan-400 bg-cyan-500/10' },
+    reimbursement: { label: 'Reimb.', color: 'text-teal-300 bg-teal-500/10' },
     transfer: { label: 'Transfer', color: 'text-text-muted bg-white/3' },
     investment: { label: 'Invest', color: 'text-accent-light bg-accent/10' },
     refund: { label: 'Refund', color: 'text-positive bg-positive/10' },

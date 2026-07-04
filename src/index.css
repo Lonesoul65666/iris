@@ -2,7 +2,11 @@
 
 @theme {
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  /* UI unified on Inter. The `font-mono` utility now resolves to sans, so stray
+     decorative mono (tickers, dates, PINs, labels) matches everything else.
+     Genuine code uses --font-code. */
+  --font-mono: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-code: 'JetBrains Mono', monospace;
 
   --color-surface-0: #0a0a0f;
   --color-surface-1: #111118;
@@ -26,9 +30,11 @@
   --color-glass-bg: rgba(17, 17, 24, 0.7);
 
   /* Cyber accent — softer than full brutalist, used by dashboard overlays */
-  --color-cyber-cyan: #8b6dff;
-  --color-cyber-cyan-dim: #7a5cf0;
-  --color-cyber-magenta: #ff2d92;
+  /* Legacy "cyber" accents — repointed to the violet accent so any lingering
+     usage stays on-brand (cyan/magenta theme is retired). */
+  --color-cyber-cyan: #a78bfa;
+  --color-cyber-cyan-dim: #8b5cf6;
+  --color-cyber-magenta: #a78bfa;
 }
 
 /* ─── Aurora hero glow — violet/magenta drift behind hero numbers ─── */
@@ -181,7 +187,7 @@ body { margin: 0; }
 .chat-content ul { list-style: disc; margin-left: 1.5em; margin-bottom: 0.75em; }
 .chat-content ol { list-style: decimal; margin-left: 1.5em; margin-bottom: 0.75em; }
 .chat-content li { margin-bottom: 0.35em; line-height: 1.5; }
-.chat-content code { background: rgba(139, 92, 246, 0.15); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; font-family: var(--font-mono); }
+.chat-content code { background: rgba(139, 92, 246, 0.15); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; font-family: var(--font-code); }
 .chat-content pre { background: rgba(0, 0, 0, 0.4); padding: 1em; border-radius: 8px; overflow-x: auto; margin-bottom: 0.75em; }
 .chat-content pre code { background: none; padding: 0; }
 .chat-content strong { color: #c4b5fd; font-weight: 700; }
