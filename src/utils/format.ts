@@ -8,6 +8,25 @@ export function formatPercent(v: number, decimals = 1): string {
   return `${v.toFixed(decimals)}%`;
 }
 
+/** Humanize a span of days into the gamified "how long till you get there" line:
+ *  "12 days", "11 months, 12 days", "~3 years". Coarsens as it grows — nobody
+ *  cares about the odd day two years out. Uses 30.44 d/mo, 365.25 d/yr. */
+export function formatDuration(days: number): string {
+  const d = Math.round(days);
+  if (d <= 0) return 'now';
+  if (d < 31) return `${d} day${d === 1 ? '' : 's'}`;
+  const years = d / 365.25;
+  if (years >= 2) {
+    const rounded = Math.round(years * 2) / 2; // nearest half-year
+    return `~${rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)} years`;
+  }
+  const months = Math.floor(d / 30.44);
+  const remDays = Math.round(d - months * 30.44);
+  const mo = `${months} month${months === 1 ? '' : 's'}`;
+  if (remDays <= 0) return mo;
+  return `${mo}, ${remDays} day${remDays === 1 ? '' : 's'}`;
+}
+
 /**
  * Sanitize a money input value as the user types — allows digits + at most
  * one decimal point with up to 2 trailing digits. Use in onChange:

@@ -4,7 +4,7 @@
 // docs/stashes-design.md. Editing saves directly (same pattern as the old grid).
 import { useMemo, useState } from 'react';
 import type { Expense, Stash } from '../../types/budget';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatDuration } from '../../utils/format';
 import { computeAllStashes, computeStashForecast, totalStashContributions, type StashForecast } from '../../utils/stashMath';
 import { currentMonthKey } from '../../utils/transactionAnalysis';
 import { defaultBudgetBuckets } from '../../stores/budgetDefaults';
@@ -35,15 +35,35 @@ function monthShort(ym: string): string {
   return `${mon} '${String(y).slice(2)}`; // "Jun '26" — never mistakable for a day-of-month
 }
 
-// The forward-looking line under a stash's goal bar: how it's pacing + when it fills.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// The forward-looking line under a stash's goal bar: how it's pacing + when it
+// fills. Day-granular + gamified — have-tos frame around "covering the next hit",
+// want-tos around "reaching the goal at your current rate".
 function forecastLine(f: StashForecast): { text: string; cls: string } {
+  const rate = formatCurrency(f.contribution);
+  const eta = f.daysToFill != null ? formatDuration(f.daysToFill) : null;
+  const haveTo = f.kind === 'have_to';
+
   switch (f.status) {
-    case 'met':        return { text: '✓ Goal met — overflow is free to redeploy', cls: 'text-positive' };
-    case 'on_track':   return { text: `On track for ${f.projectedMonth}`, cls: 'text-positive' };
-    case 'behind':     return { text: `Behind — ${formatCurrency(f.additionalNeeded || 0)}/mo more to hit ${f.projectedMonth}`, cls: 'text-warning' };
-    case 'past_due':   return { text: `Past ${f.projectedMonth} — ${formatCurrency(f.remaining)} short`, cls: 'text-negative' };
-    case 'projecting': return { text: `Funded ~${f.projectedMonth}${f.monthsToGo != null ? ` · ${f.monthsToGo} mo at this rate` : ''}`, cls: 'text-text-secondary' };
-    case 'idle':       return { text: 'Set a $/mo amount to project a fill date', cls: 'text-text-muted' };
+    case 'met':
+      return { text: haveTo ? '✓ Fully funded for the next one' : '🎯 Goal met — this money is free to redeploy', cls: 'text-positive' };
+    case 'on_track':
+      return haveTo
+        ? { text: `Next one ~${f.dueLabel} — on pace to cover it ✓`, cls: 'text-positive' }
+        : { text: `🎯 On pace to beat ${f.dueLabel} — there in ${eta}`, cls: 'text-positive' };
+    case 'behind':
+      return haveTo
+        ? { text: `Next one ~${f.dueLabel} — short ${formatCurrency(f.hitRemaining ?? f.remaining)}; bump to ${formatCurrency(f.requiredPerMonth || 0)}/mo`, cls: 'text-warning' }
+        : { text: `Behind for ${f.dueLabel} — bump to ${formatCurrency(f.requiredPerMonth || 0)}/mo (${formatCurrency(f.additionalNeeded || 0)} more)`, cls: 'text-warning' };
+    case 'past_due':
+      return { text: `Past ${f.dueLabel} — ${formatCurrency(f.remaining)} short`, cls: 'text-negative' };
+    case 'projecting':
+      return eta
+        ? { text: haveTo ? `Covered in ${eta} at ${rate}/mo` : `🎯 ${eta} to go at ${rate}/mo${f.daysToFill! > 730 ? ' — bump it up?' : ''}`, cls: 'text-text-secondary' }
+        : { text: 'Set a $/mo amount to project a fill date', cls: 'text-text-muted' };
+    case 'idle':
+      return { text: 'Set a $/mo amount to project a fill date', cls: 'text-text-muted' };
   }
 }
 
@@ -223,20 +243,49 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
                         className="w-20 bg-transparent border border-glass-border focus:border-accent/50 rounded px-1 py-0.5 text-right outline-none" />
                     </span>
                   </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span>Cover a category</span>
-                    <select
-                      value=""
-                      onChange={e => {
-                        const c = e.target.value;
-                        if (c && !(sf.categories ?? []).includes(c)) update(sf.id, { categories: [...(sf.categories ?? []), c] });
-                      }}
-                      className="bg-surface-2 border border-glass-border rounded px-1.5 py-1 text-[11px] text-text-secondary outline-none max-w-[160px]">
-                      <option value="">choose…</option>
-                      {CATEGORY_OPTIONS.filter(c => !(sf.categories ?? []).includes(c.id)).map(c => (
-                        <option key={c.id} value={c.id}>{c.label}</option>
-                      ))}
-                    </select>
+                  {/* Cadence — when's it due? Drives the countdown + pace nudge.
+                      Category linking is handled at card creation (auto reserve
+                      lane), so no manual "cover a category" picker here. */}
+                  <div className="space-y-1.5">
+                    <span>When's it due?</span>
+                    <div className="flex gap-1">
+                      {([
+                        { c: 'semiannual', label: 'Twice a year' },
+                        { c: 'annual', label: 'Once a year' },
+                        { c: 'custom', label: 'By a date' },
+                      ] as const).map(({ c, label }) => {
+                        const current = sf.cadence ?? (sf.targetDate ? 'custom' : undefined);
+                        const active = current === c;
+                        return (
+                          <button key={c}
+                            onClick={() => update(sf.id, c === 'custom'
+                              ? { cadence: 'custom' }
+                              : { cadence: c, dueMonth: sf.dueMonth ?? (new Date().getMonth() + 1) })}
+                            className={`flex-1 px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${active ? 'bg-accent/20 border-accent/50 text-accent' : 'border-glass-border text-text-muted hover:text-text-secondary'}`}>
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {(sf.cadence === 'annual' || sf.cadence === 'semiannual') && (
+                      <div className="flex items-center justify-between gap-2">
+                        <span>Which month{sf.cadence === 'semiannual' ? ' (repeats +6 mo)' : ''}?</span>
+                        <select value={sf.dueMonth ?? ''}
+                          onChange={e => update(sf.id, { dueMonth: Number(e.target.value) || undefined })}
+                          className="bg-surface-2 border border-glass-border rounded px-1.5 py-1 text-[11px] text-text-secondary outline-none">
+                          <option value="">choose…</option>
+                          {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {(sf.cadence === 'custom' || (!sf.cadence && sf.targetDate)) && (
+                      <div className="flex items-center justify-between gap-2">
+                        <span>Target date</span>
+                        <input type="date" value={sf.targetDate ?? ''}
+                          onChange={e => update(sf.id, { targetDate: e.target.value || undefined })}
+                          className="bg-surface-2 border border-glass-border rounded px-1.5 py-1 text-[11px] text-text-secondary outline-none" />
+                      </div>
+                    )}
                   </div>
                   <button onClick={() => removeStash(sf.id)}
                     className={`text-[10px] ${confirmingDelete === sf.id ? 'px-2 py-0.5 rounded bg-negative/20 border border-negative/50 text-negative font-bold' : 'text-negative/80 hover:text-negative'}`}>

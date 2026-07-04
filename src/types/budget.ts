@@ -270,6 +270,15 @@ export interface SinkingFund {
    *  ("Make Every Dolla Holla"). Distinct from the legacy monthlyContribution so
    *  we can migrate without disturbing existing reserve math. */
   monthlyFill?: number;
+  /** How the goal is timed. Drives the ETA/countdown:
+   *  - 'custom'     → one-time deadline held in `targetDate` (trips, a remodel).
+   *  - 'annual'     → recurs once a year, in month `dueMonth` (card fees, taxes).
+   *  - 'semiannual' → recurs twice a year, anchored on `dueMonth` (+6 mo). */
+  cadence?: 'semiannual' | 'annual' | 'custom';
+  /** Anchor month (1–12) for a recurring cadence — "which month it lands".
+   *  Middle-ground precision: no exact day, so the countdown targets the 1st of
+   *  this month's next occurrence. Ignored when cadence is 'custom'. */
+  dueMonth?: number;
 }
 
 /** Preferred alias going forward. */
