@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import {
   monthsElapsedInclusive, computeStashStatus, totalStashContributions,
   stashAllocationsByCategory, stashesConfigured, seedDefaultStashes, applyStashLaneConfig,
-  committedReserves, nextDueDate, computeStashForecast, requiredMonthlyForGoal,
+  committedReserves, nextDueDate, computeStashForecast, requiredMonthlyForGoal, computeShortfall,
 } from '../stashMath';
 import { formatDuration } from '../format';
 import type { DeployConfirmation } from '../../stores/budgetStore';
@@ -232,6 +232,28 @@ describe('computeStashForecast — gamified ETA + pace', () => {
     expect(f.expectedHit).toBe(1650);
     expect(f.hitRemaining).toBe(1650);      // half the annual goal, not the full $3,300
     expect(f.remaining).toBe(3300);          // the goal bar still tracks the full year
+  });
+});
+
+describe('computeShortfall — the bill outran the pot (chunk D)', () => {
+  it('flags the gap + recovery time when a lumpy bill goes negative', () => {
+    // Set aside $100/mo from May, opening $0; a $5,000 bill in June → underwater.
+    const s = stash({ monthlyContribution: 100, categories: ['taxes'], startMonth: '2026-05', openingBalance: 0 });
+    const status = computeStashStatus(s, [exp({ date: '2026-06-01', amount: 5000, category: 'taxes' })], NOW);
+    const sf = computeShortfall(status)!;
+    expect(sf.gap).toBe(4800);                 // 200 saved − 5000 = −4800
+    expect(sf.culprit).toEqual({ month: '2026-06', amount: 5000 });
+    expect(sf.recoverMonths).toBe(48);         // ceil(4800 / 100)
+  });
+
+  it('is null when the pot is healthy', () => {
+    const status = computeStashStatus(stash({ monthlyContribution: 1000, categories: ['taxes'], startMonth: '2026-01', openingBalance: 0 }), [], NOW);
+    expect(computeShortfall(status)).toBeNull();
+  });
+
+  it('recoverMonths is null with no drip to recover on', () => {
+    const status = computeStashStatus(stash({ monthlyContribution: 0, categories: ['taxes'], startMonth: '2026-05', openingBalance: 0 }), [exp({ date: '2026-06-01', amount: 500, category: 'taxes' })], NOW);
+    expect(computeShortfall(status)!.recoverMonths).toBeNull();
   });
 });
 

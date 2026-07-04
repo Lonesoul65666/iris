@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react';
 import type { Expense, Stash } from '../../types/budget';
 import { formatCurrency, formatDuration } from '../../utils/format';
-import { computeAllStashes, computeStashForecast, totalStashContributions, requiredMonthlyForGoal, type StashForecast } from '../../utils/stashMath';
+import { computeAllStashes, computeStashForecast, totalStashContributions, requiredMonthlyForGoal, computeShortfall, type StashForecast } from '../../utils/stashMath';
 import { currentMonthKey } from '../../utils/transactionAnalysis';
 import { defaultBudgetBuckets } from '../../stores/budgetDefaults';
 
@@ -145,6 +145,7 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
           const { stash: sf, balance, derived, drawn, monthsAccrued, biggestDraw } = status;
           const isOpen = expanded === sf.id;
           const negative = balance < 0;
+          const shortfall = computeShortfall(status);
           const forecast = computeStashForecast(status);
           const fline = forecast ? forecastLine(forecast) : null;
           return (
@@ -172,13 +173,26 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
               <div className={`text-2xl font-black mono-num ${negative ? 'text-negative' : 'text-positive'}`}>
                 {negative ? '−' : ''}{formatCurrency(Math.abs(balance))}
               </div>
-              <div className="text-[10px] text-text-muted mb-2">
-                {derived
-                  ? negative
-                    ? 'Spent before it was saved — raise the contribution or the opening balance'
-                    : `funded ${monthsAccrued} month${monthsAccrued === 1 ? '' : 's'}${drawn > 0 ? ` · ${formatCurrency(drawn)} drawn` : ''}`
-                  : 'manual balance — open to start auto-tracking'}
-              </div>
+              {!shortfall && (
+                <div className="text-[10px] text-text-muted mb-2">
+                  {derived
+                    ? `funded ${monthsAccrued} month${monthsAccrued === 1 ? '' : 's'}${drawn > 0 ? ` · ${formatCurrency(drawn)} drawn` : ''}`
+                    : 'manual balance — open to start auto-tracking'}
+                </div>
+              )}
+              {/* Chunk D — shortfall nudge: the bill outran the pot. Flag the gap
+                  so it gets made up, with the current-drip recovery time. */}
+              {shortfall && (
+                <div className="mb-2 rounded-lg border border-negative/40 bg-negative/10 px-2 py-1.5">
+                  <div className="text-[11px] font-bold text-negative">⚠️ {formatCurrency(shortfall.gap)} short</div>
+                  <div className="text-[10px] text-text-secondary mt-0.5">
+                    {shortfall.culprit
+                      ? `The ${formatCurrency(shortfall.culprit.amount)} hit outran the pot. `
+                      : 'Spending ran past what was set aside. '}
+                    Add {formatCurrency(shortfall.gap)} to catch up{shortfall.recoverMonths ? `, or back to even in ${shortfall.recoverMonths} mo at ${formatCurrency(sf.monthlyContribution)}/mo` : ''}.
+                  </div>
+                </div>
+              )}
 
               {/* Goal + forecast — surfaced so each pot shows how full AND when it
                   fills (the GoalTracker math, now on the stash itself). No goal =

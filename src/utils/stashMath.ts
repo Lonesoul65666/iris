@@ -126,6 +126,26 @@ export function nextDueDate(stash: Stash, now: Date = new Date()): Date | null {
   return null;
 }
 
+/** Chunk D — the shortfall nudge. A lumpy bill can outrun its pot (you set aside
+ *  $900, the $1,600 bill lands) → the derived balance goes negative. Surface the
+ *  gap so the user makes it up, plus how long the current drip takes to recover.
+ *  Returns null unless the pot is derived AND underwater. Pure. */
+export interface StashShortfall {
+  gap: number;                                   // how far underwater (> 0)
+  culprit: { month: string; amount: number } | null; // the bill that outran it
+  recoverMonths: number | null;                  // months back to $0 at the current drip (null if no drip)
+}
+export function computeShortfall(status: StashStatus): StashShortfall | null {
+  if (!status.derived || status.balance >= 0) return null;
+  const gap = Math.round(-status.balance);
+  const contribution = status.stash.monthlyContribution || 0;
+  return {
+    gap,
+    culprit: status.biggestDraw,
+    recoverMonths: contribution > 0 ? Math.ceil(gap / contribution) : null,
+  };
+}
+
 /** The $/mo needed to hit a stash's goal by its due date, from where it stands
  *  today — the auto-fill for the contribution field ("don't make me do the
  *  math"). Spreads what's still needed over the months until the next due date.
