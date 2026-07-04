@@ -188,8 +188,11 @@ export function applyStashLaneConfig(stashes: Stash[]): void {
  *  Returns the appended list, or null when nothing needed seeding. */
 export function seedDefaultStashes(stashes: Stash[], now: Date = new Date()): Stash[] | null {
   const covered = new Set(stashes.flatMap(s => s.categories ?? []));
+  // Also skip by id — a Taxes/Trips stash that exists but hasn't linked its
+  // category must NOT be duplicated (dup ids collapse on save = data loss).
+  const existingIds = new Set(stashes.map(s => s.id));
   const additions: Stash[] = [];
-  if (!covered.has('taxes')) {
+  if (!covered.has('taxes') && !existingIds.has('stash-taxes')) {
     additions.push({
       id: 'stash-taxes', name: 'Taxes', targetAmount: 0, currentBalance: 0,
       monthlyContribution: RESERVE_ALLOCATIONS.taxes ?? 0, color: '#dc2626',
@@ -197,7 +200,7 @@ export function seedDefaultStashes(stashes: Stash[], now: Date = new Date()): St
       kind: 'have_to',
     });
   }
-  if (!covered.has('travel_personal')) {
+  if (!covered.has('travel_personal') && !existingIds.has('stash-travel')) {
     additions.push({
       id: 'stash-travel', name: 'Trips & Travel', targetAmount: 0, currentBalance: 0,
       monthlyContribution: RESERVE_ALLOCATIONS.travel_personal ?? 0, color: '#0ea5e9',

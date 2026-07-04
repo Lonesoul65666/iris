@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { BudgetBucket } from '../../types/budget';
+import type { BudgetBucket, Stash } from '../../types/budget';
 import { formatCurrency } from '../../utils/format';
 import { laneOf, FIXED_OVER_TOLERANCE } from '../../utils/budgetLanes';
 
@@ -21,6 +21,12 @@ interface Props {
    *  full-base view so the Pulse reflects the WHOLE watermark ($15,800), not
    *  just the operating caps — reserves are no longer held back. */
   reserveSetAside?: number;
+  /** Have-To/Want-To pots, listed at the bottom with a per-month Commit toggle. */
+  stashes?: Stash[];
+  /** Stash ids committed (moved) this month. */
+  committedStashIds?: Set<string>;
+  /** Commit/undo a stash's monthly move. Absent for the 'avg' view. */
+  onCommitStash?: (stashId: string, amount: number) => void;
 }
 
 type Status = 'over' | 'pacing' | 'ontrack' | 'untouched' | 'nobudget';
@@ -62,7 +68,7 @@ function classify(b: BudgetBucket, monthFraction: number, complete: boolean): St
   return 'ontrack';
 }
 
-export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick, watermark, complete = false, monthLabel, reserveSetAside = 0 }: Props) {
+export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick, watermark, complete = false, monthLabel, reserveSetAside = 0, stashes, committedStashIds, onCommitStash }: Props) {
   const dayOfMonth = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   // A closed month is fully elapsed — fraction 1 so pace logic reads as final.
@@ -257,6 +263,39 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
           </div>
         )}
       </div>
+
+      {/* Have To's / Want To's — commit this month's move (funds the pot; chunk C
+          flips the $15,800 to count committed moves). */}
+      {stashes && stashes.length > 0 && onCommitStash && (
+        <div className="mt-4 pt-4 border-t border-glass-border/40">
+          <div className="term-label mb-3">Have To's / Want To's</div>
+          <div className="space-y-1.5">
+            {stashes.map(s => {
+              const move = Math.round(s.monthlyFill ?? s.monthlyContribution ?? 0);
+              const committed = committedStashIds?.has(s.id) ?? false;
+              const isHave = (s.kind ?? 'want_to') === 'have_to';
+              const kc = isHave ? '#f59e0b' : '#a855f7';
+              return (
+                <div key={s.id} className="flex items-center gap-3 py-1">
+                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: kc + '22', color: kc }}>{isHave ? 'Have' : 'Want'}</span>
+                  <span className="text-sm text-text-secondary flex-1 truncate">{s.name}</span>
+                  <span className="mono-num text-sm text-text-primary">{formatCurrency(move)}</span>
+                  <button
+                    type="button"
+                    onClick={() => move > 0 && onCommitStash(s.id, move)}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors flex-shrink-0 ${committed ? 'bg-positive/15 border-positive/40 text-positive hover:bg-negative/10 hover:text-negative hover:border-negative/30' : 'bg-accent/15 border-accent/40 text-accent-light hover:bg-accent/25'} ${move <= 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    title={committed ? 'Committed — click to undo' : 'Mark this month’s move to savings'}>
+                    {committed ? '✓ Committed · undo' : 'Commit'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 text-[11px] text-text-muted">
+            Committed this month: <span className="mono-num font-semibold text-positive">{formatCurrency(stashes.filter(s => committedStashIds?.has(s.id)).reduce((sum, s) => sum + Math.round(s.monthlyFill ?? s.monthlyContribution ?? 0), 0))}</span> — moved to savings, off the top
+          </div>
+        </div>
+      )}
 
       {/* Footer summary */}
       {totalOver > 0 && (
