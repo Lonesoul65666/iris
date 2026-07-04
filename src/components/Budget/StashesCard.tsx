@@ -15,7 +15,9 @@ interface Props {
   onChange: (next: Stash[]) => void;
 }
 
-const STASH_COLORS = ['#0ea5e9', '#f59e0b', '#ef4444', '#10b981', '#a855f7', '#ec4899'];
+const HAVE_COLOR = '#f59e0b'; // have-to = obligation (amber)
+const WANT_COLOR = '#a855f7'; // want-to = goal (violet)
+const kindOf = (s: Stash): 'have_to' | 'want_to' => s.kind ?? 'want_to';
 
 // Category picker options (id/label/icon) — sourced from the bucket catalog so
 // labels match everywhere. travel_work excluded (always reserve, never linkable).
@@ -57,15 +59,16 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
     onChange(stashes.map(s => (s.id === id ? { ...s, ...patch } : s)));
   };
 
-  const addStash = () => {
+  const addStash = (kind: 'have_to' | 'want_to') => {
     const id = `stash-${Date.now()}`;
     onChange([...stashes, {
       id,
-      name: 'New stash',
+      name: kind === 'have_to' ? 'New have-to' : 'New want-to',
+      kind,
       targetAmount: 0,
       currentBalance: 0,
       monthlyContribution: 0,
-      color: STASH_COLORS[stashes.length % STASH_COLORS.length],
+      color: kind === 'have_to' ? HAVE_COLOR : WANT_COLOR,
       categories: [],
       startMonth: currentMonthKey(),
       openingBalance: 0,
@@ -86,21 +89,29 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
 
   return (
     <div className="glass-card p-6">
-      <div className="flex items-start justify-between mb-1">
+      <div className="flex items-start justify-between mb-1 gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-text-primary">Stashes</h2>
+          <h2 className="text-lg font-semibold text-text-primary">Have To's / Want To's</h2>
           <p className="text-xs text-text-muted">
-            Saving pots for lumpy bills — taxes, trips, remodels, December. The bill draws the stash down instead of busting the month.
+            <span style={{ color: HAVE_COLOR }} className="font-semibold">Have-tos</span> are bills you pre-fund (taxes, insurance, yearly stuff). <span style={{ color: WANT_COLOR }} className="font-semibold">Want-tos</span> are goals (trips, the office, a remodel). Fund each, watch it grow.
           </p>
         </div>
-        <button onClick={addStash}
-          className="px-3 py-1.5 rounded-lg bg-accent/15 border border-accent/40 text-accent text-xs font-semibold hover:bg-accent/25 transition-colors flex-shrink-0">
-          + New stash
-        </button>
+        <div className="flex gap-2 flex-shrink-0">
+          <button onClick={() => addStash('have_to')}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors hover:brightness-125"
+            style={{ background: HAVE_COLOR + '22', borderColor: HAVE_COLOR + '66', color: HAVE_COLOR }}>
+            + Have-to
+          </button>
+          <button onClick={() => addStash('want_to')}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors hover:brightness-125"
+            style={{ background: WANT_COLOR + '22', borderColor: WANT_COLOR + '66', color: WANT_COLOR }}>
+            + Want-to
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-        {statuses.map((status) => {
+      {(() => {
+        const renderCard = (status: (typeof statuses)[number]) => {
           const { stash: sf, balance, derived, drawn, monthsAccrued, biggestDraw } = status;
           const isOpen = expanded === sf.id;
           const negative = balance < 0;
@@ -110,6 +121,12 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
             <div key={sf.id} className={`p-4 rounded-xl bg-white/[0.03] border ${negative ? 'border-negative/40' : 'border-glass-border'}`}>
               {/* Name + contribution */}
               <div className="flex items-center justify-between mb-1 gap-2">
+                <button onClick={() => update(sf.id, { kind: kindOf(sf) === 'have_to' ? 'want_to' : 'have_to' })}
+                  className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0"
+                  style={{ background: (kindOf(sf) === 'have_to' ? HAVE_COLOR : WANT_COLOR) + '22', color: kindOf(sf) === 'have_to' ? HAVE_COLOR : WANT_COLOR }}
+                  title="Toggle have-to / want-to">
+                  {kindOf(sf) === 'have_to' ? 'Have' : 'Want'}
+                </button>
                 <input value={sf.name} onChange={e => update(sf.id, { name: e.target.value })}
                   className="text-sm font-medium text-text-primary bg-transparent border border-transparent hover:border-glass-border focus:border-accent/50 rounded px-1 py-0.5 outline-none min-w-0 flex-1" />
                 <div className="flex items-center gap-0.5 flex-shrink-0 text-xs text-text-muted">
@@ -229,8 +246,28 @@ export default function StashesCard({ stashes, expenses, onChange }: Props) {
               )}
             </div>
           );
-        })}
-      </div>
+        };
+        const groups = [
+          { key: 'have', label: "Have to's", color: HAVE_COLOR, hint: 'bills you pre-fund', list: statuses.filter(s => kindOf(s.stash) === 'have_to') },
+          { key: 'want', label: "Want to's", color: WANT_COLOR, hint: "goals you're saving toward", list: statuses.filter(s => kindOf(s.stash) === 'want_to') },
+        ];
+        return (
+          <div className="mt-4 space-y-5">
+            {groups.map(g => g.list.length === 0 ? null : (
+              <div key={g.key}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-2 h-2 rounded-full" style={{ background: g.color }} />
+                  <span className="text-xs font-bold uppercase tracking-wider" style={{ color: g.color }}>{g.label}</span>
+                  <span className="text-[10px] text-text-muted">· {g.hint}</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {g.list.map(renderCard)}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       <div className="mt-3 text-xs text-text-muted">
         Total monthly stash contributions: <strong className="text-text-primary">{formatCurrency(totalMonthly)}</strong>

@@ -194,6 +194,7 @@ export function seedDefaultStashes(stashes: Stash[], now: Date = new Date()): St
       id: 'stash-taxes', name: 'Taxes', targetAmount: 0, currentBalance: 0,
       monthlyContribution: RESERVE_ALLOCATIONS.taxes ?? 0, color: '#dc2626',
       categories: ['taxes'], startMonth: currentMonthKey(now), openingBalance: 0,
+      kind: 'have_to',
     });
   }
   if (!covered.has('travel_personal')) {
@@ -201,6 +202,7 @@ export function seedDefaultStashes(stashes: Stash[], now: Date = new Date()): St
       id: 'stash-travel', name: 'Trips & Travel', targetAmount: 0, currentBalance: 0,
       monthlyContribution: RESERVE_ALLOCATIONS.travel_personal ?? 0, color: '#0ea5e9',
       categories: ['travel_personal'], startMonth: currentMonthKey(now), openingBalance: 0,
+      kind: 'want_to',
     });
   }
   return additions.length > 0 ? [...stashes, ...additions] : null;
