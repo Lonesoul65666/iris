@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, type Dispatch, type SetStateAction } from 'react';
 import type { Expense, ExpenseCategory, TransactionFlow, TransactionType, TransactionSource, CustomCategory, Earner } from '../../types/budget';
-import { saveExpense, deleteExpense, getCustomCategories, saveCustomCategory, saveBudgetBuckets, getBudgetBuckets, getEarners, getSourceOwners } from '../../stores/budgetStore';
+import { saveExpense, deleteExpense, saveCustomCategory, saveBudgetBuckets, getBudgetBuckets, getEarners, getSourceOwners } from '../../stores/budgetStore';
 import { getMerchantMappings, saveMerchantMapping, type MerchantMapping } from '../../stores/actionStore';
 import { registerCustomCategories } from '../../utils/transactionAnalysis';
 import { classifyBankTransaction, guessCategory } from '../../utils/transactionCategorize';
@@ -142,26 +142,26 @@ interface ExpenseManagerProps {
   onExpensesChanged: () => void;
   geminiAvailable: boolean;
   onAnalyzeWithGemini?: (text: string) => Promise<string>;
+  /** Custom categories are owned by BudgetView (single source of truth) so a
+   *  category added here OR in Edit Budget shows up instantly in both. */
+  customCategories: CustomCategory[];
+  setCustomCategories: Dispatch<SetStateAction<CustomCategory[]>>;
 }
 
 // geminiAvailable prop retained in the type for when screenshot-import lands; unused for now.
-export default function ExpenseManager({ expenses, onExpensesChanged }: ExpenseManagerProps) {
+export default function ExpenseManager({ expenses, onExpensesChanged, customCategories, setCustomCategories }: ExpenseManagerProps) {
   const [tab, setTab] = useState<'list' | 'add' | 'import'>('list');
   const [parsedTransactions, setParsedTransactions] = useState<ParsedTransaction[]>([]);
   const [importWarnings, setImportWarnings] = useState<{ warnings: string[]; dupCount: number; doubleChargeCount: number; totalParsed: number } | null>(null);
   const [manualForm, setManualForm] = useState({ date: new Date().toISOString().split('T')[0], description: '', amount: '', category: 'other' as ExpenseCategory, isWork: false });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const screenshotInputRef = useRef<HTMLInputElement>(null);
-  const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [showNewCatForm, setShowNewCatForm] = useState(false);
   const [newCatForm, setNewCatForm] = useState({ label: '', icon: '📌' });
   // Tracks which dropdown triggered the "new category" form so we can apply the result
   const [pendingCategoryTarget, setPendingCategoryTarget] = useState<
     { type: 'expense'; id: string } | { type: 'manual' } | { type: 'import'; id: string } | null
   >(null);
-
-  // Load custom categories on mount
-  useEffect(() => { getCustomCategories().then(setCustomCategories); }, []);
 
   // Attribution (couples model): earner list + account-owner defaults.
   const [earners, setEarners] = useState<Earner[]>([]);
