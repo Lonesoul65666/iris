@@ -129,8 +129,19 @@ export function computeFunMoneySpent(
     let saved = 0;
     for (const mk of monthsFromTo(start, curKey)) {      // completed months only
       const leftover = funBudgetForMonth(f, mk) - spendIn(mk, cat); // per-month allowance
-      if (leftover >= 0) { banked += (1 - rate) * leftover; saved += rate * leftover; }
-      else { banked += leftover; }                        // full overage rides forward
+      if (leftover < 0) {
+        banked += leftover;                               // overage: full hit, no split
+      } else if (banked < 0) {
+        // Underwater: a good month digs out of the hole FIRST (100%), and only the
+        // surplus past $0 gets the 70/30 split. No saving while you still owe the pot.
+        const fill = Math.min(leftover, -banked);
+        banked += fill;
+        const surplus = leftover - fill;
+        banked += (1 - rate) * surplus;
+        saved += rate * surplus;
+      } else {
+        banked += (1 - rate) * leftover; saved += rate * leftover;
+      }
     }
     // Current month is live — its fresh allowance is spendable on top of the pot.
     const balance = Math.round((banked + f.monthlyBudget - monthlySpent) * 100) / 100;
