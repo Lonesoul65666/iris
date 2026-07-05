@@ -11,6 +11,10 @@ import https from 'node:https'
 
 const YF_PREFIX = '/api/yf'
 const YF_HOST = 'query1.finance.yahoo.com'
+// Only the finance endpoints the client actually uses (chart / search / quote).
+// Host is pinned, but without a path allow-list the proxy is an open relay to
+// any Yahoo path — lock it to what marketDataApi.ts + newsApi.ts request.
+const YF_ALLOW = /^\/v\d+\/finance\/(chart|search|quote)/
 
 /** True when this request is a Yahoo proxy call. */
 export function isYahooProxy(url: string): boolean {
@@ -20,6 +24,12 @@ export function isYahooProxy(url: string): boolean {
 /** Pipe a /api/yf/* request to Yahoo Finance and stream the response back. */
 export function proxyYahoo(req: IncomingMessage, res: ServerResponse): void {
   const upstreamPath = (req.url ?? '').slice(YF_PREFIX.length) || '/'
+  if (!YF_ALLOW.test(upstreamPath.split('?')[0])) {
+    res.statusCode = 403
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({ ok: false, error: 'yf_path_not_allowed' }))
+    return
+  }
   const upstream = https.request(
     {
       host: YF_HOST,

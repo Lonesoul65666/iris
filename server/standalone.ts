@@ -108,8 +108,14 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error(`[iris] DATABASE_URL connect failed: ${err instanceof Error ? err.message : String(err)}`)
   }
-  server.listen(PORT, () => {
-    console.log(`[iris] standalone server listening on http://localhost:${PORT}`)
+  // Bind loopback ONLY by default — the API has no auth yet, so a wide bind
+  // would expose all financial data + money moves to any device on the LAN.
+  // Opt into LAN/partner-mode explicitly with IRIS_LAN=1 (add auth first).
+  const HOST = process.env.IRIS_LAN === '1' ? '0.0.0.0' : '127.0.0.1'
+  server.listen(PORT, HOST, () => {
+    const where = HOST === '0.0.0.0' ? `all interfaces (LAN) :${PORT}` : `http://localhost:${PORT}`
+    console.log(`[iris] standalone server listening on ${where}`)
+    if (HOST === '0.0.0.0') console.warn('[iris] WARNING: LAN mode — /api has no auth yet; only enable on a trusted network')
     console.log(`[iris] serving client from ${DIST}`)
   })
 }

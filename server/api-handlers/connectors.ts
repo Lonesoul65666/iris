@@ -30,7 +30,7 @@ interface ConnectorInput {
   provider: string
   institution: string
   provider_enrollment_id?: string | null
-  access_token: string
+  access_token?: string // never returned by list — server-side only
   status?: string
   data?: Record<string, unknown>
 }
@@ -44,8 +44,10 @@ export async function handleConnectorsList(req: Req, res: Res): Promise<void> {
   const ctx = requireContext(res)
   if (!ctx) return
   try {
+    // NEVER return access_token — it's a live bank bearer credential and stays
+    // server-side. Teller sync reads it directly from the DB (teller-client.ts).
     const r = await ctx.pool.query<ConnectorRow>(
-      `SELECT id, provider, institution, provider_enrollment_id, access_token, status,
+      `SELECT id, provider, institution, provider_enrollment_id, status,
               data, created_at::text, updated_at::text
          FROM connectors
         WHERE user_id = $1
