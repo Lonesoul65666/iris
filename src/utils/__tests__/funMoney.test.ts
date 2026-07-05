@@ -146,13 +146,14 @@ describe('computeFunMoneySpent — 70/30 ledger (banked balance + savings)', () 
     expect(scott.balance).toBe(-150); // 400 − 550
   });
 
-  it('a settled overage rides forward and never touches savings (one-way up)', () => {
+  it('climbs out of the hole before saving; overage never touches savings (one-way up)', () => {
     // Apr overspent by 100 (spent 500) → pot −100, savings unchanged.
-    // May under by 400 → +280 pot, +120 save. Pot = −100 + 280 = 180.
+    // May under by 400: $100 fills the hole (100%, no save), surplus $300 → +210 pot,
+    // +90 save. Pot = 210, saved = 90 (NOT 120 — no saving while underwater).
     const expenses = [exp({ date: '2026-04-15', amount: 500, category: 'fun_scott' })];
     const [scott] = computeFunMoneySpent([pot({ startMonth: '2026-04', openingBalance: 0 })], expenses, NOW, 0.30);
-    expect(scott.savedToDate).toBe(120);   // only May's positive month fed savings
-    expect(scott.balance).toBe(580);       // 180 pot + 400 allowance − 0
+    expect(scott.savedToDate).toBe(90);
+    expect(scott.balance).toBe(610);       // 210 pot + 400 allowance − 0
   });
 
   it('uses the per-month allowance from budgetHistory (change applies forward)', () => {
