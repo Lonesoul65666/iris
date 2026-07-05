@@ -10,6 +10,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { syncTellerBalances } from '../../lib/syncTellerBalances'
+import { formatCurrency } from '../../utils/format'
 
 // Public Teller Application ID — fine to live in source per Teller docs.
 const TELLER_APPLICATION_ID = 'app_prt5j01vo1ij37cq5i000'
@@ -192,7 +193,7 @@ export default function ConnectorsPanel() {
     try {
       const r = await syncTellerBalances()
       const cash = r.assetsSynced.reduce((s, a) => s + a.balance, 0)
-      const fmt = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+      const fmt = formatCurrency
       const liab = r.liabilities.length
         ? ' · cards owed: ' + r.liabilities.map((l) => `${l.source} ${fmt(l.balanceOwed)}`).join(', ')
         : ''
