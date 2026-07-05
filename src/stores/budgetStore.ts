@@ -48,19 +48,6 @@ async function listCollection<T>(name: string): Promise<T[]> {
   return r.items.map((i) => i.data)
 }
 
-async function saveCollection<T extends Record<string, unknown>>(
-  name: string,
-  rows: T[],
-  keyOf: (row: T) => string,
-): Promise<void> {
-  if (rows.length === 0) return
-  const items = rows.map((row) => ({ key: keyOf(row), data: row }))
-  await api<OkEnvelope>(`/api/collections/${encodeURIComponent(name)}/save`, {
-    method: 'POST',
-    body: JSON.stringify({ items }),
-  })
-}
-
 async function saveCollectionItem<T extends Record<string, unknown>>(
   name: string,
   row: T,
@@ -82,17 +69,21 @@ async function deleteCollectionKey(name: string, key: string): Promise<void> {
 // REPLACE semantics: upsert rows AND delete rows whose keys are gone.
 // saveCollection alone is upsert-only — a row deleted in the UI survived in
 // Postgres and resurrected on the next load (2026-06-11 pre-paint audit).
-// Also covers deleting the LAST row, which the empty-early-return never sent.
+// Also covers deleting the LAST row (empty `rows` clears the collection).
+//
+// One atomic server call (/replace) — the old list→save→N-deletes sequence was
+// un-transactioned: a mid-sequence drop resurrected deleted rows and two
+// concurrent tabs lost-update-clobbered (2026-07-04 swarm audit).
 async function replaceCollection<T extends Record<string, unknown>>(
   name: string,
   rows: T[],
   keyOf: (row: T) => string,
 ): Promise<void> {
-  const existing = await api<ListItemEnvelope<CollectionItem<unknown>>>(`/api/collections/${encodeURIComponent(name)}/list`)
-  const keep = new Set(rows.map(keyOf))
-  const stale = existing.items.map((i) => i.key).filter((k) => !keep.has(k))
-  if (rows.length > 0) await saveCollection(name, rows, keyOf)
-  for (const k of stale) await deleteCollectionKey(name, k)
+  const items = rows.map((row) => ({ key: keyOf(row), data: row }))
+  await api<OkEnvelope>(`/api/collections/${encodeURIComponent(name)}/replace`, {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  })
 }
 
 async function clearCollection(name: string): Promise<void> {

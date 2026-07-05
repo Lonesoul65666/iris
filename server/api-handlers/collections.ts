@@ -89,6 +89,73 @@ export async function handleCollectionsDelete(req: Req, res: Res, name: string):
   }
 }
 
+// Atomic REPLACE: in ONE transaction, delete every row whose key is not in the
+// incoming set, then upsert the incoming rows. Replaces the client's old
+// list→save→N-deletes round-trips, which were un-transactioned — a mid-sequence
+// drop resurrected deleted rows and two concurrent tabs lost-update-clobbered
+// (2026-07-04 swarm audit, Medium). An empty `items` clears the collection.
+export async function handleCollectionsReplace(req: Req, res: Res, name: string): Promise<void> {
+  if (req.method !== 'POST') return methodNotAllowed(res)
+  if (!validName(name)) {
+    sendJson(res, 400, { ok: false, error: 'invalid_collection_name' })
+    return
+  }
+  const ctx = requireContext(res)
+  if (!ctx) return
+
+  let body: { items?: Array<{ key?: unknown; data?: unknown }> }
+  try {
+    body = (await readJsonBody(req)) as typeof body
+  } catch {
+    sendJson(res, 400, { ok: false, error: 'invalid_json' })
+    return
+  }
+  if (!Array.isArray(body.items)) {
+    sendJson(res, 400, { ok: false, error: 'missing_items' })
+    return
+  }
+  const items: Array<{ key: string; data: unknown }> = []
+  for (const it of body.items) {
+    if (!it || typeof it !== 'object' || typeof it.key !== 'string' || it.key.length === 0) {
+      sendJson(res, 400, { ok: false, error: 'invalid_item_in_array' })
+      return
+    }
+    items.push({ key: it.key, data: it.data ?? {} })
+  }
+
+  try {
+    const client = await ctx.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const keys = items.map((it) => it.key)
+      // Delete the rows that are gone. With no incoming keys this clears all
+      // rows (NOT (key = ANY('{}')) is true for every row) — the last-row case.
+      const del = await client.query(
+        'DELETE FROM collections WHERE user_id = $1 AND name = $2 AND NOT (key = ANY($3::text[]))',
+        [ctx.userId, name, keys],
+      )
+      for (const it of items) {
+        await client.query(
+          `INSERT INTO collections (user_id, name, key, data, updated_at)
+           VALUES ($1, $2, $3, $4::jsonb, now())
+           ON CONFLICT (user_id, name, key) DO UPDATE
+             SET data = EXCLUDED.data, updated_at = now()`,
+          [ctx.userId, name, it.key, JSON.stringify(it.data)],
+        )
+      }
+      await client.query('COMMIT')
+      sendJson(res, 200, { ok: true, written: items.length, deleted: del.rowCount ?? 0 })
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) })
+  }
+}
+
 export async function handleCollectionsSave(req: Req, res: Res, name: string): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
   if (!validName(name)) {
