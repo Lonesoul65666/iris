@@ -1,9 +1,10 @@
 // Budget comparison — the "don't plan blind" layer (2026-07-05, Scott).
 //
 // When you set up a month's budget, this shows what you ACTUALLY did last month
-// (and the recent average) next to your target, and — where you overspent — where
-// the slack is to cover it. Pure functions over the existing monthly-spend math;
-// no React/IO. Feeds both the comparative UI and the AI advisor's grounded facts.
+// next to your target, and suggests adapting each category's OWN target toward
+// reality — "meet in the middle." It does NOT move money between buckets (Scott:
+// never raid the fun money to cover dining — those are untouchable). Pure funcs
+// over the existing monthly-spend math; feeds the UI and the AI advisor.
 
 import type { Expense, BudgetBucket } from '../types/budget';
 import { computeMonthlySpending, isCompleteMonth } from './transactionAnalysis';
@@ -21,38 +22,59 @@ export interface CategoryComparison {
   lane: 'fixed' | 'flexible' | 'reserve';
 }
 
-// A suggested reallocation: pull slack from an under-spent flexible category to
-// cover a consistent overspend elsewhere, so the month is shaped from reality.
-export interface RebalanceMove {
-  fromCategory: string; fromLabel: string;
-  toCategory: string;   toLabel: string;
-  amount: number;
+// A suggested change to ONE category's own target — meet last month in the middle.
+// No cross-bucket transfers. `kind` is which way the target moves.
+export interface TargetSuggestion {
+  category: string;
+  label: string;
+  currentTarget: number;
+  suggestedTarget: number;
+  lastMonthActual: number;
+  kind: 'raise' | 'trim';
   reason: string;
 }
 
 export interface BudgetComparison {
   hasHistory: boolean;
   lastMonth: string;         // 'YYYY-MM' of the most recent complete month ('' if none)
-  lastMonthLabel: string;    // 'June 2026'
+  lastMonthLabel: string;    // full name, e.g. 'June 2026'
   monthsCompared: number;    // how many complete months the average spans (1–3)
   rows: CategoryComparison[];
-  moves: RebalanceMove[];
-  totalOverspend: number;    // Σ overage across over-target flexible categories
-  totalSlack: number;        // Σ slack across under-target flexible categories
+  suggestions: TargetSuggestion[];
 }
 
-// Lane-aware, matching the app's isOverBudget semantics so we don't cry wolf:
-//  • reserve (taxes / work travel / personal travel) is funded separately and
-//    never flags — showing reimbursed work travel as "over" is just noise.
-//  • fixed (housing, healthcare…) only flags past its tolerance band; you can't
-//    rebalance a mortgage, so it's never a slack source.
-//  • flexible flags over the moment it exceeds, and is the only slack source.
+// Fun-money pots (fun_scott / fun_wife / fun_*) are UNTOUCHABLE — the whole point
+// of them is do-whatever-you-want money, so we never suggest changing their cap.
+function isUntouchable(category: string): boolean {
+  return category.startsWith('fun_');
+}
+
+// Only flexible, non-fun categories are adaptable — you can't retune a mortgage,
+// a tax reserve, or someone's fun money.
+function isAdjustable(category: string, lane: string): boolean {
+  return lane === 'flexible' && !isUntouchable(category);
+}
+
+// Lane-aware over/under, matching the app's isOverBudget so we don't cry wolf:
+// reserve never flags, fixed only past tolerance, flexible flags on any excess.
 function classify(category: string, actual: number, target: number): 'over' | 'under' | 'on' {
   const lane = laneOf(category);
   if (lane === 'reserve') return 'on';
   if (isOverBudget(category, actual, target)) return 'over';
   if (lane === 'flexible' && target - actual >= Math.max(25, target * 0.1)) return 'under';
   return 'on';
+}
+
+function fullMonthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  if (!y || !m) return ym;
+  return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+// Meet the plan and the actual in the middle, rounded to $25. This is the new
+// target a category should probably carry given how it really ran.
+function meetInMiddle(target: number, actual: number): number {
+  return Math.round((target + actual) / 2 / 25) * 25;
 }
 
 export function computeBudgetComparison(
@@ -64,11 +86,9 @@ export function computeBudgetComparison(
   const recent = complete.slice(-3); // last up-to-3 complete months
   const last = recent[recent.length - 1];
 
-  const empty: BudgetComparison = {
-    hasHistory: false, lastMonth: '', lastMonthLabel: '', monthsCompared: 0,
-    rows: [], moves: [], totalOverspend: 0, totalSlack: 0,
-  };
-  if (!last) return empty;
+  if (!last) {
+    return { hasHistory: false, lastMonth: '', lastMonthLabel: '', monthsCompared: 0, rows: [], suggestions: [] };
+  }
 
   const rows: CategoryComparison[] = buckets.map((b) => {
     const lastMonthActual = Math.round(last.byCategory[b.category] || 0);
@@ -89,48 +109,40 @@ export function computeBudgetComparison(
     };
   });
 
-  // Rebalance suggestions only trade FLEXIBLE (discretionary) categories — you
-  // can't move a housing payment or a tax reserve to cover a dining blowout.
-  const flex = rows.filter((r) => r.lane === 'flexible');
-  const over = flex.filter((r) => r.status === 'over').sort((a, b) => b.deltaVsTarget - a.deltaVsTarget);
-  const under = flex
-    .filter((r) => r.status === 'under')
-    .map((r) => ({ ...r, slack: r.target - r.lastMonthActual }))
-    .sort((a, b) => b.slack - a.slack);
-
-  const totalOverspend = over.reduce((s, r) => s + r.deltaVsTarget, 0);
-  const totalSlack = under.reduce((s, r) => s + r.slack, 0);
-
-  // Greedy match: cover each overspend from the largest remaining slack pools.
-  const moves: RebalanceMove[] = [];
-  const slackLeft = under.map((r) => ({ ...r }));
-  for (const o of over) {
-    let need = o.deltaVsTarget;
-    for (const s of slackLeft) {
-      if (need <= 0) break;
-      if (s.slack <= 0) continue;
-      const amount = Math.round(Math.min(need, s.slack));
-      if (amount < 10) continue; // don't suggest trivial moves
-      moves.push({
-        fromCategory: s.category, fromLabel: s.label,
-        toCategory: o.category, toLabel: o.label,
-        amount,
-        reason: `${o.label} ran ${money(o.deltaVsTarget)} over last month; ${s.label} came in ${money(s.slack)} under.`,
-      });
-      s.slack -= amount;
-      need -= amount;
-    }
-  }
+  // Per-category "meet in the middle" target tweaks — adjustable categories only,
+  // and only when the new target moves at least $25 (skip no-op nudges).
+  const suggestions: TargetSuggestion[] = rows
+    .filter((r) => isAdjustable(r.category, r.lane) && r.status !== 'on' && r.target > 0)
+    .map((r) => {
+      const suggestedTarget = meetInMiddle(r.target, r.lastMonthActual);
+      const kind: 'raise' | 'trim' = r.lastMonthActual > r.target ? 'raise' : 'trim';
+      return {
+        category: r.category,
+        label: r.label,
+        currentTarget: r.target,
+        suggestedTarget,
+        lastMonthActual: r.lastMonthActual,
+        kind,
+        reason: kind === 'raise'
+          ? `Spent ${money(r.lastMonthActual)} vs ${money(r.target)} plan — split the difference.`
+          : `Only spent ${money(r.lastMonthActual)} of ${money(r.target)} — free up the slack.`,
+      };
+    })
+    .filter((s) => Math.abs(s.suggestedTarget - s.currentTarget) >= 25)
+    // Biggest raises first (the blowouts), then trims.
+    .sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'raise' ? -1 : 1;
+      return Math.abs(b.suggestedTarget - b.currentTarget) - Math.abs(a.suggestedTarget - a.currentTarget);
+    })
+    .slice(0, 8);
 
   return {
     hasHistory: true,
     lastMonth: last.month,
-    lastMonthLabel: last.monthLabel,
+    lastMonthLabel: fullMonthLabel(last.month),
     monthsCompared: recent.length,
     rows,
-    moves: moves.slice(0, 5), // keep the helper focused
-    totalOverspend: Math.round(totalOverspend),
-    totalSlack: Math.round(totalSlack),
+    suggestions,
   };
 }
 

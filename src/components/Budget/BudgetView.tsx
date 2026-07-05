@@ -563,28 +563,22 @@ export default function BudgetView() {
   // moves. Powers the edit-mode helper AND grounds the AI advisor's numbers.
   const budgetComparison = useMemo(() => computeBudgetComparison(expenses, buckets), [expenses, buckets]);
 
-  // Apply a rebalance move to the PLAN: shift budgeted dollars from one category
-  // to another (from −= amount, to += amount), keeping the total allocation flat.
-  const applyRebalanceMove = useCallback((fromCategory: string, toCategory: string, amount: number) => {
+  // Adapt ONE category's target toward reality (meet-in-the-middle suggestion).
+  // No cross-bucket transfers — each category owns its own number.
+  const applyTargetTweak = useCallback((category: string, newTarget: number) => {
     setBuckets(prev => {
       const next = prev.map(b =>
-        b.category === fromCategory ? { ...b, monthlyBudget: Math.max(0, Math.round(b.monthlyBudget - amount)) }
-        : b.category === toCategory ? { ...b, monthlyBudget: Math.round(b.monthlyBudget + amount) }
-        : b);
+        b.category === category ? { ...b, monthlyBudget: Math.max(0, Math.round(newTarget)) } : b);
       void saveBudgetBuckets(next);
       return next;
     });
   }, []);
 
-  const applyAllRebalanceMoves = useCallback(() => {
+  const applyAllTweaks = useCallback(() => {
     setBuckets(prev => {
-      const delta: Record<string, number> = {};
-      for (const m of budgetComparison.moves) {
-        delta[m.fromCategory] = (delta[m.fromCategory] || 0) - m.amount;
-        delta[m.toCategory] = (delta[m.toCategory] || 0) + m.amount;
-      }
-      const next = prev.map(b => delta[b.category]
-        ? { ...b, monthlyBudget: Math.max(0, Math.round(b.monthlyBudget + delta[b.category])) }
+      const byCat = new Map(budgetComparison.suggestions.map(s => [s.category, s.suggestedTarget]));
+      const next = prev.map(b => byCat.has(b.category)
+        ? { ...b, monthlyBudget: Math.max(0, Math.round(byCat.get(b.category)!)) }
         : b);
       void saveBudgetBuckets(next);
       return next;
@@ -1581,8 +1575,8 @@ export default function BudgetView() {
       {/* Compare-to-last-month helper — plan from reality, not a blank slate. */}
       <BudgetCompareHelper
         comparison={budgetComparison}
-        onApplyMove={applyRebalanceMove}
-        onApplyAll={applyAllRebalanceMoves}
+        onApplyTweak={applyTargetTweak}
+        onApplyAll={applyAllTweaks}
       />
       {/* Budget Allocation + Category Table */}
       <div className="glass-card overflow-hidden">

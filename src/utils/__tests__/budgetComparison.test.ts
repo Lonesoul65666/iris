@@ -15,18 +15,18 @@ function bucket(category: string, monthlyBudget: number): BudgetBucket {
   return { category, label: category, icon: '📦', monthlyBudget, monthlyActual: 0 } as BudgetBucket;
 }
 
-// June (last complete month) actuals: dining 580 (over 400), amazon 120 (under 300),
-// entertainment 100 (on 100), housing 3200 (over — but FIXED), taxes 900 (reserve).
+// June (last complete month) actuals: dining 1800 (over 800), amazon 120 (under 600),
+// housing 3200 (over — but FIXED), taxes 900 (reserve), fun_scott 1400 (over 900 — UNTOUCHABLE).
 const EXPENSES: Expense[] = [
-  exp('2026-05-10', 420, 'food_dining'), exp('2026-06-10', 580, 'food_dining'),
+  exp('2026-05-10', 700, 'food_dining'), exp('2026-06-10', 1800, 'food_dining'),
   exp('2026-05-11', 280, 'amazon'),      exp('2026-06-11', 120, 'amazon'),
-  exp('2026-06-12', 100, 'entertainment'),
   exp('2026-06-01', 3200, 'housing'),
   exp('2026-06-02', 900, 'taxes'),
+  exp('2026-06-03', 1400, 'fun_scott'),
 ];
 const BUCKETS: BudgetBucket[] = [
-  bucket('food_dining', 400), bucket('amazon', 300), bucket('entertainment', 100),
-  bucket('housing', 3000), bucket('taxes', 1000),
+  bucket('food_dining', 800), bucket('amazon', 600),
+  bucket('housing', 3000), bucket('taxes', 1000), bucket('fun_scott', 900),
 ];
 
 describe('computeBudgetComparison', () => {
@@ -36,40 +36,43 @@ describe('computeBudgetComparison', () => {
     expect(c.rows).toEqual([]);
   });
 
-  it('anchors to the most recent complete month', () => {
+  it('anchors to the most recent complete month with a full label', () => {
     const c = computeBudgetComparison(EXPENSES, BUCKETS, NOW);
     expect(c.hasHistory).toBe(true);
     expect(c.lastMonth).toBe('2026-06');
-    expect(c.monthsCompared).toBe(2); // May + June
+    expect(c.lastMonthLabel).toBe('June 2026'); // full name, not "Jun"
+    expect(c.monthsCompared).toBe(2);
   });
 
-  it('classifies over / under / on against target', () => {
+  it('classifies over / under against target', () => {
     const c = computeBudgetComparison(EXPENSES, BUCKETS, NOW);
     const by = Object.fromEntries(c.rows.map(r => [r.category, r]));
     expect(by.food_dining.status).toBe('over');
-    expect(by.food_dining.deltaVsTarget).toBe(180);   // 580 − 400
     expect(by.amazon.status).toBe('under');
-    expect(by.entertainment.status).toBe('on');
-    expect(by.food_dining.avgActual).toBe(500);        // (420 + 580) / 2
   });
 
-  it('suggests moving slack from an under-spent flexible category to an over-spent one', () => {
+  it('suggests adapting a category\'s OWN target to the midpoint — no transfers', () => {
     const c = computeBudgetComparison(EXPENSES, BUCKETS, NOW);
-    expect(c.moves.length).toBeGreaterThanOrEqual(1);
-    const m = c.moves[0];
-    expect(m.fromCategory).toBe('amazon');
-    expect(m.toCategory).toBe('food_dining');
-    expect(m.amount).toBe(180); // min(180 need, 180 slack)
+    const dining = c.suggestions.find(s => s.category === 'food_dining')!;
+    expect(dining.kind).toBe('raise');
+    expect(dining.currentTarget).toBe(800);
+    expect(dining.suggestedTarget).toBe(1300); // (800 + 1800) / 2
+    // Suggestions carry no from/to — each category owns its own number.
+    expect((dining as unknown as { fromCategory?: string }).fromCategory).toBeUndefined();
   });
 
-  it('never rebalances fixed or reserve categories (housing/taxes excluded from moves + totals)', () => {
+  it('trims an under-spent flexible category toward its actual', () => {
     const c = computeBudgetComparison(EXPENSES, BUCKETS, NOW);
-    for (const m of c.moves) {
-      expect(['housing', 'taxes']).not.toContain(m.fromCategory);
-      expect(['housing', 'taxes']).not.toContain(m.toCategory);
-    }
-    // Only flexible dining counts toward overspend, not housing's $200 over.
-    expect(c.totalOverspend).toBe(180);
-    expect(c.totalSlack).toBe(180);
+    const amazon = c.suggestions.find(s => s.category === 'amazon')!;
+    expect(amazon.kind).toBe('trim');
+    expect(amazon.suggestedTarget).toBe(350); // (600 + 120) / 2 = 360, rounded to nearest $25
+  });
+
+  it('never suggests changing fun-money, fixed, or reserve categories', () => {
+    const c = computeBudgetComparison(EXPENSES, BUCKETS, NOW);
+    const cats = c.suggestions.map(s => s.category);
+    expect(cats).not.toContain('fun_scott'); // untouchable even though $500 over
+    expect(cats).not.toContain('housing');   // fixed
+    expect(cats).not.toContain('taxes');     // reserve
   });
 });

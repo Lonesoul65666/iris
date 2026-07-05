@@ -58,10 +58,12 @@ export function buildAdvisorFacts(
     lines.push(`- UNDER: ${r.label} — spent ${money(r.lastMonthActual)} vs ${money(r.target)} plan (${money(r.deltaVsTarget)})`);
   }
 
-  if (cmp.moves.length > 0) {
+  if (cmp.suggestions.length > 0) {
     lines.push('');
-    lines.push('PRE-COMPUTED REBALANCE MOVES (already offered in the UI — you can reinforce these):');
-    for (const m of cmp.moves) lines.push(`- Move ${money(m.amount)} from ${m.fromLabel} → ${m.toLabel}`);
+    lines.push('SUGGESTED TARGET TWEAKS (meet last month in the middle — already offered in the UI; you can reinforce these). Never suggest raiding fun-money or moving money between buckets:');
+    for (const s of cmp.suggestions) {
+      lines.push(`- ${s.label}: ${money(s.currentTarget)} → ${money(s.suggestedTarget)} (spent ${money(s.lastMonthActual)})`);
+    }
   }
 
   lines.push('');
