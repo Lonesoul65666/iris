@@ -4,6 +4,7 @@
 // docs/stashes-design.md. Editing saves directly (same pattern as the old grid).
 import { useMemo, useState } from 'react';
 import type { Expense, Stash } from '../../types/budget';
+import type { DeployConfirmation } from '../../stores/budgetStore';
 import { formatCurrency, formatDuration } from '../../utils/format';
 import { computeAllStashes, computeStashForecast, totalStashContributions, requiredMonthlyForGoal, computeShortfall, monthsElapsedInclusive, type StashForecast } from '../../utils/stashMath';
 import { currentMonthKey } from '../../utils/transactionAnalysis';
@@ -12,6 +13,8 @@ import { defaultBudgetBuckets } from '../../stores/budgetDefaults';
 interface Props {
   stashes: Stash[];
   expenses: Expense[];
+  /** Commit ledger — a pot's balance is opening + its committed moves − draws. */
+  confirms: DeployConfirmation[];
   onChange: (next: Stash[]) => void;
 }
 
@@ -67,13 +70,13 @@ function forecastLine(f: StashForecast): { text: string; cls: string } {
   }
 }
 
-export default function StashesCard({ stashes, expenses, onChange }: Props) {
+export default function StashesCard({ stashes, expenses, confirms, onChange }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   // Inline two-click delete confirm — window.confirm() is a native dialog that
   // blocks the whole tab (and froze browser automation mid-session).
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [confirmingRetire, setConfirmingRetire] = useState<string | null>(null);
-  const statuses = useMemo(() => computeAllStashes(stashes, expenses), [stashes, expenses]);
+  const statuses = useMemo(() => computeAllStashes(stashes, expenses, confirms), [stashes, expenses, confirms]);
   const totalMonthly = totalStashContributions(stashes);
 
   const update = (id: string, patch: Partial<Stash>) => {

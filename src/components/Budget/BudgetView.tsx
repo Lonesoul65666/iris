@@ -1520,6 +1520,7 @@ export default function BudgetView() {
       <StashesCard
         stashes={sinkingFunds}
         expenses={expenses}
+        confirms={deployConfirms}
         onChange={(next) => {
           setSinkingFunds(next);
           applyStashLaneConfig(next);

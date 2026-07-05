@@ -32,6 +32,12 @@ function stash(partial: Partial<Stash>): Stash {
   };
 }
 
+// A committed move (DeployConfirmation) on a stash's lane — the commit-model
+// input that now drives the derived balance.
+function commit(month: string, lane: string, amount: number): DeployConfirmation {
+  return { month, lane, amount, confirmedAt: `${month}-01T00:00:00Z` };
+}
+
 // configureStashLanes mutates the module registry — restore defaults so other
 // tests in this file see legacy behavior.
 afterEach(() => {
@@ -74,41 +80,64 @@ describe('monthsElapsedInclusive', () => {
   });
 });
 
-describe('computeStashStatus — derived balances (design D1)', () => {
-  it('balance = opening + contributions − linked-category draws', () => {
-    const s = stash({ monthlyContribution: 1500, categories: ['taxes'], startMonth: '2026-01', openingBalance: 2000 });
+describe('computeStashStatus — commit-driven balances (2026-07-05)', () => {
+  it('balance = opening + COMMITTED moves − linked-category draws', () => {
+    const s = stash({ id: 's1', monthlyContribution: 1500, categories: ['taxes'], startMonth: '2026-01', openingBalance: 2000 });
     const expenses = [
       exp({ date: '2026-04-15', amount: 5000, category: 'taxes' }),
       exp({ date: '2026-03-02', amount: 100, category: 'food_dining' }), // unlinked — ignored
       exp({ date: '2025-12-30', amount: 9999, category: 'taxes' }),      // before startMonth — ignored
     ];
-    const st = computeStashStatus(s, expenses, NOW);
+    // Six months of committed $1,500 moves — the money actually moved into the pot.
+    const confirms = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06'].map(m => commit(m, 's1', 1500));
+    const st = computeStashStatus(s, expenses, confirms, NOW);
     expect(st.derived).toBe(true);
-    expect(st.contributed).toBe(2000 + 1500 * 6);
+    expect(st.contributed).toBe(2000 + 1500 * 6); // opening + committed
     expect(st.drawn).toBe(5000);
     expect(st.balance).toBe(2000 + 9000 - 5000);
+    expect(st.monthsAccrued).toBe(6);             // months funded = commits made
     expect(st.biggestDraw).toEqual({ month: '2026-04', amount: 5000 });
   });
 
+  it('shows only the opening balance until a month is committed (no phantom accrual)', () => {
+    // $500/mo planned, started 5 months ago, but NOTHING committed → balance = opening only.
+    const s = stash({ id: 's1', monthlyContribution: 500, startMonth: '2026-01', openingBalance: 300 });
+    const st = computeStashStatus(s, [], [], NOW);
+    expect(st.balance).toBe(300);      // NOT 300 + 500*6
+    expect(st.monthsAccrued).toBe(0);
+  });
+
+  it('only this stash lane counts — other lanes and investing are ignored', () => {
+    const s = stash({ id: 's-taxes', monthlyContribution: 1000, startMonth: '2026-05', openingBalance: 0 });
+    const confirms = [
+      commit('2026-05', 's-taxes', 1000),
+      commit('2026-06', 's-taxes', 1000),
+      commit('2026-06', 's-other', 999),   // different stash — excluded
+      commit('2026-06', 'investing', 500), // not a stash lane — excluded
+    ];
+    expect(computeStashStatus(s, [], confirms, NOW).balance).toBe(2000);
+  });
+
   it('refunds in a linked category reduce the draw (netting flows through)', () => {
-    const s = stash({ monthlyContribution: 0, categories: ['travel_personal'], startMonth: '2026-01', openingBalance: 1000 });
+    const s = stash({ id: 's1', monthlyContribution: 0, categories: ['travel_personal'], startMonth: '2026-01', openingBalance: 1000 });
     const expenses = [
       exp({ date: '2026-02-10', amount: 800, category: 'travel_personal' }),
       exp({ date: '2026-02-20', amount: 300, category: 'travel_personal', flow: 'inflow', transactionType: 'refund' }),
     ];
-    const st = computeStashStatus(s, expenses, NOW);
+    const st = computeStashStatus(s, expenses, [], NOW);
     expect(st.drawn).toBe(500);
-    expect(st.balance).toBe(500);
+    expect(st.balance).toBe(500); // opening 1000 − 500 drawn (no commits)
   });
 
-  it('can go honestly negative (design D4)', () => {
-    const s = stash({ monthlyContribution: 100, categories: ['taxes'], startMonth: '2026-05', openingBalance: 0 });
-    const st = computeStashStatus(s, [exp({ date: '2026-06-01', amount: 5000, category: 'taxes' })], NOW);
+  it('can go honestly negative when a draw outruns what was committed (design D4)', () => {
+    const s = stash({ id: 's1', monthlyContribution: 100, categories: ['taxes'], startMonth: '2026-05', openingBalance: 0 });
+    const confirms = [commit('2026-05', 's1', 100), commit('2026-06', 's1', 100)];
+    const st = computeStashStatus(s, [exp({ date: '2026-06-01', amount: 5000, category: 'taxes' })], confirms, NOW);
     expect(st.balance).toBe(200 - 5000);
   });
 
   it('legacy stash without startMonth falls back to the manual balance', () => {
-    const st = computeStashStatus(stash({ currentBalance: 750, targetAmount: 1000 }), [], NOW);
+    const st = computeStashStatus(stash({ currentBalance: 750, targetAmount: 1000 }), [], [], NOW);
     expect(st.derived).toBe(false);
     expect(st.balance).toBe(750);
     expect(st.targetProgress).toBeCloseTo(0.75);
@@ -190,10 +219,10 @@ describe('nextDueDate — cadence anchoring', () => {
 
 describe('computeStashForecast — gamified ETA + pace', () => {
   const fc = (partial: Partial<Stash>) =>
-    computeStashForecast(computeStashStatus(stash(partial), [], NOW), NOW)!;
+    computeStashForecast(computeStashStatus(stash(partial), [], [], NOW), NOW)!;
 
   it('returns null with no goal set', () => {
-    expect(computeStashForecast(computeStashStatus(stash({ targetAmount: 0 }), [], NOW), NOW)).toBeNull();
+    expect(computeStashForecast(computeStashStatus(stash({ targetAmount: 0 }), [], [], NOW), NOW)).toBeNull();
   });
 
   it('met when the balance covers the goal', () => {
@@ -237,22 +266,23 @@ describe('computeStashForecast — gamified ETA + pace', () => {
 
 describe('computeShortfall — the bill outran the pot (chunk D)', () => {
   it('flags the gap + recovery time when a lumpy bill goes negative', () => {
-    // Set aside $100/mo from May, opening $0; a $5,000 bill in June → underwater.
-    const s = stash({ monthlyContribution: 100, categories: ['taxes'], startMonth: '2026-05', openingBalance: 0 });
-    const status = computeStashStatus(s, [exp({ date: '2026-06-01', amount: 5000, category: 'taxes' })], NOW);
+    // Committed $100 in May + June (opening $0); a $5,000 bill in June → underwater.
+    const s = stash({ id: 's1', monthlyContribution: 100, categories: ['taxes'], startMonth: '2026-05', openingBalance: 0 });
+    const confirms = [commit('2026-05', 's1', 100), commit('2026-06', 's1', 100)];
+    const status = computeStashStatus(s, [exp({ date: '2026-06-01', amount: 5000, category: 'taxes' })], confirms, NOW);
     const sf = computeShortfall(status)!;
-    expect(sf.gap).toBe(4800);                 // 200 saved − 5000 = −4800
+    expect(sf.gap).toBe(4800);                 // 200 committed − 5000 = −4800
     expect(sf.culprit).toEqual({ month: '2026-06', amount: 5000 });
     expect(sf.recoverMonths).toBe(48);         // ceil(4800 / 100)
   });
 
   it('is null when the pot is healthy', () => {
-    const status = computeStashStatus(stash({ monthlyContribution: 1000, categories: ['taxes'], startMonth: '2026-01', openingBalance: 0 }), [], NOW);
+    const status = computeStashStatus(stash({ monthlyContribution: 1000, categories: ['taxes'], startMonth: '2026-01', openingBalance: 0 }), [], [], NOW);
     expect(computeShortfall(status)).toBeNull();
   });
 
   it('recoverMonths is null with no drip to recover on', () => {
-    const status = computeStashStatus(stash({ monthlyContribution: 0, categories: ['taxes'], startMonth: '2026-05', openingBalance: 0 }), [exp({ date: '2026-06-01', amount: 500, category: 'taxes' })], NOW);
+    const status = computeStashStatus(stash({ monthlyContribution: 0, categories: ['taxes'], startMonth: '2026-05', openingBalance: 0 }), [exp({ date: '2026-06-01', amount: 500, category: 'taxes' })], [], NOW);
     expect(computeShortfall(status)!.recoverMonths).toBeNull();
   });
 });

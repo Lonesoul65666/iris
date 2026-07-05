@@ -56,6 +56,7 @@ interface AppDataContextValue {
   dashBuckets: ReturnType<typeof defaultBudgetBuckets extends infer T ? () => T : never> extends () => infer R ? R : any;
   dashPaycheck: ReturnType<typeof getPaycheck> extends Promise<infer R> ? NonNullable<R> : any;
   dashSinkingFunds: typeof defaultSinkingFunds;
+  dashDeployConfirms: DeployConfirmation[];
   spendingSummary: SpendingSummary | null;
   monthComparison: MonthComparison | null;
   rawExpenses: any[];
@@ -715,7 +716,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     accounts, setAccounts, equity, profile, setProfile, monthlyInv, setMonthlyInv,
     chatMessages, setChatMessages, chatLoading,
     apiKey, apiKeyInput, setApiKeyInput,
-    actionItems, dashBuckets, dashPaycheck, dashSinkingFunds,
+    actionItems, dashBuckets, dashPaycheck, dashSinkingFunds, dashDeployConfirms,
     spendingSummary, monthComparison, rawExpenses,
     insights, insightsExpanded, setInsightsExpanded,
     budgetSection, setBudgetSection,
