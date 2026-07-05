@@ -53,15 +53,31 @@ export default function MonthlyReviewCard({ expenses, buckets, paycheck }: Props
     }
   }, [facts]);
 
+  // The LLM opens with a punchy verdict line; render it as a headline and the
+  // rest as body so the card reads like Iris actually talking, not a text blob.
+  const paras = review ? review.text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean) : [];
+  const [verdict, ...body] = paras;
+
   return (
-    <div className="glass-card p-5 mb-4 border border-accent/30 relative overflow-hidden">
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/60 to-transparent" />
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div className="min-w-0">
-          <h2 className="text-base font-bold text-text-primary">Iris's Take</h2>
-          <p className="text-xs text-text-muted mt-0.5">
-            {review ? `On ${review.month} · ${relTime(review.generatedAt)} · via ${review.provider}` : 'Straight talk on how the month actually went.'}
-          </p>
+    <div className="glass-card p-5 mb-4 relative overflow-hidden border border-accent/30">
+      {/* Ambient glow + lit top edge */}
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
+      <div className="absolute -top-16 -left-10 w-52 h-52 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
+
+      <div className="relative flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {/* Iris avatar — gradient presence mark with a spark */}
+          <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-accent to-indigo-400 shadow-lg shadow-accent/30 ${loading ? 'animate-pulse' : ''}`}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 2l2.2 6.3L20.5 10l-6.3 2.2L12 18.5 9.8 12.2 3.5 10l6.3-1.7L12 2z" fill="white" />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-text-primary leading-tight">Iris's Take</h2>
+            <p className="text-[11px] text-text-muted">
+              {review ? `${review.month} · ${relTime(review.generatedAt)} · ${review.provider}` : 'Straight talk on how the month went.'}
+            </p>
+          </div>
         </div>
         {available && facts.hasData && (
           <button onClick={run} disabled={loading}
@@ -73,20 +89,28 @@ export default function MonthlyReviewCard({ expenses, buckets, paycheck }: Props
       </div>
 
       {!available && (
-        <div className="text-xs text-text-muted">
+        <div className="relative text-xs text-text-muted">
           Add an AI key in <span className="text-accent">Settings</span> and Iris will start calling it like she sees it.
         </div>
       )}
       {available && !facts.hasData && (
-        <div className="text-xs text-text-muted">Iris needs one full month of data before she weighs in.</div>
+        <div className="relative text-xs text-text-muted">Iris needs one full month of data before she weighs in.</div>
       )}
-      {error && <div className="text-xs text-negative mt-1">{error}</div>}
+      {error && <div className="relative text-xs text-negative">{error}</div>}
+      {loading && !review && (
+        <div className="relative text-sm text-text-muted italic">Iris is reading your month…</div>
+      )}
 
       {review && (
-        <div className="mt-2 text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{review.text}</div>
+        <div className={`relative pl-3 border-l-2 border-accent/40 ${loading ? 'opacity-50' : ''}`}>
+          {verdict && <p className="text-[15px] font-semibold text-text-primary leading-snug mb-2">{verdict}</p>}
+          {body.map((p, i) => (
+            <p key={i} className="text-sm text-text-secondary leading-relaxed mb-2 last:mb-0">{p}</p>
+          ))}
+        </div>
       )}
       {available && facts.hasData && !review && !error && !loading && (
-        <div className="text-xs text-text-muted">Hit the button — she'll tell you where you crushed it and where you didn't.</div>
+        <div className="relative text-xs text-text-muted">Hit the button — she'll tell you where you crushed it and where you didn't.</div>
       )}
     </div>
   );
