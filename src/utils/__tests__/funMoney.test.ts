@@ -155,6 +155,19 @@ describe('computeFunMoneySpent — 70/30 ledger (banked balance + savings)', () 
     expect(scott.balance).toBe(580);       // 180 pot + 400 allowance − 0
   });
 
+  it('uses the per-month allowance from budgetHistory (change applies forward)', () => {
+    // $500 through April, dropped to $400 from May. Both months underspent to $0.
+    // Apr: 500 → +350 pot, +150 save. May: 400 → +280 pot, +120 save. Current June
+    // at the current $400 budget: balance = 630 pot + 400 − 0 = 1030.
+    const p = pot({
+      startMonth: '2026-04', openingBalance: 0, monthlyBudget: 400,
+      budgetHistory: [{ month: '2026-04', amount: 500 }, { month: '2026-05', amount: 400 }],
+    });
+    const [scott] = computeFunMoneySpent([p], [], NOW, 0.30);
+    expect(scott.savedToDate).toBe(270); // 150 + 120
+    expect(scott.balance).toBe(1030);
+  });
+
   it('honors a configurable split rate', () => {
     // Start May, May under by 400, rate 50%: +200 pot, +200 save.
     const [scott] = computeFunMoneySpent([pot({ startMonth: '2026-05', openingBalance: 0 })], [], NOW, 0.50);

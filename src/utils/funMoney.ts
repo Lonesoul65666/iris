@@ -72,6 +72,20 @@ export function linkFunMoneyToEarners(funMoney: FunMoney[], earners: Earner[], n
 /** monthlySpent = this calendar month's spend in the pot's category, with
  *  refunds netted (computeMonthlySpending credits refunds back to their
  *  category). Pass ALL expenses, not pre-filtered ones, so netting works. */
+/** The allowance in effect during `month` — the latest history entry at or before
+ *  it, else the current budget. Lets a budget change apply forward without
+ *  rewriting past months. */
+export function funBudgetForMonth(f: FunMoney, month: string): number {
+  const hist = f.budgetHistory;
+  if (!hist || hist.length === 0) return f.monthlyBudget;
+  let best = '';
+  let amt = f.monthlyBudget;
+  for (const h of hist) {
+    if (h.month <= month && h.month >= best) { best = h.month; amt = h.amount; }
+  }
+  return best ? amt : f.monthlyBudget;
+}
+
 /** Enumerate 'YYYY-MM' from `start` up to (but NOT including) `endExclusive`. */
 function monthsFromTo(start: string, endExclusive: string): string[] {
   const [sy, sm] = start.split('-').map(Number);
@@ -114,7 +128,7 @@ export function computeFunMoneySpent(
     let banked = f.openingBalance ?? 0;
     let saved = 0;
     for (const mk of monthsFromTo(start, curKey)) {      // completed months only
-      const leftover = f.monthlyBudget - spendIn(mk, cat);
+      const leftover = funBudgetForMonth(f, mk) - spendIn(mk, cat); // per-month allowance
       if (leftover >= 0) { banked += (1 - rate) * leftover; saved += rate * leftover; }
       else { banked += leftover; }                        // full overage rides forward
     }
