@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppData, formatCurrency } from '../../context/AppDataContext';
 import {
   ACCOUNT_ORDER, accountMeta,
@@ -7,6 +7,16 @@ import {
 
 // How many recent transactions to list per account.
 const RECENT_PER_ACCOUNT = 4;
+
+// Non-spend rows get a small type tag in the full-activity drawer so transfers,
+// card payments, and investment moves read as what they are — not as spend.
+const TYPE_BADGE: Record<string, { label: string; cls: string }> = {
+  transfer: { label: 'Transfer', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/30' },
+  investment: { label: 'Investment', cls: 'bg-violet-500/15 text-violet-300 border-violet-500/30' },
+  income: { label: 'Income', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' },
+  refund: { label: 'Refund', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+  reimbursement: { label: 'Reimb', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+};
 
 interface AccountStat {
   source: string;
@@ -42,6 +52,8 @@ interface RawTx {
  */
 export default function AccountBreakdown() {
   const { rawExpenses, accounts, setView } = useAppData();
+  // Which account's full-activity drawer is open (null = closed).
+  const [openSource, setOpenSource] = useState<string | null>(null);
 
   // Current balances (as of last sync), keyed by the expense `source`. Synced
   // accounts use id `teller-<source>`, so strip the prefix to join. Only the
@@ -131,14 +143,95 @@ export default function AccountBreakdown() {
             stat={stat}
             shareOfTotal={cycleTotalAll > 0 ? stat.cycleTotal / cycleTotalAll : 0}
             balance={balanceBySource.get(stat.source)}
+            onOpen={() => setOpenSource(stat.source)}
           />
         ))}
+      </div>
+
+      {openSource && (
+        <AccountActivityModal
+          source={openSource}
+          rawExpenses={rawExpenses || []}
+          onClose={() => setOpenSource(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Full-activity drawer for one account — EVERYTHING that hit it, not just spend:
+// transfers, card payments, investment moves, income, and refunds all show, each
+// tagged. This is the "show me all the account activity" view.
+function AccountActivityModal({ source, rawExpenses, onClose }: { source: string; rawExpenses: RawTx[]; onClose: () => void }) {
+  const meta = accountMeta(source);
+  const txns = useMemo(
+    () => rawExpenses
+      .filter((e: RawTx) => (e.source || 'unknown') === source)
+      .sort((a, b) => b.date.localeCompare(a.date)),
+    [rawExpenses, source],
+  );
+  const spend = txns
+    .filter(t => (t.flow || 'outflow') === 'outflow' && (t.transactionType || 'expense') === 'expense')
+    .reduce((s, t) => s + Math.abs(t.amount), 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}>
+      <div className="glass-card w-full max-w-2xl max-h-[80vh] flex flex-col p-0 overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        {/* Drawer header */}
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-glass-border">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xl flex-shrink-0">{meta.icon}</span>
+            <div className="min-w-0">
+              <div className="text-lg font-bold text-text-primary truncate">
+                {meta.name}{meta.last4 && <span className="ml-1.5 text-xs text-text-muted tabular-nums font-normal">••{meta.last4}</span>}
+              </div>
+              <div className="text-[11px] text-text-muted">
+                {txns.length} total {txns.length === 1 ? 'item' : 'items'} · {formatCurrency(spend)} spend
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose}
+            className="text-text-muted hover:text-text-primary text-sm px-2 py-1 rounded hover:bg-white/5 flex-shrink-0">
+            Close ✕
+          </button>
+        </div>
+        {/* Full activity list */}
+        <div className="overflow-y-auto px-4 py-2">
+          {txns.length === 0 ? (
+            <div className="text-sm text-text-muted italic py-6 text-center">No activity recorded for this account.</div>
+          ) : txns.map(tx => {
+            const badge = TYPE_BADGE[tx.transactionType || 'expense'];
+            const inflow = (tx.flow || 'outflow') === 'inflow';
+            return (
+              <div key={tx.id} className="flex items-center gap-2 py-1.5 border-b border-glass-border/40 last:border-0">
+                <span className="text-sm flex-shrink-0">{categoryEmoji(tx.category)}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-text-primary truncate">
+                    {tx.description}
+                    {tx.isWorkExpense && <span className="ml-1" title="Work expense">💼</span>}
+                  </div>
+                  <div className="text-[10px] text-text-muted">{formatRelDate(tx.date)}</div>
+                </div>
+                {badge && (
+                  <span className={`px-1.5 py-0.5 rounded border text-[9px] font-semibold uppercase tracking-wide flex-shrink-0 ${badge.cls}`}>
+                    {badge.label}
+                  </span>
+                )}
+                <div className={`text-xs font-semibold tabular-nums flex-shrink-0 w-20 text-right ${inflow ? 'text-positive' : 'text-text-primary'}`}>
+                  {inflow ? '+' : '−'}{formatCurrency(Math.abs(tx.amount))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
 
-function AccountPanel({ stat, shareOfTotal, balance }: { stat: AccountStat; shareOfTotal: number; balance?: number }) {
+function AccountPanel({ stat, shareOfTotal, balance, onOpen }: { stat: AccountStat; shareOfTotal: number; balance?: number; onOpen: () => void }) {
   const meta = accountMeta(stat.source);
   const kindBadge = { credit: 'Card', checking: 'Checking', savings: 'Savings' }[meta.kind];
   const hasBalance = balance != null;
@@ -149,12 +242,16 @@ function AccountPanel({ stat, shareOfTotal, balance }: { stat: AccountStat; shar
   const balanceLabel = meta.kind === 'credit' ? 'Balance owed' : 'Balance';
 
   return (
-    <div className={`rounded-xl border border-glass-border bg-white/[0.02] p-4 ${dim ? 'opacity-60' : ''}`}>
-      {/* Account identity */}
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`text-left w-full rounded-xl border border-glass-border bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.05] hover:border-accent/40 cursor-pointer ${dim ? 'opacity-60' : ''}`}
+      title="See all activity for this account">
+      {/* Account identity — the account name is the card's header, sized up. */}
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-base flex-shrink-0">{meta.icon}</span>
-          <span className="text-sm font-semibold text-text-primary truncate">{meta.name}</span>
+          <span className="text-lg flex-shrink-0">{meta.icon}</span>
+          <span className="text-base font-bold text-text-primary truncate">{meta.name}</span>
           {meta.last4 && <span className="text-[11px] text-text-muted tabular-nums">••{meta.last4}</span>}
         </div>
         <span className="px-2 py-0.5 rounded-full bg-surface-2 text-[9px] font-mono uppercase tracking-wider text-text-muted flex-shrink-0">
@@ -194,7 +291,10 @@ function AccountPanel({ stat, shareOfTotal, balance }: { stat: AccountStat; shar
         </div>
       ) : (
         <div className="space-y-0.5">
-          <div className="term-label mb-1">Latest charges</div>
+          <div className="flex items-center justify-between mb-1">
+            <div className="term-label">Latest charges</div>
+            <span className="text-[10px] font-medium text-accent">See all activity →</span>
+          </div>
           {stat.recent.map(tx => (
             <div key={tx.id} className="flex items-center gap-2 py-1 border-b border-glass-border/40 last:border-0">
               <span className="text-xs flex-shrink-0">{categoryEmoji(tx.category)}</span>
@@ -212,6 +312,6 @@ function AccountPanel({ stat, shareOfTotal, balance }: { stat: AccountStat; shar
           ))}
         </div>
       )}
-    </div>
+    </button>
   );
 }
