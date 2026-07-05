@@ -143,6 +143,10 @@ export default function BudgetView() {
   // Planned→confirmed deploys (Money Map honesty layer) — manual confirm of the
   // monthly investment so the lane reads as real, not an inferred Settings guess.
   const [deployConfirms, setDeployConfirms] = useState<DeployConfirmation[]>([]);
+  // Fraction of unspent fun money that promotes to savings each settled month
+  // (the rest banks). User-tunable via the Fun Money slider; default 30%.
+  const [funSavingsRate, setFunSavingsRate] = useState(0.30);
+  useEffect(() => { void getSetting<number>('fun_savings_rate').then(r => { if (typeof r === 'number') setFunSavingsRate(r); }); }, []);
 
   // ── Edit mode state ──
   // Daily Budget tab is read-only. Editing happens in a dedicated mode that
@@ -564,9 +568,37 @@ export default function BudgetView() {
   // moves. Powers the edit-mode helper AND grounds the AI advisor's numbers.
   const budgetComparison = useMemo(() => computeBudgetComparison(expenses, buckets), [expenses, buckets]);
 
-  // Fun money with a live banked balance (accrues month over month). Derived for
-  // display; edits still operate on the source `funMoney` state.
-  const funMoneyDerived = useMemo(() => computeFunMoneySpent(funMoney, expenses), [funMoney, expenses]);
+  // Fun money with a live banked balance + savings skim (70/30 ledger). Derived
+  // for display; edits still operate on the source `funMoney` state.
+  const funMoneyDerived = useMemo(
+    () => computeFunMoneySpent(funMoney, expenses, new Date(), funSavingsRate),
+    [funMoney, expenses, funSavingsRate],
+  );
+
+  // Restraint savings: cumulative promoted-to-savings across people, minus what's
+  // already been committed (moved) on the non-stash 'fun-savings' lane — which
+  // Safe-to-Spend ignores, so this never touches the budget. The delta is what's
+  // waiting to be moved on the next commit run.
+  const funSavedToDate = Math.round(funMoneyDerived.reduce((s, f) => s + (f.savedToDate ?? 0), 0));
+  const funSavingsCommitted = Math.round(deployConfirms.filter(c => c.lane === 'fun-savings').reduce((s, c) => s + (c.amount || 0), 0));
+  const funSavingsPending = Math.max(0, funSavedToDate - funSavingsCommitted);
+
+  // Persist the split rate + recompute (slider).
+  const updateFunSavingsRate = useCallback((rate: number) => {
+    const r = Math.min(0.9, Math.max(0, rate));
+    setFunSavingsRate(r);
+    void saveSetting('fun_savings_rate', r);
+  }, []);
+
+  // Mark the pending restraint-savings as moved — same commit muscle as stashes,
+  // but on the 'fun-savings' lane so it stays out of Safe-to-Spend.
+  const confirmFunSavingsMoved = useCallback(async () => {
+    if (funSavingsPending <= 0) return;
+    const existing = deployConfirms.find(c => c.month === curMonthKey && c.lane === 'fun-savings')?.amount ?? 0;
+    const c: DeployConfirmation = { month: curMonthKey, lane: 'fun-savings', amount: Math.round(existing + funSavingsPending), confirmedAt: new Date().toISOString() };
+    setDeployConfirms(prev => [...prev.filter(x => !(x.month === curMonthKey && x.lane === 'fun-savings')), c]);
+    await saveDeployConfirmation(c);
+  }, [funSavingsPending, deployConfirms, curMonthKey]);
 
   // Adapt ONE category's target toward reality (meet-in-the-middle suggestion).
   // No cross-bucket transfers — each category owns its own number.
@@ -1148,37 +1180,77 @@ export default function BudgetView() {
         <MonthlyReviewCard expenses={expenses} buckets={buckets} paycheck={paycheck} />
       )}
 
-      {/* Fun Money — banked balances, visible daily (accrues month to month). */}
-      {section === 'overview' && funMoneyDerived.some(f => f.monthlyBudget > 0 || (f.balance ?? 0) !== 0) && (
-        <div className="glass-card p-5 mb-4">
-          <div className="flex items-baseline justify-between mb-3">
-            <h2 className="text-base font-bold text-text-primary">Fun Money</h2>
-            <span className="text-[11px] text-text-muted">do-whatever-you-want money · banks month to month</span>
+      {/* Fun Money — the fun box: banked balances head-to-head, restraint savings,
+          split slider. Accrues month to month; 30% of what you don't blow banks
+          to savings via your commit run. (No emojis per Scott.) */}
+      {section === 'overview' && funMoneyDerived.some(f => f.monthlyBudget > 0 || (f.balance ?? 0) !== 0) && (() => {
+        const sorted = [...funMoneyDerived].sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0));
+        const lead = sorted[0], trail = sorted[1];
+        const gap = lead && trail ? Math.round((lead.balance ?? 0) - (trail.balance ?? 0)) : 0;
+        const status = !trail
+          ? `${formatCurrency(lead?.balance ?? 0)} banked and ready to blow`
+          : gap < 25
+            ? "Dead even — you're both behaving"
+            : `${lead.person}'s up ${formatCurrency(gap)} — ${trail.person}'s getting smoked`;
+        const ratePct = Math.round(funSavingsRate * 100);
+        return (
+          <div className="glass-card p-5 mb-4">
+            <div className="flex items-baseline justify-between mb-1">
+              <h2 className="text-base font-bold text-text-primary">Fun Money</h2>
+              <span className="text-[11px] text-text-muted">do-whatever-you-want money · banks month to month</span>
+            </div>
+            <p className="text-xs text-accent-light font-semibold mb-3">{status}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {funMoneyDerived.map(fm => {
+                const bal = fm.balance ?? 0;
+                const neg = bal < 0;
+                const pct = fm.monthlyBudget > 0 ? Math.min(100, (fm.monthlySpent / fm.monthlyBudget) * 100) : 0;
+                const isLead = Boolean(trail) && fm === lead && gap >= 25;
+                return (
+                  <div key={fm.earnerId ?? fm.person} className={`rounded-xl border p-4 ${isLead ? 'border-accent/40 bg-accent/[0.05]' : 'border-glass-border bg-white/[0.02]'}`}>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-sm font-semibold text-text-primary">{fm.person}{isLead ? ' · ahead' : ''}</span>
+                      <span className="text-[10px] text-text-muted uppercase tracking-wider">{neg ? 'over' : 'banked'}</span>
+                    </div>
+                    <div className={`text-2xl font-black mono-num ${neg ? 'text-negative' : 'text-positive'}`}>
+                      {neg ? '−' : ''}{formatCurrency(Math.abs(bal))}
+                    </div>
+                    <div className="w-full bg-white/10 rounded-full h-1.5 mt-2 mb-1">
+                      <div className="h-1.5 rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-text-muted">
+                      <span>{formatCurrency(fm.monthlySpent)} of {formatCurrency(fm.monthlyBudget)} this month</span>
+                      <span className="text-positive/80">{formatCurrency(fm.savedToDate ?? 0)} → savings</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Restraint savings — banked from what you didn't blow; move on your commit run */}
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-positive/[0.06] border border-positive/25 px-3 py-2">
+              <div className="text-xs text-text-secondary">
+                <span className="font-semibold text-positive">{formatCurrency(funSavedToDate)}</span> banked to savings from restraint
+                {funSavingsPending > 0 && <> · <span className="text-text-primary font-semibold">{formatCurrency(funSavingsPending)}</span> ready to move</>}
+              </div>
+              {funSavingsPending > 0 && (
+                <button onClick={confirmFunSavingsMoved}
+                  className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-positive/20 hover:bg-positive/30 text-positive flex-shrink-0 transition-colors">
+                  Move to savings
+                </button>
+              )}
+            </div>
+            {/* Split slider — how much of unspent fun banks to savings */}
+            <div className="mt-3 flex items-center gap-3">
+              <span className="text-[11px] text-text-muted whitespace-nowrap">
+                Keep <span className="text-text-secondary font-semibold">{100 - ratePct}%</span>, save <span className="text-positive font-semibold">{ratePct}%</span> of what you don't blow
+              </span>
+              <input type="range" min={0} max={60} step={5} value={ratePct}
+                onChange={e => updateFunSavingsRate(Number(e.target.value) / 100)}
+                className="flex-1 accent-accent" />
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {funMoneyDerived.map(fm => {
-              const bal = fm.balance ?? 0;
-              const neg = bal < 0;
-              const pct = fm.monthlyBudget > 0 ? Math.min(100, (fm.monthlySpent / fm.monthlyBudget) * 100) : 0;
-              return (
-                <div key={fm.earnerId ?? fm.person} className="rounded-xl border border-glass-border bg-white/[0.02] p-4">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-sm font-semibold text-text-primary">{fm.emoji} {fm.person}</span>
-                    <span className="text-[10px] text-text-muted uppercase tracking-wider">{neg ? 'over' : 'banked'}</span>
-                  </div>
-                  <div className={`text-2xl font-black mono-num ${neg ? 'text-negative' : 'text-positive'}`}>
-                    {neg ? '−' : ''}{formatCurrency(Math.abs(bal))}
-                  </div>
-                  <div className="w-full bg-white/10 rounded-full h-1.5 mt-2 mb-1">
-                    <div className="h-1.5 rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-all" style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="text-[10px] text-text-muted">{formatCurrency(fm.monthlySpent)} of {formatCurrency(fm.monthlyBudget)} spent this month</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Month navigation lives in the Overview tab card now (consolidated). */}
 
@@ -2032,7 +2104,7 @@ export default function BudgetView() {
             return (
               <div key={fm.earnerId ?? fm.person} className="p-4 rounded-xl bg-white/[0.03] border border-glass-border group">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold text-text-primary">{fm.emoji} {fm.person}</span>
+                  <span className="font-semibold text-text-primary">{fm.person}</span>
                   <div className="flex items-center gap-0.5">
                     <span className="text-accent font-bold">$</span>
                     <input type="number" step="0.01" value={fm.monthlyBudget}

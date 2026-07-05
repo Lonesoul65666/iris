@@ -317,10 +317,12 @@ export interface FunMoney {
   startMonth?: string;
   /** What was already banked when accrual started — user-editable seed. */
   openingBalance?: number;
-  /** DERIVED: banked balance = opening + monthlyBudget×monthsAccrued − spend since start. */
+  /** DERIVED: spendable banked balance (carried pot + this month's allowance − spend). */
   balance?: number;
   /** DERIVED: whole months accrued since startMonth (inclusive). */
   monthsAccrued?: number;
+  /** DERIVED: cumulative amount promoted to savings from restraint (one-way up). */
+  savedToDate?: number;
 }
 
 export interface PaycheckBreakdown {
