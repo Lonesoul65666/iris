@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAppData } from '../../context/AppDataContext';
 import { createPortal } from 'react-dom';
 import { ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
@@ -24,6 +24,8 @@ import WorkReimbursementsCard from './WorkReimbursementsCard';
 import VariableSurplusCard from './VariableSurplusCard';
 import { auditBudgetEdit, type BudgetDiff } from '../../stores/auditLogStore';
 import BucketGroupsManager from './BucketGroupsManager';
+import BudgetCompareHelper from './BudgetCompareHelper';
+import { computeBudgetComparison } from '../../utils/budgetComparison';
 import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, saveMerchantMapping } from '../../stores/actionStore';
 import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, getCategoryLabel, isRealExpense, isCompleteMonth, currentMonthKey, emptyMonthlySpending, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
@@ -555,6 +557,38 @@ export default function BudgetView() {
   // (the old leftover ignored the pots and read ~$2k too high).
   const plannedPotFills = sinkingFunds.reduce((s, f) => s + Math.round(f.monthlyFill ?? f.monthlyContribution ?? 0), 0);
   const unallocated = paycheck.netTakeHome - totalAllocated - plannedPotFills;
+
+  // Comparative planning: last complete month's actuals vs the plan, + rebalance
+  // moves. Powers the edit-mode helper AND grounds the AI advisor's numbers.
+  const budgetComparison = useMemo(() => computeBudgetComparison(expenses, buckets), [expenses, buckets]);
+
+  // Apply a rebalance move to the PLAN: shift budgeted dollars from one category
+  // to another (from −= amount, to += amount), keeping the total allocation flat.
+  const applyRebalanceMove = useCallback((fromCategory: string, toCategory: string, amount: number) => {
+    setBuckets(prev => {
+      const next = prev.map(b =>
+        b.category === fromCategory ? { ...b, monthlyBudget: Math.max(0, Math.round(b.monthlyBudget - amount)) }
+        : b.category === toCategory ? { ...b, monthlyBudget: Math.round(b.monthlyBudget + amount) }
+        : b);
+      void saveBudgetBuckets(next);
+      return next;
+    });
+  }, []);
+
+  const applyAllRebalanceMoves = useCallback(() => {
+    setBuckets(prev => {
+      const delta: Record<string, number> = {};
+      for (const m of budgetComparison.moves) {
+        delta[m.fromCategory] = (delta[m.fromCategory] || 0) - m.amount;
+        delta[m.toCategory] = (delta[m.toCategory] || 0) + m.amount;
+      }
+      const next = prev.map(b => delta[b.category]
+        ? { ...b, monthlyBudget: Math.max(0, Math.round(b.monthlyBudget + delta[b.category])) }
+        : b);
+      void saveBudgetBuckets(next);
+      return next;
+    });
+  }, [budgetComparison]);
 
   // Essential vs discretionary category lists
   const essentialCats = ['housing', 'investing', 'childcare', 'utilities', 'insurance', 'healthcare', 'kids', 'transportation', 'food_groceries'];
@@ -1538,6 +1572,12 @@ export default function BudgetView() {
       {/* ── End read-only daily view ── */}
 
       {editMode && (<>
+      {/* Compare-to-last-month helper — plan from reality, not a blank slate. */}
+      <BudgetCompareHelper
+        comparison={budgetComparison}
+        onApplyMove={applyRebalanceMove}
+        onApplyAll={applyAllRebalanceMoves}
+      />
       {/* Budget Allocation + Category Table */}
       <div className="glass-card overflow-hidden">
         {/* Header with allocation bar */}
