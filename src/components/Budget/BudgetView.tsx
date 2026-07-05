@@ -207,7 +207,16 @@ export default function BudgetView() {
     // categorizing a transaction and lane-aware — not an orphan budget line with a
     // throwaway custom_<timestamp> id that nothing can ever be filed under.
     const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `custom_${Date.now()}`;
-    if (buckets.some(b => b.category === id)) { setNewBucket(null); return; } // already exists — don't dupe
+    // Re-fetch before insert (as ExpenseManager does): the in-memory `buckets`
+    // can miss a bucket created on another device/tab that slugs to this same id.
+    // Without this, the ON CONFLICT upsert would silently overwrite that bucket's
+    // budget + label and merge two lanes' transactions into one. Dedupe against
+    // the FRESH set, and build on it so the concurrent bucket isn't clobbered.
+    const current = await getBudgetBuckets();
+    if (current.some(b => b.category === id) || buckets.some(b => b.category === id)) {
+      setNewBucket(null);
+      return; // already exists (here or on another device) — don't dupe/overwrite
+    }
     const icon = newBucket.icon || '📌';
     const custom: CustomCategory = { id, label, icon, color: '#8b5cf6' };
     await saveCustomCategory(custom);
@@ -223,7 +232,12 @@ export default function BudgetView() {
       guideline: 'Custom category',
       guidelinePercent: 0,
     };
-    const updated = [...buckets, fresh];
+    // Base on the on-screen buckets (they carry derived monthlyActual), but fold
+    // in any bucket created on another device/tab so replace semantics don't
+    // delete it.
+    const merged = [...buckets];
+    for (const b of current) if (!merged.some(m => m.category === b.category)) merged.push(b);
+    const updated = [...merged, fresh];
     setBuckets(updated);
     await saveBudgetBuckets(updated);
     setNewBucket(null);
