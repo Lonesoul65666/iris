@@ -25,6 +25,7 @@ import VariableSurplusCard from './VariableSurplusCard';
 import { auditBudgetEdit, type BudgetDiff } from '../../stores/auditLogStore';
 import BucketGroupsManager from './BucketGroupsManager';
 import BudgetCompareHelper from './BudgetCompareHelper';
+import MonthlyReviewCard from './MonthlyReviewCard';
 import { computeBudgetComparison } from '../../utils/budgetComparison';
 import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, saveMerchantMapping } from '../../stores/actionStore';
@@ -1142,6 +1143,11 @@ export default function BudgetView() {
 
       {/* ── Read-only daily view (hidden in edit mode) ── */}
       {!editMode && (<>
+
+      {/* Iris's Take — the AI advisor voice on the month (overview only). */}
+      {section === 'overview' && (
+        <MonthlyReviewCard expenses={expenses} buckets={buckets} paycheck={paycheck} />
+      )}
 
       {/* Month navigation lives in the Overview tab card now (consolidated). */}
 
