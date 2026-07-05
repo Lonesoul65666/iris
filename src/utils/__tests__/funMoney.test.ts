@@ -114,3 +114,33 @@ describe('computeFunMoneySpent', () => {
     expect(claire.monthlySpent).toBe(45);
   });
 });
+
+describe('computeFunMoneySpent — accrual (banked balance)', () => {
+  const pot = (over: Partial<FunMoney>): FunMoney =>
+    ({ person: 'Scott', category: 'fun_scott', emoji: '🎮', monthlyBudget: 400, monthlySpent: 0, ...over });
+
+  it('banks unused allowance month over month', () => {
+    // Start April, $400/mo → by June (NOW) 3 months accrued = $1,200 allowance.
+    // Spent $100 (Apr) + $65 (Jun) = $165 → banked $1,035. monthlySpent = June only.
+    const p = pot({ startMonth: '2026-04', openingBalance: 0 });
+    const expenses = [
+      exp({ date: '2026-04-10', amount: 100, category: 'fun_scott' }),
+      exp({ date: '2026-06-03', amount: 65, category: 'fun_scott' }),
+    ];
+    const [scott] = computeFunMoneySpent([p], expenses, NOW);
+    expect(scott.monthsAccrued).toBe(3);
+    expect(scott.balance).toBe(400 * 3 - 165); // 1035
+    expect(scott.monthlySpent).toBe(65);
+  });
+
+  it('includes the opening balance', () => {
+    const [scott] = computeFunMoneySpent([pot({ startMonth: '2026-06', openingBalance: 500 })], [], NOW);
+    expect(scott.balance).toBe(900); // 500 opening + 400×1 − 0
+  });
+
+  it('goes negative when they overspend the banked amount', () => {
+    const expenses = [exp({ date: '2026-06-05', amount: 550, category: 'fun_scott' })];
+    const [scott] = computeFunMoneySpent([pot({ startMonth: '2026-06', openingBalance: 0 })], expenses, NOW);
+    expect(scott.balance).toBe(-150); // 400 − 550
+  });
+});

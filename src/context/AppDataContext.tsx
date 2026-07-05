@@ -120,7 +120,9 @@ async function syncFunMoney(allExpenses: Expense[]): Promise<FunMoney[]> {
     f.monthlySpent !== loaded[i]?.monthlySpent ||
     f.earnerId !== loaded[i]?.earnerId ||
     f.category !== loaded[i]?.category ||
-    f.emoji !== loaded[i]?.emoji
+    f.emoji !== loaded[i]?.emoji ||
+    f.startMonth !== loaded[i]?.startMonth ||       // persist the accrual anchor
+    f.openingBalance !== loaded[i]?.openingBalance
   );
   if (changed) await saveFunMoney(updated);
   return updated;
