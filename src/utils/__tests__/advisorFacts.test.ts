@@ -32,7 +32,7 @@ describe('buildAdvisorFacts', () => {
   it('grounds the brief in the real over/under figures and take-home', () => {
     const f = buildAdvisorFacts(EXPENSES, BUCKETS, PAYCHECK, NOW);
     expect(f.hasData).toBe(true);
-    expect(f.monthLabel).toBe('Jun 2026');
+    expect(f.monthLabel).toBe('June 2026');
     expect(f.brief).toContain('OVER: Dining Out');
     expect(f.brief).toContain('$580');   // actual
     expect(f.brief).toContain('$400');   // plan
