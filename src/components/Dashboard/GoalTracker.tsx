@@ -1,19 +1,10 @@
 import { useMemo } from 'react';
 import type { SinkingFund } from '../../types/budget';
+import { formatCurrency } from '../../utils/format';
 
 interface GoalTrackerProps {
   sinkingFunds: SinkingFund[];
   monthlyInvestmentAmount: number;
-}
-
-function formatCurrency(v: number): string {
-  if (Math.abs(v) >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(v);
 }
 
 /** Calculate months between now and a future date. Returns 0 if date is in the past. */

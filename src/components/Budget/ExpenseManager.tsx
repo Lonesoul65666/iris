@@ -4,6 +4,7 @@ import { saveExpense, deleteExpense, saveCustomCategory, saveBudgetBuckets, getB
 import { getMerchantMappings, saveMerchantMapping, type MerchantMapping } from '../../stores/actionStore';
 import { registerCustomCategories } from '../../utils/transactionAnalysis';
 import { classifyBankTransaction, guessCategory } from '../../utils/transactionCategorize';
+import { formatCurrency } from '../../utils/format';
 import { JOINT, buildOwnerMap, effectiveSpender, spenderName, nextSpender } from '../../utils/attribution';
 
 const DEFAULT_CATEGORY_OPTIONS: { value: ExpenseCategory; label: string; icon: string }[] = [
@@ -35,9 +36,6 @@ const DEFAULT_CATEGORY_OPTIONS: { value: ExpenseCategory; label: string; icon: s
   { value: 'other', label: 'Other', icon: '📦' },
 ];
 
-function formatCurrency(v: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(v);
-}
 
 interface ParsedTransaction {
   id: string;

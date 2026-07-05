@@ -439,7 +439,7 @@ export default function DashboardView() {
                   const color = SECTOR_COLORS[i % SECTOR_COLORS.length];
                   const pct = c.budget > 0 ? Math.min(100, (c.value / c.budget) * 100) : (c.value > 0 ? 100 : 0);
                   return (
-                    <div key={i}>
+                    <div key={c.name}>
                       <div className="flex items-center gap-2 text-xs">
                         {c.icon
                           ? <span className="w-4 text-center text-sm flex-shrink-0">{c.icon}</span>
@@ -480,7 +480,7 @@ export default function DashboardView() {
                 />
                 <div className="space-y-1.5">
                   {allocations.slice(0, 6).map((a, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
+                    <div key={a.sector} className="flex items-center gap-2 text-xs">
                       <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: a.color || SECTOR_COLORS[i % SECTOR_COLORS.length] }} />
                       <span className="text-text-secondary flex-1 truncate">{a.sector}</span>
                       <span className="text-text-primary font-semibold tabular-nums">{a.percentage.toFixed(1)}%</span>
