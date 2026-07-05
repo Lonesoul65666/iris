@@ -72,30 +72,55 @@ export function linkFunMoneyToEarners(funMoney: FunMoney[], earners: Earner[], n
 /** monthlySpent = this calendar month's spend in the pot's category, with
  *  refunds netted (computeMonthlySpending credits refunds back to their
  *  category). Pass ALL expenses, not pre-filtered ones, so netting works. */
+/** Enumerate 'YYYY-MM' from `start` up to (but NOT including) `endExclusive`. */
+function monthsFromTo(start: string, endExclusive: string): string[] {
+  const [sy, sm] = start.split('-').map(Number);
+  const [ey, em] = endExclusive.split('-').map(Number);
+  if (!sy || !sm || !ey || !em) return [];
+  const out: string[] = [];
+  let y = sy, m = sm;
+  while ((y < ey || (y === ey && m < em)) && out.length < 600) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+/** Fun-money ledger (2026-07-05). Each COMPLETED month settles:
+ *   • came in under → (1−savingsRate) of the leftover BANKS into the pot,
+ *     savingsRate PROMOTES to savings (one-way up — never clawed back);
+ *   • overspent → the full overage rides forward and reduces the pot.
+ *  The current (in-progress) month is live: its allowance is spendable on top of
+ *  the carried pot. Returns monthlySpent (this month), balance (spendable now),
+ *  savedToDate (cumulative promoted to savings), monthsAccrued. Constant budget
+ *  assumed across months (no per-month fun-budget history). Pure. */
 export function computeFunMoneySpent(
   funMoney: FunMoney[],
   expenses: Expense[],
   now: Date = new Date(),
+  savingsRate = 0.30,
 ): FunMoney[] {
   const monthly = computeMonthlySpending(expenses);
+  const byMonth = new Map(monthly.map(m => [m.month, m]));
   const curKey = currentMonthKey(now);
-  const mtd = monthly.find(m => m.month === curKey);
+  const rate = Math.min(1, Math.max(0, savingsRate));
+  const spendIn = (month: string, cat: string) => byMonth.get(month)?.byCategory[cat] ?? 0;
+
   return funMoney.map(f => {
     const cat = f.category ?? funCategoryFor(f.person);
-    const monthlySpent = Math.round((mtd?.byCategory[cat] ?? 0) * 100) / 100;
-
-    // Accrued (banked) balance: every month adds the allowance, spend draws it
-    // down, the rest banks. Overspend digs a hole (negative = into future fun).
-    // startMonth is normally set by linkFunMoneyToEarners; fall back to now.
+    const monthlySpent = Math.round(spendIn(curKey, cat) * 100) / 100;
     const start = f.startMonth ?? curKey;
-    const monthsAccrued = monthsElapsedInclusive(start, now);
-    const spentSinceStart = monthly
-      .filter(m => m.month >= start && m.month <= curKey)
-      .reduce((s, m) => s + (m.byCategory[cat] ?? 0), 0);
-    const balance = Math.round(
-      ((f.openingBalance ?? 0) + f.monthlyBudget * monthsAccrued - spentSinceStart) * 100,
-    ) / 100;
 
-    return { ...f, monthlySpent, balance, monthsAccrued };
+    let banked = f.openingBalance ?? 0;
+    let saved = 0;
+    for (const mk of monthsFromTo(start, curKey)) {      // completed months only
+      const leftover = f.monthlyBudget - spendIn(mk, cat);
+      if (leftover >= 0) { banked += (1 - rate) * leftover; saved += rate * leftover; }
+      else { banked += leftover; }                        // full overage rides forward
+    }
+    // Current month is live — its fresh allowance is spendable on top of the pot.
+    const balance = Math.round((banked + f.monthlyBudget - monthlySpent) * 100) / 100;
+    const monthsAccrued = monthsElapsedInclusive(start, now);
+    return { ...f, monthlySpent, balance, savedToDate: Math.round(saved * 100) / 100, monthsAccrued };
   });
 }

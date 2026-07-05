@@ -115,32 +115,50 @@ describe('computeFunMoneySpent', () => {
   });
 });
 
-describe('computeFunMoneySpent — accrual (banked balance)', () => {
+describe('computeFunMoneySpent — 70/30 ledger (banked balance + savings)', () => {
   const pot = (over: Partial<FunMoney>): FunMoney =>
     ({ person: 'Scott', category: 'fun_scott', emoji: '🎮', monthlyBudget: 400, monthlySpent: 0, ...over });
 
-  it('banks unused allowance month over month', () => {
-    // Start April, $400/mo → by June (NOW) 3 months accrued = $1,200 allowance.
-    // Spent $100 (Apr) + $65 (Jun) = $165 → banked $1,035. monthlySpent = June only.
+  it('banks 70% of a completed month\'s leftover and promotes 30% to savings', () => {
+    // Start April ($400/mo). Settled: Apr spent 100 (leftover 300 → +210 pot, +90 save),
+    // May spent 0 (leftover 400 → +280 pot, +120 save). Pot=490, saved=210.
+    // Current June spent 65 (live): balance = 490 + 400 − 65 = 825.
     const p = pot({ startMonth: '2026-04', openingBalance: 0 });
     const expenses = [
       exp({ date: '2026-04-10', amount: 100, category: 'fun_scott' }),
       exp({ date: '2026-06-03', amount: 65, category: 'fun_scott' }),
     ];
-    const [scott] = computeFunMoneySpent([p], expenses, NOW);
-    expect(scott.monthsAccrued).toBe(3);
-    expect(scott.balance).toBe(400 * 3 - 165); // 1035
+    const [scott] = computeFunMoneySpent([p], expenses, NOW, 0.30);
     expect(scott.monthlySpent).toBe(65);
+    expect(scott.savedToDate).toBe(210);   // 90 + 120
+    expect(scott.balance).toBe(825);       // 490 pot + 400 allowance − 65 spent
   });
 
-  it('includes the opening balance', () => {
-    const [scott] = computeFunMoneySpent([pot({ startMonth: '2026-06', openingBalance: 500 })], [], NOW);
-    expect(scott.balance).toBe(900); // 500 opening + 400×1 − 0
+  it('includes the opening balance in the current-month spendable', () => {
+    const [scott] = computeFunMoneySpent([pot({ startMonth: '2026-06', openingBalance: 500 })], [], NOW, 0.30);
+    expect(scott.balance).toBe(900); // 500 opening + 400 allowance − 0
+    expect(scott.savedToDate).toBe(0);
   });
 
-  it('goes negative when they overspend the banked amount', () => {
+  it('overspending the live month goes negative', () => {
     const expenses = [exp({ date: '2026-06-05', amount: 550, category: 'fun_scott' })];
-    const [scott] = computeFunMoneySpent([pot({ startMonth: '2026-06', openingBalance: 0 })], expenses, NOW);
+    const [scott] = computeFunMoneySpent([pot({ startMonth: '2026-06', openingBalance: 0 })], expenses, NOW, 0.30);
     expect(scott.balance).toBe(-150); // 400 − 550
+  });
+
+  it('a settled overage rides forward and never touches savings (one-way up)', () => {
+    // Apr overspent by 100 (spent 500) → pot −100, savings unchanged.
+    // May under by 400 → +280 pot, +120 save. Pot = −100 + 280 = 180.
+    const expenses = [exp({ date: '2026-04-15', amount: 500, category: 'fun_scott' })];
+    const [scott] = computeFunMoneySpent([pot({ startMonth: '2026-04', openingBalance: 0 })], expenses, NOW, 0.30);
+    expect(scott.savedToDate).toBe(120);   // only May's positive month fed savings
+    expect(scott.balance).toBe(580);       // 180 pot + 400 allowance − 0
+  });
+
+  it('honors a configurable split rate', () => {
+    // Start May, May under by 400, rate 50%: +200 pot, +200 save.
+    const [scott] = computeFunMoneySpent([pot({ startMonth: '2026-05', openingBalance: 0 })], [], NOW, 0.50);
+    expect(scott.savedToDate).toBe(200);
+    expect(scott.balance).toBe(600); // 200 pot + 400 allowance
   });
 });
