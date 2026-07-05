@@ -51,11 +51,17 @@ export async function connect(connectionString: string): Promise<void> {
   if (pool && activeConnectionString === connectionString) return
   if (pool) await closePool()
 
+  // Encrypt the link unless it's a local Postgres (which typically has no TLS).
+  // Remote (Supabase) carries the password + every financial row, so plaintext
+  // is unacceptable. rejectUnauthorized:false = encrypted without CA pinning —
+  // matches the maintenance scripts and won't break on Supabase's cert chain.
+  const isLocal = /@(localhost|127\.0\.0\.1|\[::1\])/.test(connectionString)
   const next = new Pool({
     connectionString,
     max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
+    ...(isLocal ? {} : { ssl: { rejectUnauthorized: false } }),
   })
 
   // Smoke the pool before we hand it out — fail fast if the URI is wrong.
