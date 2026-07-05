@@ -35,6 +35,33 @@ describe('computeGuaranteedBase', () => {
     expect(computeGuaranteedBase([exp({ date: '2020-01-05', amount: 100 })])).toBe(0);
   });
 
+  it('thin data: two semi-monthly checks spanning two calendar months → 2/mo, not base/2', () => {
+    // Regression (2026-07-04 audit): count/distinct-months gave 2/2 = 1 here, so
+    // the base came out HALVED on fresh/mid-import data. Median 15-day gap → 2/mo.
+    const base = computeGuaranteedBase([
+      paycheck('2020-01-28', 7900), paycheck('2020-02-12', 7900),
+    ]);
+    expect(base).toBe(15800);
+  });
+
+  it('monthly cadence (one check ~30 days apart) → 1/mo', () => {
+    const base = computeGuaranteedBase([
+      paycheck('2020-01-01', 6000), paycheck('2020-02-01', 6000), paycheck('2020-03-01', 6000),
+    ]);
+    expect(base).toBe(6000);
+  });
+
+  it('a lumpy variable spike between paychecks cannot skew the base (median gap)', () => {
+    // Semi-monthly base with an off-cycle RSU deposit — the median day-gap holds
+    // 2/mo even though the spike shortens one interval.
+    const base = computeGuaranteedBase([
+      paycheck('2020-01-01', 7900), paycheck('2020-01-15', 7900),
+      paycheck('2020-01-20', 40000), // off-cycle spike (not modal, tighter gap)
+      paycheck('2020-02-01', 7900), paycheck('2020-02-15', 7900),
+    ]);
+    expect(base).toBe(15800);
+  });
+
   it("only transactionType==='income' inflows count — reimbursements are excluded", () => {
     const base = computeGuaranteedBase([
       paycheck('2020-01-01', 5000), paycheck('2020-01-15', 5000),

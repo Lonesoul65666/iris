@@ -13,13 +13,19 @@
 import type { Expense } from '../types/budget';
 import { computeMonthlySpending, isCompleteMonth } from './transactionAnalysis';
 
-function monthKey(date: string | undefined): string {
-  if (!date) return '';
+// UTC epoch-ms for a 'MM/DD/YYYY' or 'YYYY-MM-DD' date, or null if unparseable.
+// Used to measure the spacing between paychecks (see computeGuaranteedBase).
+function dateMs(date: string | undefined): number | null {
+  if (!date) return null;
+  let y: string, m: string, d: string;
   if (date.includes('/')) {
-    const [m, , y] = date.split('/');
-    return m && y ? `${y}-${m.padStart(2, '0')}` : '';
+    [m, d, y] = date.split('/');
+  } else {
+    [y, m, d] = date.slice(0, 10).split('-');
   }
-  return date.slice(0, 7);
+  if (!y || !m || !d) return null;
+  const t = Date.UTC(Number(y), Number(m) - 1, Number(d));
+  return Number.isNaN(t) ? null : t;
 }
 
 /**
@@ -46,9 +52,26 @@ export function computeGuaranteedBase(expenses: Expense[]): number {
     if (c > best) { best = c; modal = k; }
   }
 
-  // Pay periods per month = paycheck count / distinct months they landed in.
-  const months = new Set(income.map((e) => monthKey(e.date)).filter(Boolean));
-  const perMonth = Math.max(1, Math.round(income.length / Math.max(1, months.size)));
+  // Pay periods per month — derived from the MEDIAN spacing between paychecks,
+  // not count/distinct-months. The old ratio quantized badly on thin/fresh data:
+  // two semi-monthly checks 15 days apart span two calendar months, so count/
+  // months = 2/2 = 1 and the base came out HALVED. Median day-gap → 30.44/gap is
+  // robust (a $26k RSU spike or a same-day double-deposit can't skew a median).
+  const times = income
+    .map((e) => dateMs(e.date))
+    .filter((t): t is number => t != null)
+    .sort((a, b) => a - b);
+  const gaps: number[] = [];
+  for (let i = 1; i < times.length; i++) {
+    const g = (times[i] - times[i - 1]) / 86400000;
+    if (g > 0) gaps.push(g);
+  }
+  let perMonth = 1;
+  if (gaps.length > 0) {
+    gaps.sort((a, b) => a - b);
+    const medianGap = gaps[Math.floor(gaps.length / 2)];
+    perMonth = Math.max(1, Math.round(30.44 / medianGap));
+  }
   return modal * perMonth;
 }
 
