@@ -3,13 +3,19 @@
 // Turns a raw Teller transaction into an Iris Expense, or decides to skip it.
 // The load-bearing rule is double-count avoidance, learned from the real data:
 //
-//   • Credit cards: PURCHASES are positive amounts. Import them. Negative
-//     amounts are payments/refunds — skip (the payment is just moving money
-//     from checking to the card; the underlying spend is already each charge).
-//   • Checking: dominated by transfers, paychecks, investment moves, and card
-//     payments — NOT spending. Import only genuine outflow bills: negative
-//     amount, and NOT a transfer/payment/deposit/interest/investment.
-//   • Savings / secondary "transfer-only" accounts: skip entirely.
+//   • Credit cards: PURCHASES are positive amounts → spend. Negative amounts are
+//     either payments (kept as VISIBLE transfers — money paying the card down,
+//     not spend) or merchant credits (kept as refunds that net their category).
+//   • Checking: genuine outflow bills are spend; transfers, card payments,
+//     deposits, interest, and non-employer inflows are kept as VISIBLE transfers
+//     (so all account movement shows) but never counted as spend; employer
+//     paychecks/reimbursements are left to the income importer; brokerage moves
+//     are tagged investment. (2026-07-05: transfers were previously DROPPED —
+//     Scott asked to see all the internal account movement, so they're kept now.)
+//   • Savings / secondary accounts: their moves show as transfers too.
+//
+// Nothing kept as transfer/investment enters the spend or income math — those
+// surfaces filter on transactionType, so double-count avoidance still holds.
 //
 // Categories are a best-effort first pass (Teller's category → Iris category);
 // the user re-categorizes in the UI and the classifier refines. Not precious.
@@ -103,6 +109,7 @@ export interface MapResult {
   transfer?: boolean           // money moving between the user's own accounts — VISIBLE but not spend
   investment?: boolean         // brokerage transfer (Fidelity, Schwab…) — money to investments, not spend
   unexpectedOutflow?: boolean  // real spend leaving a savings bucket — counts AND raises an alert
+  flowOverride?: 'inflow' | 'outflow' // force display direction (card payments credit the card = inflow)
   reason?: SkipReason
 }
 
@@ -197,9 +204,11 @@ export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount):
   if (sub === 'credit_card') {
     // Purchases are positive on cards.
     if (amt > 0) return { keep: true, amount: amt, category: bestCategory(t.description, amt, t.details?.category) }
-    // Negatives: payments skip; merchant credits import as refunds, categorized
-    // against the merchant they refund so the netting lands in the right bucket.
-    if (isCardPayment(t)) return { keep: false, reason: 'card_payment' }
+    // Negatives: card PAYMENTS are money applied to the card (a credit that
+    // reduces the balance) — keep them as VISIBLE transfers (not spend), shown
+    // as an inflow since they pay the card down. Merchant credits import as
+    // refunds, categorized against the merchant so the netting lands right.
+    if (isCardPayment(t)) return { keep: true, transfer: true, amount: Math.abs(amt), flowOverride: 'inflow' }
     return { keep: true, refund: true, amount: Math.abs(amt), category: bestCategory(t.description, amt, t.details?.category) }
   }
 
@@ -221,17 +230,29 @@ export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount):
   }
 
   if (sub === 'checking') {
-    if (amt >= 0) return { keep: false, reason: 'inflow' }
+    // Inflows: employer payroll / reimbursements are the income importer's job —
+    // skip them here so it owns those rows (both importers share teller_<id>).
+    // Everything else positive (transfers in, deposits, interest) is a VISIBLE
+    // transfer — kept so all the account movement shows, never counted as spend.
+    if (amt >= 0) {
+      const desc = t.description || ''
+      if (INCOME_EMPLOYER.test(desc) || PAYROLL_MARKER.test(desc)) return { keep: false, reason: 'inflow' }
+      return { keep: true, transfer: true, amount: amt }
+    }
     // Brokerage / investment transfers OUT of checking (Fidelity, Schwab, or a
     // Teller-categorized investment) — import as INVESTMENT so investing is real
-    // and feed-validatable, instead of dropping it. Checked BEFORE the
-    // transfer/payment skips: Teller often types these as plain 'transfer'/'ach'.
+    // and feed-validatable. Checked BEFORE the transfer/payment branch: Teller
+    // often types these as plain 'transfer'/'ach'.
     if (t.details?.category === 'investment' || isInvestmentTransfer(t.description)) {
       return { keep: true, investment: true, amount: Math.abs(amt), category: 'investing' }
     }
-    if (CHECKING_SKIP_TYPES.has(t.type)) return { keep: false, reason: 'transfer_or_payment' }
-    // Card payments / internal transfers that Teller typed as plain `ach`.
-    if (isCheckingNonSpend(t.description)) return { keep: false, reason: 'transfer_or_payment' }
+    // Card payments and account-to-account transfers OUT of checking — the money
+    // moves Scott wanted to SEE. Kept as transfers (visible, never spend) instead
+    // of dropped. Covers both Teller's transfer/payment/interest/adjustment types
+    // and the ones it mislabels as plain `ach` (matched by payee).
+    if (CHECKING_SKIP_TYPES.has(t.type) || isCheckingNonSpend(t.description)) {
+      return { keep: true, transfer: true, amount: Math.abs(amt) }
+    }
     return { keep: true, amount: Math.abs(amt), category: bestCategory(t.description, amt, t.details?.category) }
   }
 
@@ -269,11 +290,13 @@ export function tellerTxnToExpense(
   const rawAmt = Number(t.amount)
   // Transfers keep their real direction (in/out) so the account-activity view
   // mirrors the bank; refunds are inflows; everything else is an outflow.
-  const flow: 'outflow' | 'inflow' = r.refund
-    ? 'inflow'
-    : r.transfer
-      ? (rawAmt >= 0 ? 'inflow' : 'outflow')
-      : 'outflow'
+  const flow: 'outflow' | 'inflow' = r.flowOverride
+    ? r.flowOverride
+    : r.refund
+      ? 'inflow'
+      : r.transfer
+        ? (rawAmt >= 0 ? 'inflow' : 'outflow')
+        : 'outflow'
   const transactionType: 'expense' | 'refund' | 'transfer' | 'investment' = r.refund
     ? 'refund'
     : r.investment
