@@ -1,13 +1,18 @@
 // Stash math — DERIVED balances for the saving pots (taxes, trips, remodels,
-// "random shit that is due every year"). See docs/stashes-design.md (D1):
+// "random shit that is due every year"). See docs/stashes-design.md.
+//
+// COMMIT-DRIVEN balance (2026-07-05, Scott): a pot holds what you actually MOVED,
+// not what time says you should have. It does NOT auto-accrue by month.
 //
 //   balance(now) = openingBalance
-//                + monthlyContribution × monthsElapsed(startMonth → current, inclusive)
+//                + Σ committed moves for this stash (DeployConfirmations, all months)
 //                − net spend in linked categories since startMonth
 //
-// Nothing is persisted but user intent (contribution, target, categories,
-// startMonth, openingBalance) — no stored running balance to drift or clobber.
-// Pure functions, no React/IO.
+// A month only adds to the balance once you hit "commit" (a DeployConfirmation on
+// the stash's lane) — matching the "a dollar only moves once it's committed"
+// model. The old design accrued `monthlyContribution × monthsElapsed`, which
+// showed a phantom balance before anything was committed. Nothing is persisted
+// but user intent + the commit ledger. Pure functions, no React/IO.
 
 import type { Expense, Stash } from '../types/budget';
 import type { DeployConfirmation } from '../stores/budgetStore';
@@ -40,7 +45,7 @@ export function monthsElapsedInclusive(startMonth: string, now: Date = new Date(
   return Math.max(0, n);
 }
 
-export function computeStashStatus(stash: Stash, expenses: Expense[], now: Date = new Date()): StashStatus {
+export function computeStashStatus(stash: Stash, expenses: Expense[], confirms: DeployConfirmation[] = [], now: Date = new Date()): StashStatus {
   const derived = Boolean(stash.startMonth);
   if (!derived) {
     return {
@@ -56,8 +61,13 @@ export function computeStashStatus(stash: Stash, expenses: Expense[], now: Date 
   }
 
   const start = stash.startMonth!;
-  const monthsAccrued = monthsElapsedInclusive(start, now);
-  const contributed = (stash.openingBalance || 0) + stash.monthlyContribution * monthsAccrued;
+  // Commit-driven: sum the moves ACTUALLY committed to this pot (all months), not
+  // an accrual of the planned drip. monthsAccrued now = the count of committed
+  // months ("funded N months" reads as N months you actually moved money).
+  const stashConfirms = confirms.filter((c) => c.lane === stash.id);
+  const committed = stashConfirms.reduce((s, c) => s + (c.amount || 0), 0);
+  const monthsAccrued = stashConfirms.length;
+  const contributed = (stash.openingBalance || 0) + committed;
 
   let drawn = 0;
   let biggestDraw: { month: string; amount: number } | null = null;
@@ -88,8 +98,8 @@ export function computeStashStatus(stash: Stash, expenses: Expense[], now: Date 
   };
 }
 
-export function computeAllStashes(stashes: Stash[], expenses: Expense[], now: Date = new Date()): StashStatus[] {
-  return stashes.map(s => computeStashStatus(s, expenses, now));
+export function computeAllStashes(stashes: Stash[], expenses: Expense[], confirms: DeployConfirmation[] = [], now: Date = new Date()): StashStatus[] {
+  return stashes.map(s => computeStashStatus(s, expenses, confirms, now));
 }
 
 const DAYS_PER_MONTH = 30.44;
