@@ -132,8 +132,19 @@ export async function syncTellerTransactions(opts?: { force?: boolean }): Promis
   //    DOES mark it partial so the user isn't told everything is fresh) ──
   let incomeNew = 0;
   let incomeFailed = false;
-  const incRes = await fetch(`/api/teller/import-income?since=${since}`, { method: 'POST' });
-  const inc = incRes.status === 429 ? null : await incRes.json().catch(() => null);
+  // Best-effort, but the fetch itself can THROW (server mid-reload, network
+  // drop). Unwrapped, that rejected the whole sync AFTER the debounce was armed
+  // and BEFORE the summary was saved — so for 5 min every retry short-circuited
+  // on the stale prior (clean) summary and the UI lied "Already up to date ✓".
+  // Catch it, mark the sync partial (which does NOT advance the staleness clock),
+  // and persist a partial summary so the state stays honest.
+  let incRes: Response | null = null;
+  try {
+    incRes = await fetch(`/api/teller/import-income?since=${since}`, { method: 'POST' });
+  } catch {
+    incRes = null;
+  }
+  const inc = !incRes || incRes.status === 429 ? null : await incRes.json().catch(() => null);
   if (inc?.ok) {
     incomeNew = inc.inserted ?? 0;
     if (inc.through && inc.through > through) through = inc.through;
