@@ -317,6 +317,10 @@ export interface FunMoney {
   startMonth?: string;
   /** What was already banked when accrual started — user-editable seed. */
   openingBalance?: number;
+  /** Per-month allowance history so the ledger uses the budget that was actually
+   *  in effect each month (changing the allowance applies forward, not backward).
+   *  Sparse: one entry per month the budget changed. Latest entry ≤ a month wins. */
+  budgetHistory?: { month: string; amount: number }[];
   /** DERIVED: spendable banked balance (carried pot + this month's allowance − spend). */
   balance?: number;
   /** DERIVED: whole months accrued since startMonth (inclusive). */

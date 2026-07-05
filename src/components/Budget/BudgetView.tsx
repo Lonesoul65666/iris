@@ -582,6 +582,10 @@ export default function BudgetView() {
   const funSavedToDate = Math.round(funMoneyDerived.reduce((s, f) => s + (f.savedToDate ?? 0), 0));
   const funSavingsCommitted = Math.round(deployConfirms.filter(c => c.lane === 'fun-savings').reduce((s, c) => s + (c.amount || 0), 0));
   const funSavingsPending = Math.max(0, funSavedToDate - funSavingsCommitted);
+  // Don't offer to move a month's savings until the NEXT month shows activity —
+  // that's our signal the prior month has fully posted (no late/pending charges
+  // still to land). Until then the move stays grayed as "settling". (Scott.)
+  const funSavingsReady = (monthlyData.find(m => m.month === curMonthKey)?.transactionCount ?? 0) > 0;
 
   // Persist the split rate + recompute (slider).
   const updateFunSavingsRate = useCallback((rate: number) => {
@@ -1232,12 +1236,16 @@ export default function BudgetView() {
                 <span className="font-semibold text-positive">{formatCurrency(funSavedToDate)}</span> banked to savings from restraint
                 {funSavingsPending > 0 && <> · <span className="text-text-primary font-semibold">{formatCurrency(funSavingsPending)}</span> ready to move</>}
               </div>
-              {funSavingsPending > 0 && (
+              {funSavingsPending > 0 && (funSavingsReady ? (
                 <button onClick={confirmFunSavingsMoved}
                   className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-positive/20 hover:bg-positive/30 text-positive flex-shrink-0 transition-colors">
-                  Move to savings
+                  Move {formatCurrency(funSavingsPending)} to savings
                 </button>
-              )}
+              ) : (
+                <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-surface-2 text-text-muted flex-shrink-0" title="Waiting for this month's transactions to post so last month is fully resolved">
+                  Settling…
+                </span>
+              ))}
             </div>
             {/* Split slider — how much of unspent fun banks to savings */}
             <div className="mt-3 flex items-center gap-3">
@@ -2095,7 +2103,17 @@ export default function BudgetView() {
           {funMoneyDerived.map((fm) => {
             const i = funMoney.findIndex(f => (f.earnerId ?? f.person) === (fm.earnerId ?? fm.person));
             const updateFM = async (field: string, value: number) => {
-              const updated = funMoney.map((f, idx) => idx === i ? { ...f, [field]: value } : f);
+              const updated = funMoney.map((f, idx) => {
+                if (idx !== i) return f;
+                const next = { ...f, [field]: value };
+                // Record the allowance for THIS month so the ledger uses the right
+                // budget per month (change applies forward, not retroactively).
+                if (field === 'monthlyBudget') {
+                  const hist = (f.budgetHistory ?? []).filter(h => h.month !== curMonthKey);
+                  next.budgetHistory = [...hist, { month: curMonthKey, amount: value }].sort((a, b) => a.month.localeCompare(b.month));
+                }
+                return next;
+              });
               setFunMoney(updated);
               await saveFunMoney(updated);
             };
