@@ -3,9 +3,19 @@ import { getAllAccounts, saveAccount, getEquityProfile, saveEquityProfile, getUs
 import { getBudgetBuckets, saveBudgetBuckets, getSinkingFunds, saveSinkingFunds, getFunMoney, saveFunMoney, getPaycheck, savePaycheck, getExpenses, saveExpense, getCustomCategories, saveCustomCategory } from '../../stores/budgetStore';
 import { getActionItems, saveAllActionItems, getMerchantMappings, saveMerchantMapping } from '../../stores/actionStore';
 
+// Merge incoming rows onto current by key: backup overwrites matches, but rows
+// only in the current DB are KEPT. Lets restore use the REPLACE savers without
+// them deleting live data an older/smaller backup happens to omit.
+function mergeByKey<T>(current: T[], incoming: T[], keyOf: (x: T) => string): T[] {
+  const map = new Map(current.map(x => [keyOf(x), x]));
+  for (const x of incoming) map.set(keyOf(x), x);
+  return [...map.values()];
+}
+
 export default function DataBackup() {
   const [status, setStatus] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [confirmRestore, setConfirmRestore] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleExport = async () => {
@@ -72,10 +82,22 @@ export default function DataBackup() {
       if (data.investments) {
         for (const inv of data.investments) await saveMonthlyInvestment(inv);
       }
-      // Restore budget
-      if (data.buckets) await saveBudgetBuckets(data.buckets);
-      if (data.sinkingFunds) await saveSinkingFunds(data.sinkingFunds);
-      if (data.funMoney) await saveFunMoney(data.funMoney);
+      // Restore budget — MERGE (never delete): these savers use REPLACE
+      // semantics (delete rows absent from the input), so an older/smaller
+      // backup would silently wipe live buckets/stashes/pots. Union the backup
+      // onto current first so restore only adds/overwrites, never removes.
+      if (data.buckets) {
+        const merged = mergeByKey(await getBudgetBuckets(), data.buckets, (b: any) => String(b.category));
+        await saveBudgetBuckets(merged);
+      }
+      if (data.sinkingFunds) {
+        const merged = mergeByKey(await getSinkingFunds(), data.sinkingFunds, (f: any) => String(f.id));
+        await saveSinkingFunds(merged);
+      }
+      if (data.funMoney) {
+        const merged = mergeByKey(await getFunMoney(), data.funMoney, (f: any) => String(f.earnerId ?? f.person));
+        await saveFunMoney(merged);
+      }
       if (data.paycheck) await savePaycheck(data.paycheck);
       // Restore expenses
       if (data.expenses) {
@@ -106,7 +128,7 @@ export default function DataBackup() {
     <div className="glass-card p-6">
       <h3 className="font-semibold text-text-primary mb-2">Data Backup & Restore</h3>
       <p className="text-xs text-text-muted mb-4">
-        Your data lives in this browser only. Export a backup to protect against browser resets, or restore from a previous backup.
+        Export a JSON snapshot of your data (accounts, budget, transactions, settings) to keep a safe copy. Restore <strong className="text-text-secondary">merges</strong> a backup into your current data — it adds and overwrites, but never deletes rows you have now.
       </p>
       <div className="flex gap-3">
         <button onClick={handleExport}
@@ -114,9 +136,21 @@ export default function DataBackup() {
           Export Backup
         </button>
         <input type="file" ref={fileRef} accept=".json" className="hidden" onChange={handleImport} />
-        <button onClick={() => fileRef.current?.click()} disabled={importing}
-          className="px-4 py-2 bg-surface-3 hover:bg-surface-4 rounded-lg text-sm text-text-secondary transition-colors disabled:opacity-50">
-          {importing ? 'Importing...' : 'Restore from Backup'}
+        <button
+          onClick={() => {
+            if (!confirmRestore) {
+              setConfirmRestore(true);
+              setTimeout(() => setConfirmRestore(false), 4000);
+              return;
+            }
+            setConfirmRestore(false);
+            fileRef.current?.click();
+          }}
+          disabled={importing}
+          className={`px-4 py-2 rounded-lg text-sm transition-colors disabled:opacity-50 ${
+            confirmRestore ? 'bg-warning/20 border border-warning/50 text-warning font-semibold' : 'bg-surface-3 hover:bg-surface-4 text-text-secondary'
+          }`}>
+          {importing ? 'Importing...' : confirmRestore ? 'Pick a backup file — merges into current data' : 'Restore from Backup'}
         </button>
       </div>
       {status && (
