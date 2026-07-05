@@ -65,18 +65,21 @@ export async function saveCollectionItem<T>(
  *  gone. saveCollection alone is upsert-only — a row the user deleted in the
  *  UI would survive in Postgres and resurrect on the next load (found by the
  *  2026-06-11 pre-paint audit: deleted stashes came back). Also handles
- *  deleting the LAST row, which saveCollection's empty-early-return never
- *  reached the API for. */
+ *  deleting the LAST row (empty `rows` clears the collection).
+ *
+ *  One atomic server call (/replace) — the old list→save→N-deletes sequence was
+ *  un-transactioned: a mid-sequence drop resurrected deleted rows and two
+ *  concurrent tabs lost-update-clobbered (2026-07-04 swarm audit). */
 export async function replaceCollection<T>(
   name: string,
   rows: T[],
   keyOf: (row: T) => string,
 ): Promise<void> {
-  const existing = await api<ListItemEnvelope<CollectionItem<unknown>>>(`/api/collections/${encodeURIComponent(name)}/list`)
-  const keep = new Set(rows.map(keyOf))
-  const stale = existing.items.map((i) => i.key).filter((k) => !keep.has(k))
-  if (rows.length > 0) await saveCollection(name, rows, keyOf)
-  for (const k of stale) await deleteCollectionKey(name, k)
+  const items = rows.map((row) => ({ key: keyOf(row), data: row }))
+  await api<OkEnvelope>(`/api/collections/${encodeURIComponent(name)}/replace`, {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  })
 }
 
 /** Delete one row by key. */

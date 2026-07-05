@@ -19,7 +19,7 @@ import { handleSettingsList, handleSettingsGet, handleSettingsSave, handleSettin
 import { handleIncomeSourcesList, handleIncomeSourcesSave, handleIncomeSourcesSaveBatch, handleIncomeSourcesDelete } from './api-handlers/income-sources.ts'
 import { handleExpensesList, handleExpensesSave, handleExpensesDelete } from './api-handlers/expenses.ts'
 import { handleExpensesRecategorize } from './api-handlers/recategorize.ts'
-import { handleCollectionsList, handleCollectionsSave, handleCollectionsDelete } from './api-handlers/collections.ts'
+import { handleCollectionsList, handleCollectionsSave, handleCollectionsReplace, handleCollectionsDelete } from './api-handlers/collections.ts'
 import { handleExportFull } from './api-handlers/export.ts'
 import { handleAuditList, handleAuditAppend, handleAuditDelete } from './api-handlers/audit.ts'
 import { handleConnectorsList, handleConnectorsSave, handleConnectorsDelete } from './api-handlers/connectors.ts'
@@ -151,6 +151,8 @@ export function registerIrisRoutes(use: UseFn): void {
       await handleCollectionsList(req, res, name)
     } else if (action === 'save') {
       await handleCollectionsSave(req, res, name)
+    } else if (action === 'replace') {
+      await handleCollectionsReplace(req, res, name)
     } else if (action === 'delete') {
       await handleCollectionsDelete(req, res, name)
     } else {
