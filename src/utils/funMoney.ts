@@ -11,6 +11,7 @@
 
 import type { Expense, ExpenseCategory, FunMoney, Earner } from '../types/budget';
 import { computeMonthlySpending, currentMonthKey } from './transactionAnalysis';
+import { monthsElapsedInclusive } from './stashMath';
 
 /** Legacy category names predate the couples model and literally encode the
  *  household's first names. The mapping lives HERE, in seed/resolve code only —
@@ -37,7 +38,7 @@ export function funCategoryFor(name: string): ExpenseCategory {
 
 /** One FunMoney pot per earner. Budgets start at 0 — the pot surfaces with a
  *  "set a budget" nudge rather than inventing a number the household never chose. */
-export function seedFunMoneyFromEarners(earners: Earner[]): FunMoney[] {
+export function seedFunMoneyFromEarners(earners: Earner[], now: Date = new Date()): FunMoney[] {
   return earners.map(e => ({
     person: e.name,
     earnerId: e.id,
@@ -45,12 +46,14 @@ export function seedFunMoneyFromEarners(earners: Earner[]): FunMoney[] {
     emoji: LEGACY_FUN_EMOJI[slug(e.name)] ?? '🎯',
     monthlyBudget: 0,
     monthlySpent: 0,
+    startMonth: currentMonthKey(now),
+    openingBalance: 0,
   }));
 }
 
 /** Backfill the new identity fields on legacy rows (matched by person name)
  *  without touching budgets. Idempotent. */
-export function linkFunMoneyToEarners(funMoney: FunMoney[], earners: Earner[]): FunMoney[] {
+export function linkFunMoneyToEarners(funMoney: FunMoney[], earners: Earner[], now: Date = new Date()): FunMoney[] {
   return funMoney.map(f => {
     const match = earners.find(e => slug(e.name) === slug(f.person));
     return {
@@ -58,6 +61,10 @@ export function linkFunMoneyToEarners(funMoney: FunMoney[], earners: Earner[]): 
       earnerId: f.earnerId ?? match?.id,
       category: f.category ?? funCategoryFor(f.person),
       emoji: f.emoji ?? LEGACY_FUN_EMOJI[slug(f.person)] ?? '🎯',
+      // Anchor accrual to now on first sight (persisted by the sync save), so the
+      // banked balance doesn't reset each month. Legacy rows start banking today.
+      startMonth: f.startMonth ?? currentMonthKey(now),
+      openingBalance: f.openingBalance ?? 0,
     };
   });
 }
@@ -70,10 +77,25 @@ export function computeFunMoneySpent(
   expenses: Expense[],
   now: Date = new Date(),
 ): FunMoney[] {
-  const mtd = computeMonthlySpending(expenses).find(m => m.month === currentMonthKey(now));
+  const monthly = computeMonthlySpending(expenses);
+  const curKey = currentMonthKey(now);
+  const mtd = monthly.find(m => m.month === curKey);
   return funMoney.map(f => {
     const cat = f.category ?? funCategoryFor(f.person);
-    const spent = mtd?.byCategory[cat] ?? 0;
-    return { ...f, monthlySpent: Math.round(spent * 100) / 100 };
+    const monthlySpent = Math.round((mtd?.byCategory[cat] ?? 0) * 100) / 100;
+
+    // Accrued (banked) balance: every month adds the allowance, spend draws it
+    // down, the rest banks. Overspend digs a hole (negative = into future fun).
+    // startMonth is normally set by linkFunMoneyToEarners; fall back to now.
+    const start = f.startMonth ?? curKey;
+    const monthsAccrued = monthsElapsedInclusive(start, now);
+    const spentSinceStart = monthly
+      .filter(m => m.month >= start && m.month <= curKey)
+      .reduce((s, m) => s + (m.byCategory[cat] ?? 0), 0);
+    const balance = Math.round(
+      ((f.openingBalance ?? 0) + f.monthlyBudget * monthsAccrued - spentSinceStart) * 100,
+    ) / 100;
+
+    return { ...f, monthlySpent, balance, monthsAccrued };
   });
 }

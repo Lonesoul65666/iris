@@ -311,6 +311,16 @@ export interface FunMoney {
   monthlyBudget: number;
   /** DERIVED: current-calendar-month spend in `category`. Never hand-edited. */
   monthlySpent: number;
+  // ── Accrual (2026-07-05): unused fun money BANKS month over month instead of
+  //    resetting — it's do-whatever-you-want money you can save up or blow. ──
+  /** Month accrual started ('YYYY-MM'). Anchors the banked balance; set once. */
+  startMonth?: string;
+  /** What was already banked when accrual started — user-editable seed. */
+  openingBalance?: number;
+  /** DERIVED: banked balance = opening + monthlyBudget×monthsAccrued − spend since start. */
+  balance?: number;
+  /** DERIVED: whole months accrued since startMonth (inclusive). */
+  monthsAccrued?: number;
 }
 
 export interface PaycheckBreakdown {

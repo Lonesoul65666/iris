@@ -27,6 +27,7 @@ import BucketGroupsManager from './BucketGroupsManager';
 import BudgetCompareHelper from './BudgetCompareHelper';
 import MonthlyReviewCard from './MonthlyReviewCard';
 import { computeBudgetComparison } from '../../utils/budgetComparison';
+import { computeFunMoneySpent } from '../../utils/funMoney';
 import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, saveMerchantMapping } from '../../stores/actionStore';
 import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, getCategoryLabel, isRealExpense, isCompleteMonth, currentMonthKey, emptyMonthlySpending, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
@@ -562,6 +563,10 @@ export default function BudgetView() {
   // Comparative planning: last complete month's actuals vs the plan, + rebalance
   // moves. Powers the edit-mode helper AND grounds the AI advisor's numbers.
   const budgetComparison = useMemo(() => computeBudgetComparison(expenses, buckets), [expenses, buckets]);
+
+  // Fun money with a live banked balance (accrues month over month). Derived for
+  // display; edits still operate on the source `funMoney` state.
+  const funMoneyDerived = useMemo(() => computeFunMoneySpent(funMoney, expenses), [funMoney, expenses]);
 
   // Adapt ONE category's target toward reality (meet-in-the-middle suggestion).
   // No cross-bucket transfers — each category owns its own number.
@@ -1141,6 +1146,38 @@ export default function BudgetView() {
       {/* Iris's Take — the AI advisor voice on the month (overview only). */}
       {section === 'overview' && (
         <MonthlyReviewCard expenses={expenses} buckets={buckets} paycheck={paycheck} />
+      )}
+
+      {/* Fun Money — banked balances, visible daily (accrues month to month). */}
+      {section === 'overview' && funMoneyDerived.some(f => f.monthlyBudget > 0 || (f.balance ?? 0) !== 0) && (
+        <div className="glass-card p-5 mb-4">
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="text-base font-bold text-text-primary">Fun Money</h2>
+            <span className="text-[11px] text-text-muted">do-whatever-you-want money · banks month to month</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {funMoneyDerived.map(fm => {
+              const bal = fm.balance ?? 0;
+              const neg = bal < 0;
+              const pct = fm.monthlyBudget > 0 ? Math.min(100, (fm.monthlySpent / fm.monthlyBudget) * 100) : 0;
+              return (
+                <div key={fm.earnerId ?? fm.person} className="rounded-xl border border-glass-border bg-white/[0.02] p-4">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-sm font-semibold text-text-primary">{fm.emoji} {fm.person}</span>
+                    <span className="text-[10px] text-text-muted uppercase tracking-wider">{neg ? 'over' : 'banked'}</span>
+                  </div>
+                  <div className={`text-2xl font-black mono-num ${neg ? 'text-negative' : 'text-positive'}`}>
+                    {neg ? '−' : ''}{formatCurrency(Math.abs(bal))}
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-1.5 mt-2 mb-1">
+                    <div className="h-1.5 rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="text-[10px] text-text-muted">{formatCurrency(fm.monthlySpent)} of {formatCurrency(fm.monthlyBudget)} spent this month</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {/* Month navigation lives in the Overview tab card now (consolidated). */}
@@ -1981,18 +2018,21 @@ export default function BudgetView() {
       {/* Fun Money */}
       <div className="glass-card p-6">
         <h2 className="text-lg font-semibold text-text-primary mb-2">Fun Money</h2>
-        <p className="text-xs text-text-muted mb-4">No-judgment spending. Each person gets their own budget. This is what stops the money fights.</p>
+        <p className="text-xs text-text-muted mb-4">No-judgment, do-whatever-you-want money. Each person gets their own — and unused <strong className="text-text-secondary">banks month to month</strong>, so you can save it up or blow it. This is what stops the money fights.</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {funMoney.map((fm, i) => {
+          {funMoneyDerived.map((fm) => {
+            const i = funMoney.findIndex(f => (f.earnerId ?? f.person) === (fm.earnerId ?? fm.person));
             const updateFM = async (field: string, value: number) => {
               const updated = funMoney.map((f, idx) => idx === i ? { ...f, [field]: value } : f);
               setFunMoney(updated);
               await saveFunMoney(updated);
             };
+            const balance = fm.balance ?? 0;
+            const negative = balance < 0;
             return (
               <div key={fm.earnerId ?? fm.person} className="p-4 rounded-xl bg-white/[0.03] border border-glass-border group">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-semibold text-text-primary">{fm.person}</span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold text-text-primary">{fm.emoji} {fm.person}</span>
                   <div className="flex items-center gap-0.5">
                     <span className="text-accent font-bold">$</span>
                     <input type="number" step="0.01" value={fm.monthlyBudget}
@@ -2002,13 +2042,30 @@ export default function BudgetView() {
                     <span className="text-accent font-bold">/mo</span>
                   </div>
                 </div>
+                {/* Banked balance — the headline now that it accrues */}
+                <div className={`text-2xl font-black mono-num ${negative ? 'text-negative' : 'text-positive'}`}>
+                  {negative ? '−' : ''}{formatCurrency(Math.abs(balance))}
+                </div>
+                <div className="text-[10px] text-text-muted mb-2">
+                  {negative ? 'over — dipping into next month' : 'banked & ready to blow'}
+                  {fm.monthsAccrued ? ` · ${fm.monthsAccrued} mo` : ''}
+                </div>
                 <div className="w-full bg-white/10 rounded-full h-2 mb-1">
                   <div className="h-2 rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-all" style={{ width: `${fm.monthlyBudget > 0 ? Math.min(100, (fm.monthlySpent / fm.monthlyBudget) * 100) : 0}%` }} />
                 </div>
                 <div className="flex justify-between text-xs text-text-muted items-center">
                   {/* Spent is derived from this month's transactions in the pot's category — not editable */}
                   <span>{formatCurrency(fm.monthlySpent)} spent this month</span>
-                  <span>{formatCurrency(fm.monthlyBudget - fm.monthlySpent)} remaining</span>
+                  <span>{formatCurrency(fm.monthlyBudget)}/mo allowance</span>
+                </div>
+                {/* Opening balance — what was already banked when accrual started */}
+                <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-glass-border/40 text-[11px] text-text-muted">
+                  <span>Already banked when tracking started</span>
+                  <span className="flex items-center gap-0.5">$
+                    <input type="number" value={fm.openingBalance ?? 0}
+                      onChange={e => updateFM('openingBalance', Number(e.target.value) || 0)}
+                      className="w-16 bg-transparent border border-glass-border focus:border-accent/50 rounded px-1 py-0.5 text-right outline-none" />
+                  </span>
                 </div>
               </div>
             );
