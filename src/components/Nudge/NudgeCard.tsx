@@ -52,6 +52,8 @@ export interface NudgeCardProps {
   readOnly?: boolean;
   /** Replaces the emoji icon with a custom node (e.g. an achievement Medallion). */
   iconOverride?: ReactNode;
+  /** Override the snooze button label (default "Remind me later" / "Got it" for one-shots). */
+  snoozeLabel?: string;
 }
 
 export default function NudgeCard({
@@ -62,9 +64,10 @@ export default function NudgeCard({
   onDismissForever,
   readOnly = false,
   iconOverride,
+  snoozeLabel,
 }: NudgeCardProps) {
   const s = severityStyles(nudge.severity);
-  const snoozeLabel = nudge.oneShot ? 'Got it' : 'Remind me later';
+  const resolvedSnoozeLabel = snoozeLabel ?? (nudge.oneShot ? 'Got it' : 'Remind me later');
   const { state: why, fetchWhy } = useNudgeWhy(nudge);
   return (
     <div
@@ -115,7 +118,7 @@ export default function NudgeCard({
                   onClick={onSnooze}
                   className="text-xs text-text-muted hover:text-accent transition-colors"
                 >
-                  {snoozeLabel}
+                  {resolvedSnoozeLabel}
                 </button>
               )}
               {onDismissForever && (

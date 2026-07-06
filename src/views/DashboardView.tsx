@@ -22,6 +22,7 @@ import TrophyWall from '../components/Achievements/TrophyWall';
 import Medallion from '../components/Achievements/Medallion';
 import { achievementById } from '../utils/achievements';
 import DashSection from '../components/ui/DashSection';
+import { sectionFromBriefingId } from '../utils/weeklyBriefing';
 import { syncHealthNudges } from '../utils/syncHealth';
 import { getLastSyncSummary, hoursSinceLastSync } from '../lib/syncTellerTransactions';
 import { dismissSettingKey, isNudgeActive, type Nudge, type DismissState } from '../utils/nudgeEngine';
@@ -61,6 +62,7 @@ export default function DashboardView() {
     rawExpenses,
     dashFunMoney,
     celebrationNudges, dismissCelebration, achievementStates,
+    weeklyBriefing, dismissBriefingItem, whatsNew, dismissWhatsNew, setBudgetSection,
     monthToDate, safeToSpend,
     setView,
     profile,
@@ -264,6 +266,13 @@ export default function DashboardView() {
           onDismissForever={() => void dismissSyncNudge(n, true)} />
       ))}
 
+      {/* What's New — one-time card after an update (version-gated). "Got it"
+          persists the seen version so it never fires twice. Silent otherwise. */}
+      {whatsNew && (
+        <NudgeCard key={whatsNew.id} nudge={whatsNew}
+          onDismissForever={() => void dismissWhatsNew()} />
+      )}
+
       {/* Achievement unlocks — the "FUCK YEAH" moment. Fresh unlocks this session
           surface as celebration cards up top (capped so a first-run batch doesn't
           bury the dashboard). Dismissing is cosmetic — the unlock is permanent. */}
@@ -276,6 +285,28 @@ export default function DashboardView() {
             onDismissForever={() => dismissCelebration(n.id)} />
         );
       })}
+
+      {/* ════ THIS WEEK'S FOCUS ═══════════════════════════════════════════
+          The 1–3 frozen action items for the week — templated (zero-AI) and
+          grounded in real numbers. Tapping deep-links to the exact Budget tab;
+          the LLM "weigh in" lives there (Ask Iris), user-initiated. */}
+      {weeklyBriefing.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🎯</span>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-text-secondary">This Week's Focus</h2>
+          </div>
+          {weeklyBriefing.map((n, i) => (
+            <NudgeCard key={n.id} nudge={n} index={i} snoozeLabel="Dismiss"
+              onPrimary={() => {
+                const section = sectionFromBriefingId(n.id);
+                if (section) setBudgetSection(section);
+                setView('budget');
+              }}
+              onSnooze={() => void dismissBriefingItem(n.id)} />
+          ))}
+        </div>
+      )}
 
       {/* ════ HERO ═══════════════════════════════════════════════════════ */}
       <div className="glass-card relative overflow-hidden">
