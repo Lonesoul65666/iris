@@ -5,6 +5,8 @@ import { formatCurrency } from '../../utils/format';
 interface GoalTrackerProps {
   sinkingFunds: SinkingFund[];
   monthlyInvestmentAmount: number;
+  /** When true, drop the outer card + own title — a DashSection provides them. */
+  bare?: boolean;
 }
 
 /** Calculate months between now and a future date. Returns 0 if date is in the past. */
@@ -212,6 +214,7 @@ function GoalCard({ goal }: { goal: GoalCardData }) {
 export default function GoalTracker({
   sinkingFunds,
   monthlyInvestmentAmount,
+  bare = false,
 }: GoalTrackerProps) {
   // Only the user's real stashes (Have-To's / Want-To's) — no synthesized goals.
   // An emergency fund, if wanted, is a real stash the user owns and can edit.
@@ -226,10 +229,10 @@ export default function GoalTracker({
   const goalsComplete = goals.filter((g) => g.percent >= 100).length;
 
   return (
-    <div className="glass-card p-6 space-y-5">
+    <div className={bare ? 'space-y-5' : 'glass-card p-6 space-y-5'}>
       {/* Card header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-text-primary text-lg font-semibold">Have To's / Want To's</h2>
+        {!bare && <h2 className="text-text-primary text-lg font-semibold">Have To's / Want To's</h2>}
         <div className="flex items-center gap-3 text-xs text-text-muted">
           <span>
             {goalsComplete}/{goals.length} complete

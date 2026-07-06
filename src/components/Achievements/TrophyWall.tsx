@@ -20,9 +20,11 @@ interface Props {
   states: AchievementState[];
   /** Collapsed by default on the dashboard; expandable. */
   defaultOpen?: boolean;
+  /** When true, drop the outer card + own title (a DashSection provides them). */
+  bare?: boolean;
 }
 
-export default function TrophyWall({ states, defaultOpen = false }: Props) {
+export default function TrophyWall({ states, defaultOpen = false, bare = false }: Props) {
   const [showAll, setShowAll] = useState(defaultOpen);
   const summary = useMemo(() => achievementSummary(states), [states]);
 
@@ -42,15 +44,17 @@ export default function TrophyWall({ states, defaultOpen = false }: Props) {
   const pct = summary.total ? Math.round((summary.earned / summary.total) * 100) : 0;
 
   return (
-    <div className="glass-card p-5">
+    <div className={bare ? '' : 'glass-card p-5'}>
       <div className="flex items-center justify-between mb-1 gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-2xl">🏆</span>
-          <div>
-            <h2 className="text-base font-bold text-text-primary leading-tight">Trophy Room</h2>
-            <p className="text-[11px] text-text-muted">{summary.earned} of {summary.total} unlocked · {pct}%</p>
+        {!bare && (
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-2xl">🏆</span>
+            <div>
+              <h2 className="text-base font-bold text-text-primary leading-tight">Trophy Room</h2>
+              <p className="text-[11px] text-text-muted">{summary.earned} of {summary.total} unlocked · {pct}%</p>
+            </div>
           </div>
-        </div>
+        )}
         <div className="flex items-center gap-1.5 text-[10px] font-semibold flex-shrink-0">
           {TIER_ORDER.map((t) => (
             <span key={t} className={`px-1.5 py-0.5 rounded-full border ${TIER_STYLE[t].ring} ${TIER_STYLE[t].text}`}>

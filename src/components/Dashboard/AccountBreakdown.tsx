@@ -50,7 +50,7 @@ interface RawTx {
  *   • Work spend IS included — the goal is "what hit this card", not personal
  *     budget. Work charges get a 💼 marker.
  */
-export default function AccountBreakdown() {
+export default function AccountBreakdown({ bare = false }: { bare?: boolean } = {}) {
   const { rawExpenses, accounts, setView } = useAppData();
   // Which account's full-activity drawer is open (null = closed).
   const [openSource, setOpenSource] = useState<string | null>(null);
@@ -115,14 +115,14 @@ export default function AccountBreakdown() {
   const activeAccounts = stats.filter(s => s.recent.length > 0).length;
 
   return (
-    <div className="glass-card p-6 relative overflow-hidden group">
+    <div className={bare ? 'relative overflow-hidden group' : 'glass-card p-6 relative overflow-hidden group'}>
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
       {/* Header — matches the "Have To's / Want To's" section for continuity:
           bold text-lg title, muted subtitle, accent (violet) link. */}
       <div className="flex items-start justify-between mb-5">
         <div className="min-w-0">
-          <h2 className="text-text-primary text-lg font-semibold">Spend by account</h2>
+          {!bare && <h2 className="text-text-primary text-lg font-semibold">Spend by account</h2>}
           <p className="text-xs text-text-muted mt-0.5">
             <span className="mono-num text-text-secondary font-semibold">{formatCurrency(cycleTotalAll)}</span>
             {' · '}{cycle ? monthLabel(cycle) : ''} · {activeAccounts} active
