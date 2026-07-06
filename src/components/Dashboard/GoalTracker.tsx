@@ -161,15 +161,12 @@ function GoalCard({ goal }: { goal: GoalCardData }) {
       </div>
 
       {/* Progress bar */}
-      <div className="w-full h-2 rounded-full bg-white/5 overflow-hidden">
+      <div className="track-well h-2 rounded-full overflow-hidden">
         <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
+          className={`h-full rounded-full transition-all duration-700 ease-out ${goal.percent >= 100 ? 'track-fill-positive' : ''}`}
           style={{
             width: `${goal.percent}%`,
-            background:
-              goal.percent >= 100
-                ? '#22c55e'
-                : `linear-gradient(90deg, ${goal.color}cc, ${goal.color})`,
+            background: goal.percent >= 100 ? undefined : `linear-gradient(90deg, ${goal.color}cc, ${goal.color})`,
           }}
         />
       </div>
@@ -253,7 +250,7 @@ export default function GoalTracker({
             {formatCurrency(totalTarget)} total target
           </span>
         </div>
-        <div className="w-full h-2.5 rounded-full bg-white/5 overflow-hidden">
+        <div className="track-well h-2.5 rounded-full overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-700 ease-out"
             style={{
