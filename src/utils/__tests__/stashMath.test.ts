@@ -3,6 +3,7 @@ import {
   monthsElapsedInclusive, computeStashStatus, totalStashContributions,
   stashAllocationsByCategory, stashesConfigured, seedDefaultStashes, applyStashLaneConfig,
   committedReserves, nextDueDate, computeStashForecast, requiredMonthlyForGoal, computeShortfall,
+  stashExistedBy,
 } from '../stashMath';
 import { formatDuration } from '../format';
 import type { DeployConfirmation } from '../../stores/budgetStore';
@@ -37,6 +38,24 @@ function stash(partial: Partial<Stash>): Stash {
 function commit(month: string, lane: string, amount: number): DeployConfirmation {
   return { month, lane, amount, confirmedAt: `${month}-01T00:00:00Z` };
 }
+
+describe('stashExistedBy (creation-forward visibility)', () => {
+  const july = stash({ id: 's-july', startMonth: '2026-07' });
+
+  it('hides a stash in a month before it started accruing', () => {
+    expect(stashExistedBy(july, '2026-06')).toBe(false);
+  });
+  it('shows a stash in its start month and after', () => {
+    expect(stashExistedBy(july, '2026-07')).toBe(true);
+    expect(stashExistedBy(july, '2026-08')).toBe(true);
+  });
+  it('treats a legacy stash with no startMonth as always-existing', () => {
+    expect(stashExistedBy(stash({ startMonth: undefined }), '2026-01')).toBe(true);
+  });
+  it('shows everything for the empty (avg) month', () => {
+    expect(stashExistedBy(july, '')).toBe(true);
+  });
+});
 
 // configureStashLanes mutates the module registry — restore defaults so other
 // tests in this file see legacy behavior.

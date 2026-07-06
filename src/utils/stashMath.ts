@@ -45,6 +45,18 @@ export function monthsElapsedInclusive(startMonth: string, now: Date = new Date(
   return Math.max(0, n);
 }
 
+/** Did this stash exist by `month` ('YYYY-MM')? A stash is anchored by its
+ *  startMonth (when accrual began — the creation proxy), so it should never
+ *  appear in a month-scoped view (e.g. paging back the commit run) BEFORE it
+ *  existed. Legacy pots with no startMonth are treated as always-existing — we
+ *  can't know their creation date and hiding real data is worse than showing it.
+ *  An empty month (the 'avg' overview, not a specific past month) → true. */
+export function stashExistedBy(stash: Stash, month: string): boolean {
+  if (!month) return true;
+  if (!stash.startMonth) return true;
+  return stash.startMonth <= month;
+}
+
 export function computeStashStatus(stash: Stash, expenses: Expense[], confirms: DeployConfirmation[] = [], now: Date = new Date()): StashStatus {
   const derived = Boolean(stash.startMonth);
   if (!derived) {
