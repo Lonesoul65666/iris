@@ -151,11 +151,6 @@ function didForward(current: boolean, wasAtBaseline: boolean | undefined): Achie
 // Cross-cutting derivations used by several achievements.
 const bestFunStreak = (c: AchievementContext) => c.game.fun.reduce((m, f) => Math.max(m, f.streak.current), 0);
 const baseBestFunStreak = (b: GamificationBaseline | null) => (b ? Math.max(0, ...Object.values(b.funStreaks), 0) : null);
-const funLead = (c: AchievementContext) => {
-  if (c.game.fun.length < 2) return 0;
-  const s = c.game.fun.map((f) => f.streak.current).sort((a, z) => z - a);
-  return s[0] - s[1];
-};
 const maxFunBalance = (c: AchievementContext) => c.funMoney.reduce((m, f) => Math.max(m, f.balance ?? 0), 0);
 const maxSavedToDate = (c: AchievementContext) => c.funMoney.reduce((m, f) => Math.max(m, f.savedToDate ?? 0), 0);
 const householdSaved = (c: AchievementContext) => c.scorecard.cumulativeBanked + c.funMoney.reduce((s, f) => s + (f.savedToDate ?? 0), 0);
@@ -332,19 +327,9 @@ export const ACHIEVEMENTS: Achievement[] = [
       return { earned: both, progress: c.game.fun.length ? c.game.fun.filter((f) => f.streak.active).length / c.game.fun.length : 0 };
     },
   },
-  {
-    id: 'h2h-lead-1', name: 'Taking the Lead', description: 'Pulled ahead in the head-to-head fun-money streak.',
-    hypeCopy: 'You are up on your partner. Enjoy the lead — they are reading this too, and they are pissed.',
-    icon: '🥇', tier: 'bronze', category: 'couples',
-    evaluate: (c) => ({ earned: funLead(c) >= 1, progress: funLead(c) >= 1 ? 1 : 0 }),
-  },
-  {
-    id: 'h2h-lead-3', name: 'Ruthless', description: 'Held a head-to-head fun-money lead of 3+ months.',
-    hypeCopy: 'Three-month lead and climbing. At this point you are not competing, you are bullying.',
-    icon: '😈', tier: 'silver', category: 'couples',
-    evaluate: (c) => threshold(funLead(c), 3, null, `+${funLead(c)}`),
-  },
-  // ── cooperative "we did it together" (Scott wants coop > competitive) ──
+  // ── cooperative "we did it together" (Scott wants coop, not competitive —
+  // the head-to-head lead badges were dropped 2026-07-06 for this reason;
+  // the fun-money h2h box itself stays, it just doesn't earn a trophy) ──
   {
     id: 'same-page', name: 'Same Page', description: 'Both of you banked fun money in a month you lived under base.',
     hypeCopy: 'Both of you under on fun money AND the household under base — same month, same team. That is the whole damn point.',

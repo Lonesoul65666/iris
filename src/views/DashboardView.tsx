@@ -18,9 +18,8 @@ import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
 import { computeScorecard } from '../utils/savingsScorecard';
 import { computeGameState, gameGreeting } from '../utils/gamification';
 import NudgeCard from '../components/Nudge/NudgeCard';
-import TrophyWall from '../components/Achievements/TrophyWall';
 import Medallion from '../components/Achievements/Medallion';
-import { achievementById } from '../utils/achievements';
+import { achievementById, achievementSummary } from '../utils/achievements';
 import DashSection from '../components/ui/DashSection';
 import CashflowCalendar from '../components/Budget/CashflowCalendar';
 import SubscriptionRadar from '../components/Budget/SubscriptionRadar';
@@ -674,13 +673,32 @@ export default function DashboardView() {
           above where the money's spent. Not front-and-center by design. ═══ */}
       <OnTargetEarnings expenses={rawExpenses} />
 
-      {/* ════ TROPHY ROOM — the permanent achievement wall (collapsed by default) ═ */}
-      {achievementStates.length > 0 && (
-        <DashSection title="Trophy Room" icon="🏆"
-          summary={`${achievementStates.filter(s => s.earned).length} of ${achievementStates.length} unlocked`}>
-          <TrophyWall states={achievementStates} bare defaultOpen />
-        </DashSection>
-      )}
+      {/* ════ ACHIEVEMENTS TEASER — the wall now lives on its own page; this is
+          just today's status + a way in. Celebration nudges (fresh unlocks)
+          still surface up top regardless of where this card points. ═══ */}
+      {achievementStates.length > 0 && (() => {
+        const summary = achievementSummary(achievementStates);
+        const nextUp = achievementStates
+          .filter((s) => !s.earned && !s.grandfathered && !s.achievement.secret)
+          .sort((a, b) => b.progress - a.progress)[0];
+        return (
+          <DataCard title="Achievements" icon="🏆"
+            subtitle={`${summary.earned} of ${summary.total} unlocked`}
+            cta="View all →" onClick={() => setView('achievements')} compact>
+            {nextUp ? (
+              <div className="flex items-center gap-2.5">
+                <Medallion achievement={nextUp.achievement} locked size={30} />
+                <div className="min-w-0">
+                  <div className="text-xs text-text-muted">Next up</div>
+                  <div className="text-sm text-text-secondary truncate">{nextUp.achievement.name}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-text-muted">Every visible trophy is earned — go find the secret ones.</div>
+            )}
+          </DataCard>
+        );
+      })()}
 
       {/* ════ SPEND BY ACCOUNT (collapsed by default) ═══════════════════ */}
       <DashSection title="Spend by account" icon="🏦" summary="This month's spend across your accounts">

@@ -76,7 +76,12 @@ export function visibleViews(modules: EnabledModules): Set<string> {
   // module selection. Onboarding is the entry point; settings is where you
   // control everything; dashboard is the home surface.
   const visible = new Set<string>(['dashboard', 'settings', 'onboarding']);
-  if (modules.budget) visible.add('budget');
+  if (modules.budget) {
+    visible.add('budget');
+    // Achievements is a budget-tier feature (the gamification wall) — same
+    // gate as Budget itself, always on in Phase 1.
+    visible.add('achievements');
+  }
   if (modules.investments) {
     // Ask Iris (chat) and the First Report are part of the investment-intelligence
     // tier — they depend on portfolio data. They re-enable when investments do.

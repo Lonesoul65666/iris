@@ -14,6 +14,7 @@ import SettingsView from './views/SettingsView';
 import OnboardingView from './views/OnboardingView';
 import FirstReportView from './views/FirstReportView';
 import BudgetView from './components/Budget/BudgetView';
+import AchievementsView from './views/AchievementsView';
 import { getSetting, saveSetting } from './stores/portfolioStore';
 import { isDefaultPortfolio } from './components/Dashboard/SetupChecklist';
 import { useEnabledModules } from './hooks/useEnabledModules';
@@ -32,6 +33,7 @@ function AppContent() {
   switch (view) {
     case 'dashboard': return <DashboardView />;
     case 'budget': return <BudgetView />;
+    case 'achievements': return <AchievementsView />;
     case 'portfolio': return <PortfolioView />;
     case 'health': return <HealthView />;
     case 'equity': return <EquityView />;

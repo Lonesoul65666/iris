@@ -53,6 +53,7 @@ export default function AppShell({
       badgeColor: pendingActions > 0
         ? 'bg-warning/20 text-warning'
         : 'bg-negative/20 text-negative' },
+    { id: 'achievements', label: 'Achievements', icon: Icons.trophy, group: 'main' },
     { id: 'portfolio', label: 'Investments', icon: Icons.portfolio, group: 'main',
       badge: overallScore < 50 ? `${overallScore}` : undefined,
       badgeColor: overallScore < 40 ? 'bg-negative/20 text-negative' : 'bg-warning/20 text-warning' },
