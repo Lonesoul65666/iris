@@ -26,7 +26,7 @@ function game(over: Partial<GameState> = {}): GameState {
 
 function engagement(over: Partial<EngagementSignals> = {}): EngagementSignals {
   return {
-    connectedData: false, createdStash: false, crushedGoals: 0, committedMove: false,
+    connectedData: false, createdStash: false, stashCount: 0, crushedGoals: 0, committedMove: false,
     setFunOpening: false, gotAdvisorTake: false, monthsActive: 0, ...over,
   };
 }
@@ -63,7 +63,7 @@ describe('forward-only gating (no trophies for June)', () => {
 
   it('DOES unlock once the streak grows past the baseline', () => {
     const baseline: GamificationBaseline = {
-      capturedAt: NOW.toISOString(), underBaseStreak: 1, monthsUnderBase: 1, cumulativeBanked: 0, netWorth: 0, savingsRate: 0, funStreaks: {},
+      capturedAt: NOW.toISOString(), underBaseStreak: 1, monthsUnderBase: 1, cumulativeBanked: 0, netWorth: 0, savingsRate: 0, funBalance: 0, funStreaks: {}, engagement: engagement(),
     };
     const c = ctx({ game: game({ underBase: { current: 3, best: 3, active: true } }) });
     const { states, newlyUnlocked } = evaluateAchievements(c, baseline, [], NOW);
@@ -82,7 +82,7 @@ describe('savings rate is forward-only', () => {
   it('awards once the rate climbs past a threshold it was below at baseline', () => {
     const baseline: GamificationBaseline = {
       capturedAt: NOW.toISOString(), underBaseStreak: 0, monthsUnderBase: 0,
-      cumulativeBanked: 0, netWorth: 0, savingsRate: 12, funStreaks: {},
+      cumulativeBanked: 0, netWorth: 0, savingsRate: 12, funBalance: 0, funStreaks: {}, engagement: engagement(),
     };
     const c = ctx({ savingsRate: 22 });
     const { states } = evaluateAchievements(c, baseline, [], NOW);
@@ -101,12 +101,25 @@ describe('grandfathered (cleared before Iris started counting)', () => {
   });
 });
 
-describe('real completions fire regardless of baseline', () => {
-  it('unlocks first-crush on the first run when a goal is already crushed', () => {
-    const c = ctx({ engagement: engagement({ crushedGoals: 1 }) });
-    const baseline = captureBaseline(c, NOW.toISOString());
+describe('goals count only when crushed after the baseline', () => {
+  const baseline: GamificationBaseline = {
+    capturedAt: '2026-07-01T00:00:00Z', underBaseStreak: 0, monthsUnderBase: 0,
+    cumulativeBanked: 0, netWorth: 0, savingsRate: 0, funBalance: 0, funStreaks: {}, engagement: engagement(),
+  };
+  const crushed = (achievedAt: string) => ({
+    id: 's1', name: 'Trip', targetAmount: 1000, currentBalance: 1000, monthlyContribution: 0, color: '#fff', achievedAt,
+  });
+
+  it('a goal crushed AFTER the start line unlocks first-crush', () => {
+    const c = ctx({ stashes: [crushed('2026-07-10T00:00:00Z')] });
     const { states } = evaluateAchievements(c, baseline, [], NOW);
     expect(states.find((s) => s.achievement.id === 'first-crush')!.earned).toBe(true);
+  });
+
+  it('a goal crushed BEFORE the start line does NOT count', () => {
+    const c = ctx({ stashes: [crushed('2026-06-10T00:00:00Z')] });
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    expect(states.find((s) => s.achievement.id === 'first-crush')!.earned).toBe(false);
   });
 });
 
@@ -123,18 +136,26 @@ describe('permanence + newlyUnlocked', () => {
 });
 
 describe('exploration + summary', () => {
-  it('unlocks connect-bank when data is present', () => {
-    const c = ctx({ engagement: engagement({ connectedData: true }) });
-    const { states } = evaluateAchievements(c, captureBaseline(c, NOW.toISOString()), [], NOW);
-    expect(states.find((s) => s.achievement.id === 'connect-bank')!.earned).toBe(true);
+  it('setup achievements are forward-only: earned by DOING it, not by pre-existing state', () => {
+    // An already-set-up install (baseline already connected) does NOT unlock it.
+    const setup = ctx({ engagement: engagement({ connectedData: true }) });
+    const existing = evaluateAchievements(setup, captureBaseline(setup, NOW.toISOString()), [], NOW);
+    const grandfathered = existing.states.find((s) => s.achievement.id === 'connect-bank')!;
+    expect(grandfathered.earned).toBe(false);
+    expect(grandfathered.grandfathered).toBe(true);
+
+    // A fresh install (baseline NOT connected) unlocks it once the bank connects.
+    const freshBaseline = captureBaseline(ctx({ engagement: engagement({ connectedData: false }) }), NOW.toISOString());
+    const afterConnect = evaluateAchievements(setup, freshBaseline, [], NOW);
+    expect(afterConnect.states.find((s) => s.achievement.id === 'connect-bank')!.earned).toBe(true);
   });
 
-  it('summary counts earned/total and splits by tier', () => {
-    const c = ctx({ engagement: engagement({ connectedData: true }) });
+  it('a first-run baseline earns NOTHING — clean slate (Scott: no retroactive trophies)', () => {
+    const c = ctx({ engagement: engagement({ connectedData: true, createdStash: true, stashCount: 5, monthsActive: 3 }) });
     const { states } = evaluateAchievements(c, captureBaseline(c, NOW.toISOString()), [], NOW);
     const sum = achievementSummary(states);
     expect(sum.total).toBe(ACHIEVEMENTS.length);
-    expect(sum.earned).toBeGreaterThanOrEqual(1);
+    expect(sum.earned).toBe(0);
     expect(sum.byTier.bronze.total).toBeGreaterThan(0);
   });
 
