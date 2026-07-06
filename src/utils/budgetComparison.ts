@@ -71,16 +71,18 @@ function fullMonthLabel(ym: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
-// Meet the plan and the actual in the middle, rounded to $25. This is the new
-// target a category should probably carry given how it really ran.
-function meetInMiddle(target: number, actual: number): number {
-  return Math.round((target + actual) / 2 / 25) * 25;
+// Blend the plan toward the actual by `blend` (0 = keep plan, 1 = match actual,
+// 0.5 = classic midpoint), rounded to $25. Scott wanted this tunable/less
+// aggressive than the exact midpoint — the caller passes a rate from a slider.
+function meetInMiddle(target: number, actual: number, blend: number): number {
+  return Math.round((target + (actual - target) * blend) / 25) * 25;
 }
 
 export function computeBudgetComparison(
   expenses: Expense[],
   buckets: BudgetBucket[],
   now: Date = new Date(),
+  blend = 0.5, // how far to move each target toward last month's actual (0..1)
 ): BudgetComparison {
   const complete = computeMonthlySpending(expenses).filter((m) => isCompleteMonth(m.month, now));
   const recent = complete.slice(-3); // last up-to-3 complete months
@@ -114,7 +116,7 @@ export function computeBudgetComparison(
   const suggestions: TargetSuggestion[] = rows
     .filter((r) => isAdjustable(r.category, r.lane) && r.status !== 'on' && r.target > 0)
     .map((r) => {
-      const suggestedTarget = meetInMiddle(r.target, r.lastMonthActual);
+      const suggestedTarget = meetInMiddle(r.target, r.lastMonthActual, blend);
       const kind: 'raise' | 'trim' = r.lastMonthActual > r.target ? 'raise' : 'trim';
       return {
         category: r.category,

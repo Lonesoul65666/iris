@@ -147,6 +147,12 @@ export default function BudgetView() {
   // (the rest banks). User-tunable via the Fun Money slider; default 30%.
   const [funSavingsRate, setFunSavingsRate] = useState(0.30);
   useEffect(() => { void getSetting<number>('fun_savings_rate').then(r => { if (typeof r === 'number') setFunSavingsRate(r); }); }, []);
+  // How far the comparative planner moves each target toward last month's actual
+  // (0 = keep plan, 1 = match actual, 0.5 = midpoint). Default 0.4 — Scott wanted
+  // it a touch conservative. Tunable via the slider in BudgetCompareHelper.
+  const [blendRate, setBlendRate] = useState(0.4);
+  useEffect(() => { void getSetting<number>('budget_blend_rate').then(r => { if (typeof r === 'number') setBlendRate(r); }); }, []);
+  const changeBlend = useCallback((v: number) => { setBlendRate(v); void saveSetting('budget_blend_rate', v); }, []);
 
   // ── Edit mode state ──
   // Daily Budget tab is read-only. Editing happens in a dedicated mode that
@@ -566,7 +572,7 @@ export default function BudgetView() {
 
   // Comparative planning: last complete month's actuals vs the plan, + rebalance
   // moves. Powers the edit-mode helper AND grounds the AI advisor's numbers.
-  const budgetComparison = useMemo(() => computeBudgetComparison(expenses, buckets), [expenses, buckets]);
+  const budgetComparison = useMemo(() => computeBudgetComparison(expenses, buckets, new Date(), blendRate), [expenses, buckets, blendRate]);
 
   // Fun money with a live banked balance + savings skim (70/30 ledger). Derived
   // for display; edits still operate on the source `funMoney` state.
@@ -581,6 +587,9 @@ export default function BudgetView() {
   // waiting to be moved on the next commit run.
   const funSavedToDate = Math.round(funMoneyDerived.reduce((s, f) => s + (f.savedToDate ?? 0), 0));
   const funSavingsCommitted = Math.round(deployConfirms.filter(c => c.lane === 'fun-savings').reduce((s, c) => s + (c.amount || 0), 0));
+  // Annualized run-rate of restraint-savings — the "on pace for $X/yr" flourish.
+  const funMonthsAccrued = Math.max(1, ...funMoneyDerived.map(f => f.monthsAccrued ?? 0));
+  const funAnnualizedSavings = funSavedToDate > 0 ? Math.round(funSavedToDate / funMonthsAccrued * 12) : 0;
   const funSavingsPending = Math.max(0, funSavedToDate - funSavingsCommitted);
   // Don't offer to move a month's savings until the NEXT month shows activity —
   // that's our signal the prior month has fully posted (no late/pending charges
@@ -1247,6 +1256,12 @@ export default function BudgetView() {
                 </span>
               ))}
             </div>
+            {/* Annualized restraint projection — the "on pace for $X/yr" flourish. */}
+            {funAnnualizedSavings > 0 && (
+              <div className="mt-1.5 text-[11px] text-text-muted text-center">
+                On pace for <span className="text-positive font-semibold">{formatCurrency(funAnnualizedSavings)}/yr</span> saved from restraint — money you'd have blown, working for you instead.
+              </div>
+            )}
             {/* Split slider — how much of unspent fun banks to savings */}
             <div className="mt-3 flex items-center gap-3">
               <span className="text-[11px] text-text-muted whitespace-nowrap">
@@ -1696,6 +1711,8 @@ export default function BudgetView() {
       {/* Compare-to-last-month helper — plan from reality, not a blank slate. */}
       <BudgetCompareHelper
         comparison={budgetComparison}
+        blend={blendRate}
+        onBlendChange={changeBlend}
         onApplyTweak={applyTargetTweak}
         onApplyAll={applyAllTweaks}
       />

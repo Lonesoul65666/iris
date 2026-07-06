@@ -7,12 +7,15 @@ import type { BudgetComparison } from '../../utils/budgetComparison';
 
 interface Props {
   comparison: BudgetComparison;
+  /** How far suggestions move toward last month's actual (0..1). */
+  blend: number;
+  onBlendChange: (v: number) => void;
   /** Set ONE category's planned target to the suggested value. */
   onApplyTweak: (category: string, newTarget: number) => void;
   onApplyAll: () => void;
 }
 
-export default function BudgetCompareHelper({ comparison, onApplyTweak, onApplyAll }: Props) {
+export default function BudgetCompareHelper({ comparison, blend, onBlendChange, onApplyTweak, onApplyAll }: Props) {
   const { hasHistory, lastMonthLabel, rows, suggestions } = comparison;
   if (!hasHistory) return null;
 
@@ -68,7 +71,17 @@ export default function BudgetCompareHelper({ comparison, onApplyTweak, onApplyA
       {/* Per-category target tweaks — meet in the middle */}
       {suggestions.length > 0 && (
         <div>
-          <div className="term-label mb-1.5">Suggested targets — meet in the middle</div>
+          <div className="flex items-center justify-between gap-3 mb-1.5">
+            <div className="term-label">Suggested targets — meet in the middle</div>
+            <div className="flex items-center gap-2 text-[10px] text-text-muted">
+              <span>Keep plan</span>
+              <input type="range" min={0} max={1} step={0.05} value={blend}
+                onChange={(e) => onBlendChange(Number(e.target.value))}
+                className="w-24 accent-accent" title={`Move ${Math.round(blend * 100)}% toward last month's actual`} />
+              <span>Match actual</span>
+              <span className="mono-num text-text-secondary font-semibold w-8 text-right">{Math.round(blend * 100)}%</span>
+            </div>
+          </div>
           <div className="space-y-1.5">
             {suggestions.map((s) => (
               <div key={s.category}
