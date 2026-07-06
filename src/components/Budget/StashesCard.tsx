@@ -213,7 +213,7 @@ export default function StashesCard({ stashes, expenses, confirms, onChange }: P
               {!shortfall && (
                 <div className="text-[10px] text-text-muted mb-2">
                   {derived
-                    ? `funded ${monthsAccrued} month${monthsAccrued === 1 ? '' : 's'}${drawn > 0 ? ` · ${formatCurrency(drawn)} drawn` : ''}`
+                    ? `Started ${monthShort(sf.startMonth!)} · funded ${monthsAccrued} month${monthsAccrued === 1 ? '' : 's'}${drawn > 0 ? ` · ${formatCurrency(drawn)} drawn` : ''}`
                     : 'manual balance — open to start auto-tracking'}
                 </div>
               )}
