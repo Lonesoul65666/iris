@@ -742,7 +742,11 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
   useEffect(() => {
     if (rawExpenses.length === 0) return;
     let live = true;
-    void (async () => {
+    // Debounce until the data streams (expenses, fun money, stashes) settle —
+    // capturing the baseline mid-load would snapshot a partial state and fire
+    // false unlocks as the rest arrives. One run after ~500ms of quiet.
+    const timer = setTimeout(() => void (async () => {
+      if (!live) return;
       const scorecard = computeScorecard(rawExpenses);
       const game = computeGameState(scorecard, dashFunMoney, rawExpenses);
       const savingsRate = computeSavingsRate({
@@ -759,6 +763,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
         engagement: {
           connectedData: rawExpenses.length > 0,
           createdStash: dashSinkingFunds.length > 0,
+          stashCount: dashSinkingFunds.length,
           crushedGoals: dashSinkingFunds.filter((s) => s.achievedAt).length,
           committedMove: dashDeployConfirms.length > 0,
           setFunOpening: dashFunMoney.some((f) => (f.openingBalance ?? 0) > 0 || !!f.startMonth),
@@ -789,8 +794,8 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       setAchievementStates(states);
       // Show every not-yet-acknowledged unlock (waits across reloads until dismissed).
       setCelebrationNudges(pendingCelebrationNudges(merged));
-    })();
-    return () => { live = false; };
+    })(), 500);
+    return () => { live = false; clearTimeout(timer); };
   }, [rawExpenses, dashFunMoney, dashSinkingFunds, dashDeployConfirms, dashPaycheck, monthlyInv, totalNetWorth]);
 
   const dismissCelebration = useCallback(async (nudgeId: string) => {

@@ -29,6 +29,7 @@ export type AchievementCategory =
 export interface EngagementSignals {
   connectedData: boolean;   // real accounts/transactions present
   createdStash: boolean;    // at least one Have-To/Want-To exists
+  stashCount: number;       // how many stashes exist
   crushedGoals: number;     // count of retired (achievedAt) stashes
   committedMove: boolean;   // at least one DeployConfirmation exists
   setFunOpening: boolean;   // a fun-money pot has been anchored/seeded
@@ -55,7 +56,12 @@ export interface GamificationBaseline {
   cumulativeBanked: number;
   netWorth: number;
   savingsRate: number;
+  funBalance: number;
   funStreaks: Record<string, number>;
+  /** Setup/engagement state at the start line — so "connect a bank", "create a
+   *  stash", etc. only unlock when the ACTION happens after Iris starts watching,
+   *  not because an already-set-up install has the state. */
+  engagement: EngagementSignals;
 }
 
 export interface AchievementEval {
@@ -97,7 +103,9 @@ export function captureBaseline(ctx: AchievementContext, at: string): Gamificati
     cumulativeBanked: ctx.scorecard.cumulativeBanked,
     netWorth: ctx.netWorth,
     savingsRate: ctx.savingsRate,
+    funBalance: maxFunBalance(ctx),
     funStreaks: Object.fromEntries(ctx.game.fun.map((f) => [f.person, f.streak.current])),
+    engagement: ctx.engagement,
   };
 }
 
@@ -121,6 +129,14 @@ function threshold(
 
 const mo = (n: number) => `${n} mo`;
 
+/** A do-it-once achievement, forward-only: earned only when the action becomes
+ *  true AFTER the start line (baseline was false). An install that already has
+ *  the state at baseline gets it grandfathered, never a hollow unlock. */
+function didForward(current: boolean, wasAtBaseline: boolean | undefined): AchievementEval {
+  if (wasAtBaseline === undefined) return { earned: false, progress: current ? 1 : 0 };
+  return { earned: current && !wasAtBaseline, progress: current ? 1 : 0 };
+}
+
 // Cross-cutting derivations used by several achievements.
 const bestFunStreak = (c: AchievementContext) => c.game.fun.reduce((m, f) => Math.max(m, f.streak.current), 0);
 const baseBestFunStreak = (b: GamificationBaseline | null) => (b ? Math.max(0, ...Object.values(b.funStreaks), 0) : null);
@@ -132,8 +148,14 @@ const funLead = (c: AchievementContext) => {
 const maxFunBalance = (c: AchievementContext) => c.funMoney.reduce((m, f) => Math.max(m, f.balance ?? 0), 0);
 const maxSavedToDate = (c: AchievementContext) => c.funMoney.reduce((m, f) => Math.max(m, f.savedToDate ?? 0), 0);
 const householdSaved = (c: AchievementContext) => c.scorecard.cumulativeBanked + c.funMoney.reduce((s, f) => s + (f.savedToDate ?? 0), 0);
-const crushSavedMax = (c: AchievementContext) => c.stashes.reduce((m, s) => Math.max(m, s.achievement?.savedAmount ?? 0), 0);
-const crushMonthsMax = (c: AchievementContext) => c.stashes.reduce((m, s) => Math.max(m, s.achievement?.monthsSaving ?? 0), 0);
+// Goals CRUSHED after the start line — forward-only by construction (a goal
+// bought before Iris started watching doesn't count toward the wall).
+const crushedSince = (c: AchievementContext, since: string | undefined) =>
+  c.stashes.filter((s) => s.achievedAt && (!since || s.achievedAt > since));
+const crushSavedMaxSince = (c: AchievementContext, since: string | undefined) =>
+  crushedSince(c, since).reduce((m, s) => Math.max(m, s.achievement?.savedAmount ?? 0), 0);
+const crushMonthsMaxSince = (c: AchievementContext, since: string | undefined) =>
+  crushedSince(c, since).reduce((m, s) => Math.max(m, s.achievement?.monthsSaving ?? 0), 0);
 
 // ─── The catalog ───
 // Seed set spanning categories/tiers/forward-only; enriched toward ~50 from the
@@ -141,54 +163,49 @@ const crushMonthsMax = (c: AchievementContext) => c.stashes.reduce((m, s) => Mat
 // achievements ship like console achievement packs (Scott's Xbox model).
 
 export const ACHIEVEMENTS: Achievement[] = [
-  // ── exploration (real engagement — NOT forward-only; can fire on first run) ──
+  // ── exploration (setup/engagement — forward-only so they unlock by DOING the
+  //    setup after the start line, not because an existing install has the state) ──
   {
     id: 'connect-bank', name: 'Plugged In', description: 'Connected real money to Iris.',
     hypeCopy: 'Bank is connected, the lights are on. Iris can finally see the whole board — let us play.',
-    icon: '🔌', tier: 'bronze', category: 'exploration',
-    evaluate: (c) => ({ earned: c.engagement.connectedData, progress: c.engagement.connectedData ? 1 : 0 }),
+    icon: '🔌', tier: 'bronze', category: 'exploration', forwardOnly: true,
+    evaluate: (c, b) => didForward(c.engagement.connectedData, b?.engagement?.connectedData),
   },
   {
     id: 'first-stash', name: 'Planted a Flag', description: 'Created your first Have-To or Want-To.',
     hypeCopy: 'You gave a future expense a name and a home. That is the moment money stops happening TO you.',
-    icon: '🚩', tier: 'bronze', category: 'exploration',
-    evaluate: (c) => ({ earned: c.engagement.createdStash, progress: c.engagement.createdStash ? 1 : 0 }),
+    icon: '🚩', tier: 'bronze', category: 'exploration', forwardOnly: true,
+    evaluate: (c, b) => didForward(c.engagement.createdStash, b?.engagement?.createdStash),
   },
   {
     id: 'three-stashes', name: 'Portfolio of Plans', description: 'Have three stashes going at once.',
     hypeCopy: 'Three pots at once. You are not putting out fires anymore, you are planning them out of existence.',
-    icon: '🗂️', tier: 'bronze', category: 'exploration',
-    evaluate: (c) => threshold(c.stashes.length, 3, null, `${c.stashes.length} / 3`),
+    icon: '🗂️', tier: 'bronze', category: 'exploration', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.engagement.stashCount, 3, b?.engagement?.stashCount ?? null, `${c.engagement.stashCount} / 3`),
   },
   {
     id: 'first-move', name: 'Made a Move', description: 'Committed your first monthly money move.',
     hypeCopy: 'You did not just look at the plan, you DID it. Committed and executed. That is the whole ballgame.',
-    icon: '♟️', tier: 'bronze', category: 'exploration',
-    evaluate: (c) => ({ earned: c.engagement.committedMove, progress: c.engagement.committedMove ? 1 : 0 }),
+    icon: '♟️', tier: 'bronze', category: 'exploration', forwardOnly: true,
+    evaluate: (c, b) => didForward(c.engagement.committedMove, b?.engagement?.committedMove),
   },
   {
     id: 'set-fun-balances', name: 'Rules of Engagement', description: 'Anchored fun money for the household.',
     hypeCopy: 'Fun money has a scoreboard now. Let the friendly bloodsport begin.',
-    icon: '📊', tier: 'bronze', category: 'exploration',
-    evaluate: (c) => ({ earned: c.engagement.setFunOpening, progress: c.engagement.setFunOpening ? 1 : 0 }),
+    icon: '📊', tier: 'bronze', category: 'exploration', forwardOnly: true,
+    evaluate: (c, b) => didForward(c.engagement.setFunOpening, b?.engagement?.setFunOpening),
   },
   {
     id: 'first-iris-take', name: 'Faced the Music', description: 'Asked Iris for her honest take.',
     hypeCopy: 'You asked the hard question and Iris kept it real. Coaching, not cuddling.',
-    icon: '🎤', tier: 'bronze', category: 'exploration',
-    evaluate: (c) => ({ earned: c.engagement.gotAdvisorTake, progress: c.engagement.gotAdvisorTake ? 1 : 0 }),
+    icon: '🎤', tier: 'bronze', category: 'exploration', forwardOnly: true,
+    evaluate: (c, b) => didForward(c.engagement.gotAdvisorTake, b?.engagement?.gotAdvisorTake),
   },
   {
-    id: 'used-3-months', name: 'Sticking Around', description: 'Used Iris across three months.',
+    id: 'used-3-months', name: 'Sticking Around', description: 'Used Iris across three more months.',
     hypeCopy: 'Three months in and still showing up. Most people quit budgeting apps by week two. Not you.',
-    icon: '📆', tier: 'bronze', category: 'exploration',
-    evaluate: (c) => threshold(c.engagement.monthsActive, 3, null, `${c.engagement.monthsActive} / 3`),
-  },
-  {
-    id: 'used-12-months', name: 'Anniversary', description: 'Used Iris across twelve months.',
-    hypeCopy: 'A year with Iris. Through good months and ugly ones, you kept opening the door. That loyalty built something real.',
-    icon: '🎂', tier: 'gold', category: 'exploration',
-    evaluate: (c) => threshold(c.engagement.monthsActive, 12, null, `${c.engagement.monthsActive} / 12`),
+    icon: '📆', tier: 'bronze', category: 'exploration', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.engagement.monthsActive, (b?.engagement?.monthsActive ?? 0) + 3, b?.engagement ? b.engagement.monthsActive : null, `${c.engagement.monthsActive} mo`),
   },
 
   // ── discipline (forward-only streak/count/banked milestones) ──
@@ -284,8 +301,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'fun-banked-500', name: 'Pocket Padding', description: '$500 banked fun-money balance.',
     hypeCopy: 'Five hundred bucks of fun money you sat on instead of blew. Future-you is smirking.',
-    icon: '🪙', tier: 'bronze', category: 'funMoney',
-    evaluate: (c) => threshold(maxFunBalance(c), 500, null),
+    icon: '🪙', tier: 'bronze', category: 'funMoney', forwardOnly: true,
+    evaluate: (c, b) => threshold(maxFunBalance(c), 500, b?.funBalance ?? null),
   },
   {
     id: 'fun-saved-1k', name: 'Restraint Dividend', description: '$1,000 promoted from fun-money restraint into savings.',
@@ -343,36 +360,36 @@ export const ACHIEVEMENTS: Achievement[] = [
     evaluate: (c, b) => threshold(householdSaved(c), 25000, b?.cumulativeBanked ?? null),
   },
 
-  // ── goals (real completions — NOT forward-only) ──
+  // ── goals (completion events — counted only when crushed AFTER the start line) ──
   {
     id: 'first-crush', name: 'Goal Slayer', description: 'Crushed your first Want-To goal.',
     hypeCopy: 'You saved for it, you bought it in cash, you owe nobody. THAT is what winning feels like.',
     icon: '🗡️', tier: 'silver', category: 'goals',
-    evaluate: (c) => ({ earned: c.engagement.crushedGoals >= 1, progress: c.engagement.crushedGoals >= 1 ? 1 : 0 }),
+    evaluate: (c, b) => { const n = crushedSince(c, b?.capturedAt).length; return { earned: n >= 1, progress: n >= 1 ? 1 : 0 }; },
   },
   {
     id: 'crush-3', name: 'Serial Finisher', description: 'Crushed three Want-To goals.',
     hypeCopy: 'Three goals set, three goals executed. You turned someday into a to-do list you actually finish.',
     icon: '🎖️', tier: 'gold', category: 'goals',
-    evaluate: (c) => threshold(c.engagement.crushedGoals, 3, null, `${c.engagement.crushedGoals} / 3`),
+    evaluate: (c, b) => { const n = crushedSince(c, b?.capturedAt).length; return threshold(n, 3, null, `${n} / 3`); },
   },
   {
     id: 'crush-10', name: 'The Closer', description: 'Crushed ten Want-To goals.',
     hypeCopy: 'Ten dreams funded and cashed out, zero debt. You are not dreaming anymore, you are placing orders.',
     icon: '💎', tier: 'platinum', category: 'prestige',
-    evaluate: (c) => threshold(c.engagement.crushedGoals, 10, null, `${c.engagement.crushedGoals} / 10`),
+    evaluate: (c, b) => { const n = crushedSince(c, b?.capturedAt).length; return threshold(n, 10, null, `${n} / 10`); },
   },
   {
     id: 'crush-big', name: 'Whale Hunter', description: 'Crushed a single Want-To worth $10,000+.',
     hypeCopy: 'A five-figure goal, paid in full, from savings. You harpooned the big one.',
     icon: '🐋', tier: 'gold', category: 'goals', secret: true,
-    evaluate: (c) => ({ earned: crushSavedMax(c) >= 10000, progress: clamp01(crushSavedMax(c) / 10000) }),
+    evaluate: (c, b) => ({ earned: crushSavedMaxSince(c, b?.capturedAt) >= 10000, progress: clamp01(crushSavedMaxSince(c, b?.capturedAt) / 10000) }),
   },
   {
     id: 'crush-patient', name: 'The Slow Cook', description: 'Crushed a goal that took 12+ months.',
     hypeCopy: 'A full year of chipping away, and you never blinked. Patience like that should be illegal.',
     icon: '🐢', tier: 'silver', category: 'goals', secret: true,
-    evaluate: (c) => ({ earned: crushMonthsMax(c) >= 12, progress: clamp01(crushMonthsMax(c) / 12) }),
+    evaluate: (c, b) => ({ earned: crushMonthsMaxSince(c, b?.capturedAt) >= 12, progress: clamp01(crushMonthsMaxSince(c, b?.capturedAt) / 12) }),
   },
 
   // ── netWorth (forward-only prestige; jumps on account connect → must be forward) ──
@@ -395,8 +412,9 @@ export const ACHIEVEMENTS: Achievement[] = [
     hypeCopy: 'Perfect year on defense, a goal crushed on offense. You did not just play the game — you ran up the score.',
     icon: '🏅', tier: 'platinum', category: 'prestige', forwardOnly: true, secret: true,
     evaluate: (c, b) => {
-      const earned = c.game.underBase.best >= 12 && c.engagement.crushedGoals >= 1 && (b === null ? false : b.underBaseStreak < 12);
-      return { earned, progress: clamp01(Math.min(c.game.underBase.best / 12, c.engagement.crushedGoals)) };
+      const crushed = crushedSince(c, b?.capturedAt).length;
+      const earned = c.game.underBase.best >= 12 && crushed >= 1 && (b === null ? false : b.underBaseStreak < 12);
+      return { earned, progress: clamp01(Math.min(c.game.underBase.best / 12, crushed)) };
     },
   },
 ];
