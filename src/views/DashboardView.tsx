@@ -17,6 +17,7 @@ import { laneOf, isOverBudget } from '../utils/budgetLanes';
 import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
 import { computeScorecard } from '../utils/savingsScorecard';
 import { computeGameState, gameGreeting } from '../utils/gamification';
+import NudgeCard from '../components/Nudge/NudgeCard';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ export default function DashboardView() {
     dashBuckets, dashSinkingFunds, dashDeployConfirms, monthlyInv,
     rawExpenses,
     dashFunMoney,
+    celebrationNudges, dismissCelebration,
     monthToDate, safeToSpend,
     setView,
     profile,
@@ -216,6 +218,15 @@ export default function DashboardView() {
 
   return (
     <div className="space-y-6 animate-fadeIn pb-8">
+      {/* Achievement unlocks — the "FUCK YEAH" moment. Fresh unlocks this session
+          surface as celebration cards up top (capped so a first-run batch doesn't
+          bury the dashboard). Dismissing is cosmetic — the unlock is permanent. */}
+      {celebrationNudges.slice(0, 3).map((n, i) => (
+        <NudgeCard key={n.id} nudge={n} index={i}
+          onSnooze={() => dismissCelebration(n.id)}
+          onDismissForever={() => dismissCelebration(n.id)} />
+      ))}
+
       {/* ════ HERO ═══════════════════════════════════════════════════════ */}
       <div className="glass-card relative overflow-hidden">
         <div className="aurora-blob aurora-a" />
