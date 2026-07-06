@@ -10,7 +10,7 @@ import { getMonthlyInvestments, getSetting, saveSetting } from '../../stores/por
 import { computeGuaranteedBase } from '../../utils/savingsScorecard';
 import { computeSavingsRate } from '../../utils/savingsRate';
 import { computeSafeToSpend } from '../../utils/safeToSpend';
-import { applyStashLaneConfig, seedDefaultStashes, committedReserves } from '../../utils/stashMath';
+import { applyStashLaneConfig, seedDefaultStashes, committedReserves, stashExistedBy } from '../../utils/stashMath';
 import StashesCard from './StashesCard';
 import MoneyMap from './MoneyMap';
 import { targetsForMonth, type BudgetTargetSnapshot } from '../../utils/budgetHistory';
@@ -1646,6 +1646,10 @@ export default function BudgetView() {
           ? `${fullMonths.length}-mo average`
           : (() => { const [y, mo] = resolvedOverviewMonth.split('-'); return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); })();
         const pulseCommitMonth = resolvedOverviewMonth === 'avg' ? '' : resolvedOverviewMonth;
+        // Creation-forward: a stash only appears in a month it already existed in
+        // (by startMonth). Paging back the commit run must not offer pots that
+        // didn't exist yet. (Scott, 2026-07-06)
+        const pulseStashes = sinkingFunds.filter(s => stashExistedBy(s, pulseCommitMonth));
         const committedStashIds = new Set(deployConfirms.filter(c => c.month === pulseCommitMonth).map(c => c.lane));
         return (
           <BudgetPulse
@@ -1659,7 +1663,7 @@ export default function BudgetView() {
             complete={!overviewIsInProgress}
             monthLabel={pulseMonthLabel}
             onCategoryClick={(cat) => setDrilldownCategory(cat)}
-            stashes={sinkingFunds}
+            stashes={pulseStashes}
             committedStashIds={committedStashIds}
             onCommitStash={pulseCommitMonth ? (id, amt) => toggleStashCommit(pulseCommitMonth, id, amt) : undefined}
           />
