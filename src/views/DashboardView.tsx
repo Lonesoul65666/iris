@@ -23,8 +23,10 @@ import Medallion from '../components/Achievements/Medallion';
 import { achievementById } from '../utils/achievements';
 import DashSection from '../components/ui/DashSection';
 import CashflowCalendar from '../components/Budget/CashflowCalendar';
+import SubscriptionRadar from '../components/Budget/SubscriptionRadar';
 import { detectRecurring } from '../utils/recurringDetector';
 import { forecastCashflow } from '../utils/cashflowForecast';
+import { buildSubscriptionRadar } from '../utils/subscriptionRadar';
 import { sectionFromBriefingId } from '../utils/weeklyBriefing';
 import { syncHealthNudges } from '../utils/syncHealth';
 import { getLastSyncSummary, hoursSinceLastSync } from '../lib/syncTellerTransactions';
@@ -79,12 +81,15 @@ export default function DashboardView() {
   );
   const greeting = gameGreeting(gameState);
 
-  // Forward cash-flow calendar — project detected recurring bills over the next
-  // 30 days. Surfaces the (previously dormant) recurringDetector; display-only.
-  const cashflowForecast = useMemo(() => {
-    const candidates = detectRecurring(rawExpenses, { now: new Date() });
-    return forecastCashflow(candidates, { now: new Date(), horizonDays: 30 });
-  }, [rawExpenses]);
+  // Recurring detection surfaced two ways (both display-only): the cash-flow
+  // calendar ("what hits when") and the subscription radar ("how much each
+  // costs/mo"). Detect once, derive both.
+  const recurringCandidates = useMemo(() => detectRecurring(rawExpenses, { now: new Date() }), [rawExpenses]);
+  const cashflowForecast = useMemo(
+    () => forecastCashflow(recurringCandidates, { now: new Date(), horizonDays: 30 }),
+    [recurringCandidates],
+  );
+  const subscriptionRadar = useMemo(() => buildSubscriptionRadar(recurringCandidates), [recurringCandidates]);
 
   // Proactive sync-health — surface failed/rate-limited/stale refreshes so no
   // data is silently missed. Re-checks after a sync (rawExpenses changes), and
@@ -654,6 +659,14 @@ export default function DashboardView() {
         <DashSection title="Coming up · next 30 days" icon="📅"
           summary={`~${formatCurrency(cashflowForecast.total)} across ${cashflowForecast.count} bill${cashflowForecast.count === 1 ? '' : 's'}`}>
           <CashflowCalendar forecast={cashflowForecast} />
+        </DashSection>
+      )}
+
+      {/* ════ SUBSCRIPTION RADAR — recurring charges ranked by monthly cost ═══ */}
+      {subscriptionRadar.count > 0 && (
+        <DashSection title="Subscriptions & recurring" icon="🔁"
+          summary={`${subscriptionRadar.count} charges · ${formatCurrency(subscriptionRadar.totalMonthly)}/mo`}>
+          <SubscriptionRadar radar={subscriptionRadar} />
         </DashSection>
       )}
 
