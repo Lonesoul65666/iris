@@ -90,6 +90,93 @@ describe('savings rate is forward-only', () => {
   });
 });
 
+describe('joint fun-money streaks are forward-only (household-machine family)', () => {
+  const twoPots = (streakA: number, streakB: number) => game({
+    fun: [
+      { person: 'Scott', streak: { current: streakA, best: streakA, active: streakA > 0 } },
+      { person: 'Claire', streak: { current: streakB, best: streakB, active: streakB > 0 } },
+    ],
+  });
+
+  it('does NOT award household-machine for a joint streak already true at baseline', () => {
+    const c = ctx({ game: twoPots(3, 4) });
+    const baseline = captureBaseline(c, NOW.toISOString()); // baseline min = 3
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    expect(states.find((s) => s.achievement.id === 'household-machine')!.earned).toBe(false);
+  });
+
+  it('awards household-machine once the joint streak crosses 3 forward', () => {
+    const baseline: GamificationBaseline = {
+      capturedAt: NOW.toISOString(), underBaseStreak: 0, monthsUnderBase: 0, cumulativeBanked: 0,
+      netWorth: 0, savingsRate: 0, funBalance: 0, funSaved: 0,
+      funStreaks: { Scott: 1, Claire: 1 }, engagement: engagement(),
+    };
+    const c = ctx({ game: twoPots(3, 5) }); // min = 3, baseline min = 1 → crossed
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    expect(states.find((s) => s.achievement.id === 'household-machine')!.earned).toBe(true);
+  });
+
+  it('household-machine-6 requires a min joint streak of 6, not just one partner', () => {
+    const baseline: GamificationBaseline = {
+      capturedAt: NOW.toISOString(), underBaseStreak: 0, monthsUnderBase: 0, cumulativeBanked: 0,
+      netWorth: 0, savingsRate: 0, funBalance: 0, funSaved: 0,
+      funStreaks: { Scott: 0, Claire: 0 }, engagement: engagement(),
+    };
+    const uneven = ctx({ game: twoPots(9, 5) }); // min = 5 → not yet
+    expect(evaluateAchievements(uneven, baseline, [], NOW).states.find((s) => s.achievement.id === 'household-machine-6')!.earned).toBe(false);
+    const both = ctx({ game: twoPots(9, 6) }); // min = 6 → earned
+    expect(evaluateAchievements(both, baseline, [], NOW).states.find((s) => s.achievement.id === 'household-machine-6')!.earned).toBe(true);
+  });
+
+  it('never fires for a solo household (fewer than 2 fun-money pots)', () => {
+    const baseline: GamificationBaseline = {
+      capturedAt: NOW.toISOString(), underBaseStreak: 0, monthsUnderBase: 0, cumulativeBanked: 0,
+      netWorth: 0, savingsRate: 0, funBalance: 0, funSaved: 0, funStreaks: {}, engagement: engagement(),
+    };
+    const c = ctx({ game: game({ fun: [{ person: 'Scott', streak: { current: 12, best: 12, active: true } }] }) });
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    expect(states.find((s) => s.achievement.id === 'household-machine')!.earned).toBe(false);
+  });
+});
+
+describe('synchronized-discipline requires banking AND under-base together', () => {
+  it('does not earn if the fun streaks are ahead of the under-base streak', () => {
+    const baseline: GamificationBaseline = {
+      capturedAt: NOW.toISOString(), underBaseStreak: 0, monthsUnderBase: 0, cumulativeBanked: 0,
+      netWorth: 0, savingsRate: 0, funBalance: 0, funSaved: 0, funStreaks: { A: 0, B: 0 }, engagement: engagement(),
+    };
+    const c = ctx({
+      game: game({
+        underBase: { current: 1, best: 1, active: true }, // household only 1mo under base
+        fun: [
+          { person: 'A', streak: { current: 5, best: 5, active: true } },
+          { person: 'B', streak: { current: 5, best: 5, active: true } },
+        ],
+      }),
+    });
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    expect(states.find((s) => s.achievement.id === 'synchronized-discipline')!.earned).toBe(false);
+  });
+
+  it('earns once under-base and both fun streaks are jointly 3+ past baseline', () => {
+    const baseline: GamificationBaseline = {
+      capturedAt: NOW.toISOString(), underBaseStreak: 0, monthsUnderBase: 0, cumulativeBanked: 0,
+      netWorth: 0, savingsRate: 0, funBalance: 0, funSaved: 0, funStreaks: { A: 0, B: 0 }, engagement: engagement(),
+    };
+    const c = ctx({
+      game: game({
+        underBase: { current: 3, best: 3, active: true },
+        fun: [
+          { person: 'A', streak: { current: 4, best: 4, active: true } },
+          { person: 'B', streak: { current: 3, best: 3, active: true } },
+        ],
+      }),
+    });
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    expect(states.find((s) => s.achievement.id === 'synchronized-discipline')!.earned).toBe(true);
+  });
+});
+
 describe('grandfathered (cleared before Iris started counting)', () => {
   it('flags an absolute-threshold achievement the user was already past at baseline', () => {
     const c = ctx({ savingsRate: 25 });

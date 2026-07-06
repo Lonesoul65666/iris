@@ -17,13 +17,16 @@ Tiers: bronze (frequent early dopamine) → silver → gold → platinum (pie-in
 ## Forward-only rule
 Anything the user could already be sitting on from backfilled/imported data (streak lengths, months-under-base, banked $, net worth, savings rate) is `forwardOnly` — gated against a baseline captured on first run, only counts progress AFTER Iris started watching. Net worth especially: connecting a brokerage later must NOT fire a fireworks show. Genuine completion/one-shot events (crushed a goal, connected a bank, committed a move, got an Iris's Take) are NOT forward-only.
 
+## Implemented 2026-07-06 (Rock 2) — turned out to need NO new primitive
+`household-machine` (3mo), `household-machine-6`, `household-machine-12`, and `synchronized-discipline` are all live in `achievements.ts`. The original doc entry below assumed a new stored monthly rollup was needed — it wasn't: `funMoneyStreaks`/`underBaseStreak` already derive per-month history live from real expenses, so the joint ("both") streak is just `Math.min(...)` across the existing per-person streaks, forward-only gated against `baseline.funStreaks`/`baseline.underBaseStreak`. Also fixed in passing: `household-machine` was missing `forwardOnly` (a real gap vs. the locked rule) — no unlocks existed yet, so free to fix.
+
+**Dropped** (not deferred — removed) 2026-07-06: `h2h-lead-1`/`h2h-lead-3` (competitive per-person badges) per the cooperative-only decision. Also dropped from this deferred list: `h2h-comeback` / `stole-the-crown` (same reason — competitive, out of scope now).
+
 ## Deferred — need new engine primitives (build later)
-1. **Per-month team snapshot history** — `both-banked-3mo/6mo/12mo`, synchronized-discipline, spend-trend-better-together. Needs a stored monthly "did both bank" rollup.
-2. **Head-to-head previous-month lead** — h2h-comeback / stole-the-crown. Needs last month's lead sign.
-3. **Comeback-kid** — needs a streak "generation" counter (broke and rebuilt), not just current/best.
-4. **Fun spent within 5% of allowance** (treat-yourself) — needs retained monthly fun spend vs allowance delta.
-5. **First-week composite + absence detection** (first-week-explorer, comeback-after-week) — need event timestamps / last-open session tracking.
-6. **Stash computed progress** (stash-half, stash-fully-funded, have-to-done) — needs computeStashStatus wired into the achievement context (balance vs target).
-7. **distinct-months-used** — currently approximated by scorecard full-month count.
+1. **Comeback-kid** — needs a streak "generation" counter (broke and rebuilt), not just current/best.
+2. **Fun spent within 5% of allowance** (treat-yourself) — needs retained monthly fun spend vs allowance delta.
+3. **First-week composite + absence detection** (first-week-explorer, comeback-after-week) — need event timestamps / last-open session tracking.
+4. **Stash computed progress** (stash-half, stash-fully-funded, have-to-done) — needs computeStashStatus wired into the achievement context (balance vs target).
+5. **distinct-months-used** — currently approximated by scorecard full-month count.
 
 The full 52-row table with copy lives in git history of this design pass; the implemented catalog in `achievements.ts` is the source of truth for what actually fires.
