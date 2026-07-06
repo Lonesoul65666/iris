@@ -41,6 +41,8 @@ import { applyStashLaneConfig, committedReserves } from '../utils/stashMath';
 import { generateInsights } from '../utils/insightsEngine';
 import type { Insight } from '../utils/insightsEngine';
 import { reconcileActionItems } from '../utils/dynamicActions';
+import { resolveWeeklyBriefing, weekKeyOf, insightToBriefingNudge, insightIdFromBriefingId, type FrozenBriefing } from '../utils/weeklyBriefing';
+import { whatsNewNudge, LATEST_UPDATE } from '../updates';
 
 // Re-export these so views don't need to import from deep paths
 export { formatCurrency, formatPercent, getAccountTypeLabel, isGeminiInitialized, clearChatHistory, clearAllAccounts, clearAllPortfolioData, clearAllBudgetData, clearAllActionData, clearAllExpenses, clearExpensesBySource, saveSetting, saveAccount, saveUserProfile, saveMonthlyInvestment };
@@ -73,6 +75,14 @@ interface AppDataContextValue {
   celebrationNudges: Nudge[];
   /** Dismiss a celebration nudge (the unlock stays permanently recorded). */
   dismissCelebration: (id: string) => void;
+  /** "This Week's Focus" — the 1–3 frozen action items for the current week. */
+  weeklyBriefing: Nudge[];
+  /** Dismiss a briefing item for this week (re-evaluated next Monday). */
+  dismissBriefingItem: (nudgeId: string) => void;
+  /** One-time "What's New" card after an update; null when nothing is new. */
+  whatsNew: Nudge | null;
+  /** Acknowledge the What's New card (persists the seen version). */
+  dismissWhatsNew: () => void;
   spendingSummary: SpendingSummary | null;
   monthComparison: MonthComparison | null;
   rawExpenses: any[];
@@ -173,6 +183,8 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
   const [dashFunMoney, setDashFunMoney] = useState<FunMoney[]>([]);
   const [achievementStates, setAchievementStates] = useState<AchievementState[]>([]);
   const [celebrationNudges, setCelebrationNudges] = useState<Nudge[]>([]);
+  const [weeklyBriefing, setWeeklyBriefing] = useState<Nudge[]>([]);
+  const [whatsNew, setWhatsNew] = useState<Nudge | null>(null);
   const [spendingSummary, setSpendingSummary] = useState<SpendingSummary | null>(null);
   const [monthComparison, setMonthComparison] = useState<MonthComparison | null>(null);
   const [rawExpenses, setRawExpenses] = useState<any[]>([]);
@@ -805,12 +817,59 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     await saveSetting('achievements_unlocked', unlocked.map((u) => (u.id === id ? { ...u, celebrated: true } : u)));
   }, []);
 
+  // ── "What's New" — one-time card after an update ──────────────────────────
+  // Version-gated: only surfaces when the newest release note is unseen. Silent
+  // otherwise (straight to the dashboard, bank-style).
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const seen = await getSetting<string>('last_seen_update_version');
+      if (live) setWhatsNew(whatsNewNudge(seen));
+    })();
+    return () => { live = false; };
+  }, []);
+
+  const dismissWhatsNew = useCallback(async () => {
+    setWhatsNew(null);
+    await saveSetting('last_seen_update_version', LATEST_UPDATE.version);
+  }, []);
+
+  // ── "This Week's Focus" — the frozen weekly action briefing ───────────────
+  // Pure curation over the insights already in context. Frozen per week so the
+  // list is stable (regenerates Monday; drops items you've resolved). Zero-AI.
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const weekKey = weekKeyOf(new Date());
+      const stored = (await getSetting<FrozenBriefing>('action_briefing')) ?? null;
+      const { insights: chosen, frozen, changed } = resolveWeeklyBriefing(insights, stored, weekKey);
+      if (changed) await saveSetting('action_briefing', frozen);
+      if (live) setWeeklyBriefing(chosen.map(insightToBriefingNudge));
+    })();
+    return () => { live = false; };
+  }, [insights]);
+
+  // Dismiss a briefing item for the current week — hidden now, re-evaluated
+  // next Monday (comes back if the condition still holds; gone if you fixed it).
+  const dismissBriefingItem = useCallback(async (nudgeId: string) => {
+    setWeeklyBriefing((prev) => prev.filter((n) => n.id !== nudgeId));
+    const insId = insightIdFromBriefingId(nudgeId);
+    if (!insId) return;
+    const weekKey = weekKeyOf(new Date());
+    const stored = (await getSetting<FrozenBriefing>('action_briefing')) ?? null;
+    if (stored && stored.weekKey === weekKey) {
+      const dismissed = Array.from(new Set([...(stored.dismissed ?? []), insId]));
+      await saveSetting('action_briefing', { ...stored, dismissed });
+    }
+  }, []);
+
   const value: AppDataContextValue = {
     accounts, setAccounts, equity, profile, setProfile, monthlyInv, setMonthlyInv,
     chatMessages, setChatMessages, chatLoading,
     apiKey, apiKeyInput, setApiKeyInput,
     actionItems, dashBuckets, dashPaycheck, dashSinkingFunds, dashDeployConfirms, dashFunMoney,
     achievementStates, celebrationNudges, dismissCelebration,
+    weeklyBriefing, dismissBriefingItem, whatsNew, dismissWhatsNew,
     spendingSummary, monthComparison, rawExpenses,
     insights, insightsExpanded, setInsightsExpanded,
     budgetSection, setBudgetSection,
