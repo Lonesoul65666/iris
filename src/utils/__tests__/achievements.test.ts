@@ -63,7 +63,7 @@ describe('forward-only gating (no trophies for June)', () => {
 
   it('DOES unlock once the streak grows past the baseline', () => {
     const baseline: GamificationBaseline = {
-      capturedAt: NOW.toISOString(), underBaseStreak: 1, monthsUnderBase: 1, cumulativeBanked: 0, netWorth: 0, savingsRate: 0, funBalance: 0, funStreaks: {}, engagement: engagement(),
+      capturedAt: NOW.toISOString(), underBaseStreak: 1, monthsUnderBase: 1, cumulativeBanked: 0, netWorth: 0, savingsRate: 0, funBalance: 0, funSaved: 0, funStreaks: {}, engagement: engagement(),
     };
     const c = ctx({ game: game({ underBase: { current: 3, best: 3, active: true } }) });
     const { states, newlyUnlocked } = evaluateAchievements(c, baseline, [], NOW);
@@ -82,7 +82,7 @@ describe('savings rate is forward-only', () => {
   it('awards once the rate climbs past a threshold it was below at baseline', () => {
     const baseline: GamificationBaseline = {
       capturedAt: NOW.toISOString(), underBaseStreak: 0, monthsUnderBase: 0,
-      cumulativeBanked: 0, netWorth: 0, savingsRate: 12, funBalance: 0, funStreaks: {}, engagement: engagement(),
+      cumulativeBanked: 0, netWorth: 0, savingsRate: 12, funBalance: 0, funSaved: 0, funStreaks: {}, engagement: engagement(),
     };
     const c = ctx({ savingsRate: 22 });
     const { states } = evaluateAchievements(c, baseline, [], NOW);
@@ -91,20 +91,40 @@ describe('savings rate is forward-only', () => {
 });
 
 describe('grandfathered (cleared before Iris started counting)', () => {
-  it('flags a forward-only achievement the user was already past at baseline', () => {
-    const c = ctx({ scorecard: scorecard({ monthsUnderBase: 3 }) });
-    const baseline = captureBaseline(c, NOW.toISOString()); // baseline monthsUnderBase = 3
+  it('flags an absolute-threshold achievement the user was already past at baseline', () => {
+    const c = ctx({ savingsRate: 25 });
+    const baseline = captureBaseline(c, NOW.toISOString()); // baseline rate = 25 (already ≥ 10 & 20)
     const { states } = evaluateAchievements(c, baseline, [], NOW);
-    const first = states.find((s) => s.achievement.id === 'first-month-under-base')!;
-    expect(first.earned).toBe(false);
-    expect(first.grandfathered).toBe(true);
+    const rate10 = states.find((s) => s.achievement.id === 'savings-rate-10')!;
+    expect(rate10.earned).toBe(false);
+    expect(rate10.grandfathered).toBe(true);
+  });
+});
+
+describe('cumulative achievements measure growth SINCE the start line', () => {
+  const baseline = () => ({
+    capturedAt: NOW.toISOString(), underBaseStreak: 0, monthsUnderBase: 0,
+    cumulativeBanked: 8000, netWorth: 0, savingsRate: 0, funBalance: 0, funSaved: 0, funStreaks: {}, engagement: engagement(),
+  });
+
+  it('a big pre-existing banked total does NOT count toward Five Figures Deep', () => {
+    const c = ctx({ scorecard: scorecard({ cumulativeBanked: 8000 }) }); // already had $8k
+    const s = evaluateAchievements(c, baseline(), [], NOW).states.find((x) => x.achievement.id === 'banked-10k')!;
+    expect(s.earned).toBe(false);
+    expect(s.progress).toBe(0); // 0% — not 80%
+  });
+
+  it('unlocks once $10k is banked AFTER the start line', () => {
+    const c = ctx({ scorecard: scorecard({ cumulativeBanked: 18000 }) }); // +$10k since baseline
+    const s = evaluateAchievements(c, baseline(), [], NOW).states.find((x) => x.achievement.id === 'banked-10k')!;
+    expect(s.earned).toBe(true);
   });
 });
 
 describe('goals count only when crushed after the baseline', () => {
   const baseline: GamificationBaseline = {
     capturedAt: '2026-07-01T00:00:00Z', underBaseStreak: 0, monthsUnderBase: 0,
-    cumulativeBanked: 0, netWorth: 0, savingsRate: 0, funBalance: 0, funStreaks: {}, engagement: engagement(),
+    cumulativeBanked: 0, netWorth: 0, savingsRate: 0, funBalance: 0, funSaved: 0, funStreaks: {}, engagement: engagement(),
   };
   const crushed = (achievedAt: string) => ({
     id: 's1', name: 'Trip', targetAmount: 1000, currentBalance: 1000, monthlyContribution: 0, color: '#fff', achievedAt,
