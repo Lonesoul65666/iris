@@ -344,6 +344,34 @@ export const ACHIEVEMENTS: Achievement[] = [
     icon: '😈', tier: 'silver', category: 'couples',
     evaluate: (c) => threshold(funLead(c), 3, null, `+${funLead(c)}`),
   },
+  // ── cooperative "we did it together" (Scott wants coop > competitive) ──
+  {
+    id: 'same-page', name: 'Same Page', description: 'Both of you banked fun money in a month you lived under base.',
+    hypeCopy: 'Both of you under on fun money AND the household under base — same month, same team. That is the whole damn point.',
+    icon: '🤝', tier: 'silver', category: 'couples',
+    evaluate: (c) => {
+      const both = c.game.fun.length >= 2 && c.game.fun.every((f) => f.streak.active);
+      return { earned: both && c.game.underBase.active, progress: both && c.game.underBase.active ? 1 : 0 };
+    },
+  },
+  {
+    id: 'household-machine', name: 'Household Machine', description: 'Both partners on a 3-month fun-money streak at once.',
+    hypeCopy: 'Both of you, three months straight, dialed in together. This household is a machine now.',
+    icon: '⚙️', tier: 'gold', category: 'couples',
+    evaluate: (c) => {
+      const minStreak = c.game.fun.length >= 2 ? Math.min(...c.game.fun.map((f) => f.streak.current)) : 0;
+      return threshold(minStreak, 3, null, `${minStreak} / 3 each`);
+    },
+  },
+  {
+    id: 'both-saved', name: 'Both Chipping In', description: 'Both partners promoted fun-money restraint into savings.',
+    hypeCopy: 'Both of you skimmed real money from your own fun into savings. Nobody carried this one — you both did.',
+    icon: '🤝', tier: 'bronze', category: 'couples',
+    evaluate: (c) => {
+      const both = c.funMoney.length >= 2 && c.funMoney.every((f) => (f.savedToDate ?? 0) > 0);
+      return { earned: both, progress: c.funMoney.length ? c.funMoney.filter((f) => (f.savedToDate ?? 0) > 0).length / c.funMoney.length : 0 };
+    },
+  },
 
   // ── savings (forward-only rate + household saved) ──
   {
