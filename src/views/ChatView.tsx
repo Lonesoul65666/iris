@@ -25,7 +25,7 @@ export default function ChatView() {
           {llmReady && <span className="cyber-chip">AI ready</span>}
           <p className="text-text-secondary text-sm">
             {llmReady
-              ? 'Ask anything about your portfolio, market trends, or investment ideas. Upload screenshots to import holdings.'
+              ? 'Ask anything about your budget, spending, goals, or the big picture — Iris has your full money story loaded.'
               : 'Configure an AI provider in Settings to enable analysis.'}
           </p>
         </div>
@@ -51,14 +51,14 @@ export default function ChatView() {
           <div className="glass-card p-8 text-center">
             <div className="text-4xl mb-3">📡</div>
             <h3 className="text-lg font-semibold text-text-primary mb-2">Welcome to Iris</h3>
-            <p className="text-text-secondary text-sm mb-4">Your portfolio is loaded. Try asking:</p>
+            <p className="text-text-secondary text-sm mb-4">Your full money picture is loaded. Try asking:</p>
             <div className="flex flex-wrap gap-2 justify-center">
               {[
-                'What should I do with my $2k monthly investment?',
-                'Analyze my tech concentration risk',
-                'What sectors am I missing?',
-                'Explain my ISO situation simply',
-                'What ETFs should I consider for diversification?',
+                'How did our spending look last month?',
+                'Where can I cut to hit my goals faster?',
+                'Am I on track with my Have-To\'s and Want-To\'s?',
+                'How\'s the fun-money race going?',
+                'What subscriptions am I wasting money on?',
               ].map((q, i) => (
                 <button key={i} onClick={() => submit(q)} className="glass-card-sm px-3 py-1.5 text-xs text-accent-light hover:bg-accent/10 transition-colors">
                   {q}
@@ -109,7 +109,7 @@ export default function ChatView() {
         </button>
         <textarea value={chatInput} onChange={e => setChatInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(chatInput); } }}
-          placeholder={llmReady ? "Ask about your portfolio, market trends, opportunities..." : "Configure a provider in Settings to start..."}
+          placeholder={llmReady ? "Ask about your budget, spending, goals..." : "Configure a provider in Settings to start..."}
           disabled={!llmReady}
           rows={1}
           className="flex-1 bg-transparent text-text-primary placeholder:text-text-muted text-sm outline-none disabled:opacity-50 resize-none max-h-32 overflow-y-auto"

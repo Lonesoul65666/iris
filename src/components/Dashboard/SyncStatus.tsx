@@ -6,7 +6,7 @@
 //   • Stale (>48h) or never synced: a pulsing amber "Refresh your accounts"
 //     button that's hard to miss — so the non-power-user just taps once.
 // No auto-sync, no polling: it only hits Teller on a human click (debounced).
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getLastTellerSync, getLastSyncSummary, syncTellerTransactions, STALE_HOURS, type SyncSummary } from '../../lib/syncTellerTransactions';
 
 function ago(iso: string): string {
@@ -42,9 +42,14 @@ export default function SyncStatus() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [note, setNote] = useState('');
 
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     void getLastTellerSync().then(setLastSync);
     void getLastSyncSummary().then(setSummary);
+    // Cancel any pending post-sync reload if this unmounts first (navigation),
+    // so a reload can't fire into a torn-down / cold-start state.
+    return () => { if (reloadTimer.current) clearTimeout(reloadTimer.current); };
   }, []);
 
   const onSync = useCallback(async () => {
@@ -65,7 +70,7 @@ export default function SyncStatus() {
       // actually changed, even on a partial sync (imported data must show up;
       // the warning re-renders from the persisted summary after reload).
       const changed = r.summary.txNew + r.summary.txUpdated + r.summary.incomeNew > 0;
-      if (changed) setTimeout(() => window.location.reload(), r.summary.partial ? 5000 : 2600);
+      if (changed) reloadTimer.current = setTimeout(() => window.location.reload(), r.summary.partial ? 5000 : 2600);
     } catch {
       setPhase('error');
       setNote('Couldn’t refresh. Try again shortly.');

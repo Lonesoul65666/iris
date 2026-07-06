@@ -1015,7 +1015,7 @@ function MarketPanel({ report, loading, error, progress, onLoad, hasApiKey, chec
                     ) : (
                       <>
                         <div className={`text-sm font-semibold ${isChecked ? 'line-through text-text-muted' : 'text-text-primary'}`}>
-                          {(pinned.item as AllocationAdvice).action.toUpperCase()} {(pinned.item as AllocationAdvice).ticker} — {(pinned.item as AllocationAdvice).name}
+                          {((pinned.item as AllocationAdvice).action ?? '').toUpperCase()} {(pinned.item as AllocationAdvice).ticker} — {(pinned.item as AllocationAdvice).name}
                         </div>
                         <p className="text-xs text-text-secondary mt-1">{(pinned.item as AllocationAdvice).reasoning}</p>
                       </>

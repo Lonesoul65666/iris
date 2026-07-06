@@ -100,7 +100,7 @@ function generateFromState(
 
   // ─── ISO Exercise ───
   if (equity) {
-    const exercisable = equity.grants.filter(g => g.type === 'iso' && g.exercisableShares > 0);
+    const exercisable = (equity.grants ?? []).filter(g => g.type === 'iso' && g.exercisableShares > 0);
     const totalExercisable = exercisable.reduce((s, g) => s + g.exercisableShares, 0);
     if (totalExercisable > 0) {
       const avgStrike = exercisable.reduce((s, g) => s + g.strikePrice * g.exercisableShares, 0) / totalExercisable;

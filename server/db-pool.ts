@@ -37,7 +37,16 @@ export function getLastMigrationResult(): MigrationResult | null {
 
 async function ensureSingleUser(p: PgPool): Promise<string> {
   const existing = await p.query<{ id: string }>('SELECT id FROM users ORDER BY created_at LIMIT 1')
-  if (existing.rows.length > 0) return existing.rows[0].id
+  if (existing.rows.length > 0) {
+    // Single-user app by design. If somehow >1 user exists, we pin the oldest —
+    // warn loudly so a stranded second user's data can't hide silently.
+    const count = await p.query<{ n: string }>('SELECT count(*)::int AS n FROM users')
+    if (Number(count.rows[0]?.n) > 1) {
+      // eslint-disable-next-line no-console
+      console.warn(`[iris] db-pool: ${count.rows[0].n} users found — pinning the oldest. Data under other user rows will not be served.`)
+    }
+    return existing.rows[0].id
+  }
 
   const created = await p.query<{ id: string }>(
     `INSERT INTO users (id, display_name)
