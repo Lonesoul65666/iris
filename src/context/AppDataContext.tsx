@@ -57,6 +57,8 @@ interface AppDataContextValue {
   dashPaycheck: ReturnType<typeof getPaycheck> extends Promise<infer R> ? NonNullable<R> : any;
   dashSinkingFunds: typeof defaultSinkingFunds;
   dashDeployConfirms: DeployConfirmation[];
+  /** Fun-money pots with derived balances — the couples game surface. */
+  dashFunMoney: FunMoney[];
   spendingSummary: SpendingSummary | null;
   monthComparison: MonthComparison | null;
   rawExpenses: any[];
@@ -154,6 +156,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
   const [dashPaycheck, setDashPaycheck] = useState(defaultPaycheck);
   const [dashSinkingFunds, setDashSinkingFunds] = useState(defaultSinkingFunds);
   const [dashDeployConfirms, setDashDeployConfirms] = useState<DeployConfirmation[]>([]);
+  const [dashFunMoney, setDashFunMoney] = useState<FunMoney[]>([]);
   const [spendingSummary, setSpendingSummary] = useState<SpendingSummary | null>(null);
   const [monthComparison, setMonthComparison] = useState<MonthComparison | null>(null);
   const [rawExpenses, setRawExpenses] = useState<any[]>([]);
@@ -386,6 +389,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
         setMonthComparison(computeMonthComparison(allExpenses));
         // Fun money: seed/link + derive this-month spent (ONE path, see syncFunMoney)
         const updatedFM = await syncFunMoney(allExpenses);
+        setDashFunMoney(updatedFM);
 
         // Generate insights on mount
         setInsights(generateInsights({
@@ -505,6 +509,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
         setMonthComparison(computeMonthComparison(allExpenses));
         // Fun money: seed/link + derive this-month spent (ONE path, see syncFunMoney)
         const updatedFM = await syncFunMoney(allExpenses);
+        setDashFunMoney(updatedFM);
         setInsights(generateInsights({
           expenses: allExpenses,
           buckets: updatedBuckets,
@@ -718,7 +723,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     accounts, setAccounts, equity, profile, setProfile, monthlyInv, setMonthlyInv,
     chatMessages, setChatMessages, chatLoading,
     apiKey, apiKeyInput, setApiKeyInput,
-    actionItems, dashBuckets, dashPaycheck, dashSinkingFunds, dashDeployConfirms,
+    actionItems, dashBuckets, dashPaycheck, dashSinkingFunds, dashDeployConfirms, dashFunMoney,
     spendingSummary, monthComparison, rawExpenses,
     insights, insightsExpanded, setInsightsExpanded,
     budgetSection, setBudgetSection,
