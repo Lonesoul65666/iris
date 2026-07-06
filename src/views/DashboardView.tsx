@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   ResponsiveContainer,
   AreaChart, Area, Tooltip, XAxis, YAxis,
@@ -24,7 +24,8 @@ import { achievementById } from '../utils/achievements';
 import DashSection from '../components/ui/DashSection';
 import { syncHealthNudges } from '../utils/syncHealth';
 import { getLastSyncSummary, hoursSinceLastSync } from '../lib/syncTellerTransactions';
-import type { Nudge } from '../utils/nudgeEngine';
+import { dismissSettingKey, isNudgeActive, type Nudge, type DismissState } from '../utils/nudgeEngine';
+import { getSetting, saveSetting } from '../stores/portfolioStore';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -74,15 +75,31 @@ export default function DashboardView() {
   const greeting = gameGreeting(gameState);
 
   // Proactive sync-health — surface failed/rate-limited/stale refreshes so no
-  // data is silently missed. Re-checks after a sync (rawExpenses changes).
+  // data is silently missed. Re-checks after a sync (rawExpenses changes), and
+  // respects persisted dismissals: "Remind me later" snoozes for the nudge's
+  // cadence, "Don't show again" is permanent — Iris learns not to nag.
   const [syncNudges, setSyncNudges] = useState<Nudge[]>([]);
   useEffect(() => {
     let live = true;
-    void Promise.all([getLastSyncSummary(), hoursSinceLastSync()]).then(([summary, hrs]) => {
-      if (live) setSyncNudges(syncHealthNudges(summary, hrs));
-    });
+    void (async () => {
+      const [summary, hrs] = await Promise.all([getLastSyncSummary(), hoursSinceLastSync()]);
+      const now = new Date();
+      const candidates = syncHealthNudges(summary, hrs, now);
+      const active: Nudge[] = [];
+      for (const n of candidates) {
+        const dismiss = (await getSetting<DismissState>(dismissSettingKey(n.id))) ?? null;
+        if (isNudgeActive(n, dismiss, now)) active.push(n);
+      }
+      if (live) setSyncNudges(active);
+    })();
     return () => { live = false; };
   }, [rawExpenses]);
+
+  const dismissSyncNudge = useCallback(async (n: Nudge, permanent: boolean) => {
+    setSyncNudges((prev) => prev.filter((x) => x.id !== n.id));
+    const rec: DismissState = { id: n.id, dismissedAt: new Date().toISOString(), permanent, title: n.title, snoozeDays: n.snoozeDays };
+    await saveSetting(dismissSettingKey(n.id), rec);
+  }, []);
 
   const { hasPortfolio } = useHasRealData();
   const modules = useEnabledModules();
@@ -243,8 +260,8 @@ export default function DashboardView() {
       {syncNudges.map((n, i) => (
         <NudgeCard key={n.id} nudge={n} index={i}
           onPrimary={n.primary?.view ? () => setView(n.primary!.view!) : undefined}
-          onSnooze={() => setSyncNudges((prev) => prev.filter((x) => x.id !== n.id))}
-          onDismissForever={() => setSyncNudges((prev) => prev.filter((x) => x.id !== n.id))} />
+          onSnooze={() => void dismissSyncNudge(n, false)}
+          onDismissForever={() => void dismissSyncNudge(n, true)} />
       ))}
 
       {/* Achievement unlocks — the "FUCK YEAH" moment. Fresh unlocks this session
