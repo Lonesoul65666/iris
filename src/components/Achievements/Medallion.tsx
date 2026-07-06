@@ -36,6 +36,7 @@ function glyphFor(a: Achievement): keyof typeof GLYPHS {
     'first-crush': 'target', 'crush-big': 'target',
     'crush-3': 'medal', 'crush-patient': 'medal',
     'fun-first-month': 'shield', 'fun-streak-3': 'shield', 'fun-streak-6': 'shield',
+    'comeback-after-week': 'heart',
   };
   if (byId[a.id]) return byId[a.id];
   switch (a.category) {

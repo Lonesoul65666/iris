@@ -35,6 +35,9 @@ export interface EngagementSignals {
   setFunOpening: boolean;   // a fun-money pot has been anchored/seeded
   gotAdvisorTake: boolean;  // has run "Iris's Take" at least once
   monthsActive: number;     // full months of data
+  /** Days between the PREVIOUS visit and this one (real app-open timestamps,
+   *  not backfilled data) — null until there's a prior visit to compare. */
+  daysSinceLastVisit: number | null;
 }
 
 export interface AchievementContext {
@@ -222,6 +225,17 @@ export const ACHIEVEMENTS: Achievement[] = [
     hypeCopy: 'You asked the hard question and Iris kept it real. Coaching, not cuddling.',
     icon: '🎤', tier: 'bronze', category: 'exploration', forwardOnly: true,
     evaluate: (c, b) => didForward(c.engagement.gotAdvisorTake, b?.engagement?.gotAdvisorTake),
+  },
+  {
+    // Life happens — the whole point is to counter guilt, not track absence as
+    // a failure. Fires the first time someone comes back after a week+ away.
+    id: 'comeback-after-week', name: 'Glad You\'re Back', description: 'Opened Iris again after a week or more away.',
+    hypeCopy: 'You stepped away, and you came back anyway. That is the only stat that matters — welcome back.',
+    icon: '🫂', tier: 'bronze', category: 'exploration', forwardOnly: true,
+    evaluate: (c, b) => didForward(
+      (c.engagement.daysSinceLastVisit ?? 0) >= 7,
+      b ? (b.engagement.daysSinceLastVisit ?? 0) >= 7 : undefined,
+    ),
   },
   {
     id: 'used-3-months', name: 'Sticking Around', description: 'Used Iris across three more months.',

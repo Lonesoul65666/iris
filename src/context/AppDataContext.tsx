@@ -769,6 +769,13 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
         investing: monthlyInv?.amount || 0,
       }).rate;
       const gotAdvisorTake = Boolean(await getSetting('budget_advisor_review'));
+      // Already-tracked visit timestamps (see the "welcome back" nudge above) —
+      // reused here, not new tracking, to power the comeback-after-week trophy.
+      const prevVisitAt = await getSetting<string>('prev_visit_at');
+      const lastVisitAt = await getSetting<string>('last_visit_at');
+      const daysSinceLastVisit = prevVisitAt && lastVisitAt
+        ? Math.round((new Date(lastVisitAt).getTime() - new Date(prevVisitAt).getTime()) / 86_400_000)
+        : null;
       const actx: AchievementContext = {
         scorecard, game, funMoney: dashFunMoney, stashes: dashSinkingFunds,
         netWorth: totalNetWorth, savingsRate,
@@ -781,6 +788,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
           setFunOpening: dashFunMoney.some((f) => (f.openingBalance ?? 0) > 0 || !!f.startMonth),
           gotAdvisorTake,
           monthsActive: scorecard.fullMonthCount,
+          daysSinceLastVisit,
         },
       };
       let baseline = (await getSetting<GamificationBaseline>('gamification_baseline')) ?? null;
