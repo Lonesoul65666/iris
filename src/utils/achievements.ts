@@ -17,6 +17,7 @@
 import type { FunMoney, Stash } from '../types/budget';
 import type { Scorecard } from './savingsScorecard';
 import type { GameState } from './gamification';
+import type { Nudge } from './nudgeEngine';
 
 export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'platinum';
 export type AchievementCategory =
@@ -53,6 +54,7 @@ export interface GamificationBaseline {
   monthsUnderBase: number;
   cumulativeBanked: number;
   netWorth: number;
+  savingsRate: number;
   funStreaks: Record<string, number>;
 }
 
@@ -79,6 +81,10 @@ export interface Achievement {
 export interface UnlockRecord {
   id: string;
   unlockedAt: string;       // ISO
+  /** Has the celebration been acknowledged? Un-acknowledged unlocks keep showing
+   *  their celebration card until dismissed — so the "FUCK YEAH" moment waits for
+   *  you across reloads and survives React StrictMode's double-invoke. */
+  celebrated?: boolean;
 }
 
 // ─── Baseline ───
@@ -90,6 +96,7 @@ export function captureBaseline(ctx: AchievementContext, at: string): Gamificati
     monthsUnderBase: ctx.scorecard.monthsUnderBase,
     cumulativeBanked: ctx.scorecard.cumulativeBanked,
     netWorth: ctx.netWorth,
+    savingsRate: ctx.savingsRate,
     funStreaks: Object.fromEntries(ctx.game.fun.map((f) => [f.person, f.streak.current])),
   };
 }
@@ -315,19 +322,19 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'savings-rate-10', name: 'Double Digits', description: 'Hit a 10% savings rate.',
     hypeCopy: 'Ten percent of gross, socked away. You just quietly beat most of the country.',
     icon: '🌱', tier: 'bronze', category: 'savings', forwardOnly: true,
-    evaluate: (c, b) => ({ earned: c.savingsRate >= 10 && b !== null, progress: clamp01(c.savingsRate / 10) }),
+    evaluate: (c, b) => threshold(c.savingsRate, 10, b?.savingsRate ?? null),
   },
   {
     id: 'savings-rate-20', name: 'Twenty Club', description: 'Hit a 20% savings rate.',
     hypeCopy: 'One in every five dollars, saved. That is not budgeting, that is a money-printing hobby.',
     icon: '💸', tier: 'silver', category: 'savings', forwardOnly: true,
-    evaluate: (c, b) => ({ earned: c.savingsRate >= 20 && b !== null, progress: clamp01(c.savingsRate / 20) }),
+    evaluate: (c, b) => threshold(c.savingsRate, 20, b?.savingsRate ?? null),
   },
   {
     id: 'savings-rate-30', name: 'Serious Money', description: 'Hit a 30% savings rate.',
     hypeCopy: 'Thirty percent. You are playing a completely different sport than the people around you.',
     icon: '🚀', tier: 'gold', category: 'savings', forwardOnly: true,
-    evaluate: (c, b) => ({ earned: c.savingsRate >= 30 && b !== null, progress: clamp01(c.savingsRate / 30) }),
+    evaluate: (c, b) => threshold(c.savingsRate, 30, b?.savingsRate ?? null),
   },
   {
     id: 'household-saved-25k', name: 'Quarter-Hundred', description: 'Household banked + saved crossed $25,000.',
@@ -439,6 +446,36 @@ export function evaluateAchievements(
   }
 
   return { states, newlyUnlocked };
+}
+
+/** Turn a freshly-unlocked achievement into a `celebration` Nudge so it renders
+ *  through the existing NudgeCard — the "FUCK YEAH, LET'S GO" moment. */
+export function achievementToNudge(a: Achievement): Nudge {
+  return {
+    id: `achievement:${a.id}`,
+    severity: 'celebration',
+    category: 'milestone',
+    icon: a.icon,
+    title: `Achievement unlocked — ${a.name}`,
+    body: a.hypeCopy,
+    oneShot: true,
+  };
+}
+
+const BY_ID = new Map(ACHIEVEMENTS.map((a) => [a.id, a]));
+export function achievementById(id: string): Achievement | undefined {
+  return BY_ID.get(id);
+}
+
+/** Celebration nudges for every unlock the user hasn't acknowledged yet. Driven
+ *  by the persisted records (not the transient "newly unlocked this run"), so the
+ *  moment survives reloads/StrictMode and simply waits until dismissed. */
+export function pendingCelebrationNudges(unlocked: UnlockRecord[]): Nudge[] {
+  return unlocked
+    .filter((u) => !u.celebrated)
+    .map((u) => achievementById(u.id))
+    .filter((a): a is Achievement => Boolean(a))
+    .map(achievementToNudge);
 }
 
 /** Summary counts for the Trophy Wall header. */

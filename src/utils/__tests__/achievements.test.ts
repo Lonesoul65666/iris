@@ -63,12 +63,30 @@ describe('forward-only gating (no trophies for June)', () => {
 
   it('DOES unlock once the streak grows past the baseline', () => {
     const baseline: GamificationBaseline = {
-      capturedAt: NOW.toISOString(), underBaseStreak: 1, monthsUnderBase: 1, cumulativeBanked: 0, netWorth: 0, funStreaks: {},
+      capturedAt: NOW.toISOString(), underBaseStreak: 1, monthsUnderBase: 1, cumulativeBanked: 0, netWorth: 0, savingsRate: 0, funStreaks: {},
     };
     const c = ctx({ game: game({ underBase: { current: 3, best: 3, active: true } }) });
     const { states, newlyUnlocked } = evaluateAchievements(c, baseline, [], NOW);
     expect(states.find((s) => s.achievement.id === 'streak-3')!.earned).toBe(true);
     expect(newlyUnlocked.map((a) => a.id)).toContain('streak-3');
+  });
+});
+
+describe('savings rate is forward-only', () => {
+  it('does NOT award a rate the user already had at baseline', () => {
+    const c = ctx({ savingsRate: 18 });
+    const baseline = captureBaseline(c, NOW.toISOString()); // baseline rate = 18
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    expect(states.find((s) => s.achievement.id === 'savings-rate-10')!.earned).toBe(false);
+  });
+  it('awards once the rate climbs past a threshold it was below at baseline', () => {
+    const baseline: GamificationBaseline = {
+      capturedAt: NOW.toISOString(), underBaseStreak: 0, monthsUnderBase: 0,
+      cumulativeBanked: 0, netWorth: 0, savingsRate: 12, funStreaks: {},
+    };
+    const c = ctx({ savingsRate: 22 });
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    expect(states.find((s) => s.achievement.id === 'savings-rate-20')!.earned).toBe(true);
   });
 });
 

@@ -25,6 +25,14 @@ import { getActionItems, saveAllActionItems, clearAllActionData } from '../store
 import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getEarners, getPaycheck, getExpenses, getCustomCategories, getDeployConfirmations, clearAllExpenses, clearExpensesBySource, clearAllBudgetData, type DeployConfirmation } from '../stores/budgetStore';
 import type { Expense, FunMoney, Earner } from '../types/budget';
 import { seedFunMoneyFromEarners, linkFunMoneyToEarners, computeFunMoneySpent } from '../utils/funMoney';
+import { computeScorecard } from '../utils/savingsScorecard';
+import { computeGameState } from '../utils/gamification';
+import { computeSavingsRate } from '../utils/savingsRate';
+import {
+  evaluateAchievements, captureBaseline, pendingCelebrationNudges,
+  type AchievementState, type AchievementContext, type GamificationBaseline, type UnlockRecord,
+} from '../utils/achievements';
+import type { Nudge } from '../utils/nudgeEngine';
 import { setAuditActor } from '../stores/auditLogStore';
 import { applyTransactionsToBuckets, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, registerEarnerFunLabels, currentMonthKey } from '../utils/transactionAnalysis';
 import type { SpendingSummary, MonthComparison, MonthlySpending } from '../utils/transactionAnalysis';
@@ -59,6 +67,12 @@ interface AppDataContextValue {
   dashDeployConfirms: DeployConfirmation[];
   /** Fun-money pots with derived balances — the couples game surface. */
   dashFunMoney: FunMoney[];
+  /** Evaluated achievement states (earned + progress) for the Trophy Wall. */
+  achievementStates: AchievementState[];
+  /** Achievements unlocked THIS session — render as celebration nudges. */
+  celebrationNudges: Nudge[];
+  /** Dismiss a celebration nudge (the unlock stays permanently recorded). */
+  dismissCelebration: (id: string) => void;
   spendingSummary: SpendingSummary | null;
   monthComparison: MonthComparison | null;
   rawExpenses: any[];
@@ -157,6 +171,8 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
   const [dashSinkingFunds, setDashSinkingFunds] = useState(defaultSinkingFunds);
   const [dashDeployConfirms, setDashDeployConfirms] = useState<DeployConfirmation[]>([]);
   const [dashFunMoney, setDashFunMoney] = useState<FunMoney[]>([]);
+  const [achievementStates, setAchievementStates] = useState<AchievementState[]>([]);
+  const [celebrationNudges, setCelebrationNudges] = useState<Nudge[]>([]);
   const [spendingSummary, setSpendingSummary] = useState<SpendingSummary | null>(null);
   const [monthComparison, setMonthComparison] = useState<MonthComparison | null>(null);
   const [rawExpenses, setRawExpenses] = useState<any[]>([]);
@@ -719,11 +735,77 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     }
   }, [priceRefreshing, accounts, equity, profile]);
 
+  // Achievements — evaluate whenever the underlying money data changes, persist
+  // unlocks + the one-time forward-only baseline, and surface fresh unlocks as
+  // celebration nudges. Runs off data already in context; no new load path.
+  // Idempotent: persisted unlocks stop a celebration from re-firing. (2026-07-06)
+  useEffect(() => {
+    if (rawExpenses.length === 0) return;
+    let live = true;
+    void (async () => {
+      const scorecard = computeScorecard(rawExpenses);
+      const game = computeGameState(scorecard, dashFunMoney, rawExpenses);
+      const savingsRate = computeSavingsRate({
+        grossMonthly: dashPaycheck.grossMonthly,
+        netTakeHome: dashPaycheck.netTakeHome,
+        retirement401k: dashPaycheck.retirement401k,
+        hsaContribution: dashPaycheck.hsaContribution,
+        investing: monthlyInv?.amount || 0,
+      }).rate;
+      const gotAdvisorTake = Boolean(await getSetting('budget_advisor_review'));
+      const actx: AchievementContext = {
+        scorecard, game, funMoney: dashFunMoney, stashes: dashSinkingFunds,
+        netWorth: totalNetWorth, savingsRate,
+        engagement: {
+          connectedData: rawExpenses.length > 0,
+          createdStash: dashSinkingFunds.length > 0,
+          crushedGoals: dashSinkingFunds.filter((s) => s.achievedAt).length,
+          committedMove: dashDeployConfirms.length > 0,
+          setFunOpening: dashFunMoney.some((f) => (f.openingBalance ?? 0) > 0 || !!f.startMonth),
+          gotAdvisorTake,
+          monthsActive: scorecard.fullMonthCount,
+        },
+      };
+      let baseline = (await getSetting<GamificationBaseline>('gamification_baseline')) ?? null;
+      if (!baseline) {
+        baseline = captureBaseline(actx, new Date().toISOString());
+        await saveSetting('gamification_baseline', baseline);
+      }
+      const unlocked = (await getSetting<UnlockRecord[]>('achievements_unlocked')) ?? [];
+      const now = new Date();
+      const { states, newlyUnlocked } = evaluateAchievements(actx, baseline, unlocked, now);
+      let merged = unlocked;
+      if (newlyUnlocked.length > 0) {
+        const seen = new Set(unlocked.map((u) => u.id));
+        const additions = newlyUnlocked
+          .filter((a) => !seen.has(a.id))
+          .map((a) => ({ id: a.id, unlockedAt: now.toISOString(), celebrated: false }));
+        if (additions.length > 0) {
+          merged = [...unlocked, ...additions];
+          await saveSetting('achievements_unlocked', merged);
+        }
+      }
+      if (!live) return;
+      setAchievementStates(states);
+      // Show every not-yet-acknowledged unlock (waits across reloads until dismissed).
+      setCelebrationNudges(pendingCelebrationNudges(merged));
+    })();
+    return () => { live = false; };
+  }, [rawExpenses, dashFunMoney, dashSinkingFunds, dashDeployConfirms, dashPaycheck, monthlyInv, totalNetWorth]);
+
+  const dismissCelebration = useCallback(async (nudgeId: string) => {
+    setCelebrationNudges((prev) => prev.filter((n) => n.id !== nudgeId));
+    const id = nudgeId.replace(/^achievement:/, '');
+    const unlocked = (await getSetting<UnlockRecord[]>('achievements_unlocked')) ?? [];
+    await saveSetting('achievements_unlocked', unlocked.map((u) => (u.id === id ? { ...u, celebrated: true } : u)));
+  }, []);
+
   const value: AppDataContextValue = {
     accounts, setAccounts, equity, profile, setProfile, monthlyInv, setMonthlyInv,
     chatMessages, setChatMessages, chatLoading,
     apiKey, apiKeyInput, setApiKeyInput,
     actionItems, dashBuckets, dashPaycheck, dashSinkingFunds, dashDeployConfirms, dashFunMoney,
+    achievementStates, celebrationNudges, dismissCelebration,
     spendingSummary, monthComparison, rawExpenses,
     insights, insightsExpanded, setInsightsExpanded,
     budgetSection, setBudgetSection,
