@@ -155,7 +155,10 @@ export default function StashesCard({ stashes, expenses, confirms, onChange }: P
   };
 
   return (
-    <div className="glass-card p-6">
+    // De-boxed (design polish, 2026-07-06): a soft well instead of the full
+    // metallic glass-card chrome — the section still reads as its own zone on
+    // the page, but without one more heavy border in the stack.
+    <div className="soft-well p-6">
       <div className="flex items-start justify-between mb-1 gap-3">
         <div>
           <h2 className="text-lg font-semibold text-text-primary">Have To's / Want To's</h2>
@@ -186,7 +189,7 @@ export default function StashesCard({ stashes, expenses, confirms, onChange }: P
           const forecast = computeStashForecast(status);
           const fline = forecast ? forecastLine(forecast) : null;
           return (
-            <div key={sf.id} className={`p-4 rounded-xl bg-white/[0.03] border ${negative ? 'border-negative/40' : 'border-glass-border'}`}>
+            <div key={sf.id} className={`p-4 rounded-xl bg-white/[0.05] ${negative ? 'border-l-2 border-negative/50' : ''}`}>
               {/* Name + contribution */}
               <div className="flex items-center justify-between mb-1 gap-2">
                 <button onClick={() => update(sf.id, { kind: kindOf(sf) === 'have_to' ? 'want_to' : 'have_to' })}
@@ -242,9 +245,9 @@ export default function StashesCard({ stashes, expenses, confirms, onChange }: P
                       <span className="text-text-secondary font-medium">{formatCurrency(forecast.remaining)} to go</span>
                     )}
                   </div>
-                  <div className="w-full bg-white/10 rounded-full h-1.5 mb-1">
-                    <div className="h-1.5 rounded-full transition-all"
-                      style={{ width: `${forecast.percent}%`, background: forecast.status === 'met' ? '#22c55e' : sf.color }} />
+                  <div className="track-well rounded-full h-1.5 mb-1">
+                    <div className={`h-1.5 rounded-full transition-all ${forecast.status === 'met' ? 'track-fill-positive' : ''}`}
+                      style={{ width: `${forecast.percent}%`, background: forecast.status === 'met' ? undefined : sf.color }} />
                   </div>
                   <div className={`text-[10px] ${fline.cls}`}>{fline.text}</div>
                 </div>

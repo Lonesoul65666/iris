@@ -733,9 +733,14 @@ export default function BudgetView() {
         // Make these read as pressable buttons: a resting border, a hover LIFT +
         // accent glow, and a press (scale-down) response. The active tab gets a
         // solid accent ring so "you are here" is unmistakable.
-        const base = 'group text-left rounded-xl p-4 border transition-all duration-200 cursor-pointer active:scale-[0.98] active:translate-y-0';
-        const activeCls = 'bg-accent/15 border-accent/60 ring-1 ring-accent/40 shadow-lg shadow-accent/20';
-        const idleCls = 'bg-surface-2 border-glass-border hover:-translate-y-0.5 hover:border-accent/50 hover:bg-surface-3 hover:shadow-lg hover:shadow-accent/10';
+        // Design polish (2026-07-06): a full ring reads as "another boxed card";
+        // a bottom-only accent that lights up purple reads as a clickable tab
+        // while still sitting flush against the page. Bg tint + hover lift +
+        // the nav arrow already did the "clearly clickable" job — this just
+        // trims the border down to one edge.
+        const base = 'group text-left rounded-xl p-4 border-x-0 border-t-0 border-b-2 border-transparent transition-all duration-200 cursor-pointer active:scale-[0.98] active:translate-y-0';
+        const activeCls = 'bg-accent/15 border-accent shadow-lg shadow-accent/20';
+        const idleCls = 'bg-surface-2 hover:-translate-y-0.5 hover:border-accent/50 hover:bg-surface-3 hover:shadow-lg hover:shadow-accent/10';
         const step = (e: React.MouseEvent, to: number) => { e.stopPropagation(); if (to >= 0 && to < availMonths.length) setOverviewMonth(availMonths[to]); };
         // Shared "go here" cue — muted at rest, lights up + nudges on hover.
         const navArrow = (

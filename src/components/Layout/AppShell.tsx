@@ -124,6 +124,9 @@ export default function AppShell({
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 relative ${
                   view === item.id ? 'bg-accent/15 text-accent-light shadow-[0_0_12px_rgba(139,92,246,0.12)]' : 'text-text-secondary hover:bg-white/5 hover:text-text-primary'
                 } ${sidebarCollapsed ? 'md:justify-center' : ''}`}>
+                {/* Active-row indicator — a sharp vertical rule on the left edge,
+                    on top of the soft purple tint (design polish, 2026-07-06). */}
+                {view === item.id && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent" />}
                 <span className="relative inline-flex">
                   {item.icon}
                   {/* Collapsed-sidebar mini-badge — small numeric pill in the corner of the icon. */}
@@ -198,15 +201,12 @@ export default function AppShell({
             </button>
           ))}
         </nav>
-        {!sidebarCollapsed && pendingActions > 0 && (
-          <div className="mx-3 mb-2 p-2.5 rounded-lg bg-warning/10 border border-warning/20 cursor-pointer hover:bg-warning/15 transition-colors"
-            onClick={() => { setBudgetSection('actions'); setView('budget'); setMobileMenuOpen(false); }}>
-            <div className="text-[10px] font-bold text-warning uppercase tracking-wider">Action Items</div>
-            <div className="text-xs text-text-secondary mt-0.5">{pendingActions} pending — open Budget</div>
-          </div>
-        )}
+        {/* Faint divider grounding the bottom cluster (design polish, 2026-07-06).
+            The pending-actions count already lives on the Budget nav badge above
+            — the old brown "Action Items" card here was a duplicate, removed. */}
+        <div className="mx-3 row-divider" />
         {!sidebarCollapsed && activeUser && (
-          <div className="mx-3 mb-2 flex items-center justify-between">
+          <div className="mx-3 mt-2 mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 rounded-full bg-gradient-to-br from-accent to-indigo-500 flex items-center justify-center text-[10px] text-white font-bold">
                 {activeUser[0]}
@@ -218,7 +218,7 @@ export default function AppShell({
           </div>
         )}
         <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="hidden md:block p-3 border-t border-glass-border text-text-muted hover:text-text-secondary text-xs">
+          className="hidden md:block p-3 text-text-muted hover:text-text-secondary text-xs">
           {sidebarCollapsed ? '>' : '< Collapse'}
         </button>
       </aside>

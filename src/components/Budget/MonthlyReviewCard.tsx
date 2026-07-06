@@ -61,12 +61,11 @@ export default function MonthlyReviewCard({ expenses, buckets, paycheck }: Props
   const [verdict, ...body] = paras;
 
   return (
-    <div className="glass-card p-5 mb-4 relative overflow-hidden border border-accent/30">
-      {/* Ambient glow + lit top edge */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
-      <div className="absolute -top-16 -left-10 w-52 h-52 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
-
-      <div className="relative flex items-center justify-between gap-3 mb-3">
+    // Editorial "well" treatment: no boxed border, a solid accent rule down the
+    // left edge instead — Iris's Take should read like a pull-quote sunk into
+    // the page, not another glass card in the stack. (Design polish, 2026-07-06)
+    <div className="well-card p-5 pl-4 mb-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2.5 min-w-0">
           {/* Iris avatar — gradient presence mark with a spark */}
           <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-accent to-indigo-400 shadow-lg shadow-accent/30 ${loading ? 'animate-pulse' : ''}`}>
@@ -91,20 +90,20 @@ export default function MonthlyReviewCard({ expenses, buckets, paycheck }: Props
       </div>
 
       {!available && (
-        <div className="relative text-xs text-text-muted">
+        <div className="text-xs text-text-muted">
           Add an AI key in <span className="text-accent">Settings</span> and Iris will start calling it like she sees it.
         </div>
       )}
       {available && !facts.hasData && (
-        <div className="relative text-xs text-text-muted">Iris needs one full month of data before she weighs in.</div>
+        <div className="text-xs text-text-muted">Iris needs one full month of data before she weighs in.</div>
       )}
-      {error && <div className="relative text-xs text-negative">{error}</div>}
+      {error && <div className="text-xs text-negative">{error}</div>}
       {loading && !review && (
-        <div className="relative text-sm text-text-muted italic">Iris is reading your month…</div>
+        <div className="text-sm text-text-muted italic">Iris is reading your month…</div>
       )}
 
       {review && (
-        <div className={`relative pl-3 border-l-2 border-accent/40 ${loading ? 'opacity-50' : ''}`}>
+        <div className={loading ? 'opacity-50' : ''}>
           {verdict && <p className="text-[15px] font-semibold text-text-primary leading-snug mb-2">{verdict}</p>}
           {body.map((p, i) => (
             <p key={i} className="text-sm text-text-secondary leading-relaxed mb-2 last:mb-0">{p}</p>
@@ -112,13 +111,13 @@ export default function MonthlyReviewCard({ expenses, buckets, paycheck }: Props
         </div>
       )}
       {available && facts.hasData && !review && !error && !loading && (
-        <div className="relative text-xs text-text-muted">Hit the button — she'll tell you where you crushed it and where you didn't.</div>
+        <div className="text-xs text-text-muted">Hit the button — she'll tell you where you crushed it and where you didn't.</div>
       )}
       {/* Entry point into the full Iris chat — go beyond the one-shot take and
           actually talk to her about the budget. (Scott, 2026-07-06) */}
       {available && (
         <button onClick={() => setView('chat')}
-          className="relative mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:text-accent-light transition-colors">
+          className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:text-accent-light transition-colors">
           Ask Iris anything →
         </button>
       )}

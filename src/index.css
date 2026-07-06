@@ -149,6 +149,50 @@ body { margin: 0; }
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0));
 }
 
+/* ─── Editorial "well" surface — for content that should read as sunk into the
+   page rather than boxed (Iris's Take, de-boxed rows). Slightly lighter than
+   the page canvas + a solid accent rule on the left edge, magazine-pullquote
+   style. No border on the other three sides. ─── */
+.well-card {
+  background: linear-gradient(160deg, var(--color-surface-2), var(--color-surface-1));
+  border-left: 4px solid var(--color-accent);
+  border-radius: 10px;
+}
+
+/* Same soft well, no accent rule — for sections that need to read as a
+   distinct zone on the page without the full glass-card chrome, but aren't
+   Iris's-voice content (so no editorial left border). */
+.soft-well {
+  background: linear-gradient(160deg, var(--color-surface-2), var(--color-surface-1));
+  border-radius: 16px;
+}
+
+/* Translucent, visible empty progress track — so an active bar has a
+   container to fill into instead of floating on bare background. */
+.track-well {
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* Progress fill — a quiet mint→green micro-gradient instead of flat paint.
+   Deliberately subtle: a hint of life, not a neon bar (cyberpunk is retired). */
+.track-fill-positive {
+  background: linear-gradient(90deg, #4ade80, var(--color-positive));
+}
+
+/* Conservative depth glow for hero KPI numbers — a soft blurred halo behind
+   the text via drop-shadow, not a glowing text-shadow outline. Kept faint on
+   purpose; this should read as "premium lighting," not "neon sign." */
+.kpi-glow {
+  filter: drop-shadow(0 0 14px rgba(34, 197, 94, 0.22));
+}
+
+/* Faint low-contrast row divider — replaces a full card border between rows
+   that should breathe against the page instead of being boxed individually. */
+.row-divider {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
 /* Gradient text */
 .gradient-text {
   background: linear-gradient(135deg, #a78bfa, #818cf8, #6366f1);
