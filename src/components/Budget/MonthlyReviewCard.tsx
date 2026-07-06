@@ -7,6 +7,7 @@ import type { Expense, BudgetBucket, PaycheckBreakdown } from '../../types/budge
 import { buildAdvisorFacts } from '../../utils/advisorFacts';
 import { generateBudgetReview, advisorAvailable, type BudgetReview } from '../../services/budgetAdvisor';
 import { getSetting, saveSetting } from '../../stores/portfolioStore';
+import { useAppData } from '../../context/AppDataContext';
 
 const CACHE_KEY = 'budget_advisor_review';
 
@@ -26,6 +27,7 @@ function relTime(iso: string): string {
 }
 
 export default function MonthlyReviewCard({ expenses, buckets, paycheck }: Props) {
+  const { setView } = useAppData();
   const [review, setReview] = useState<BudgetReview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +113,14 @@ export default function MonthlyReviewCard({ expenses, buckets, paycheck }: Props
       )}
       {available && facts.hasData && !review && !error && !loading && (
         <div className="relative text-xs text-text-muted">Hit the button — she'll tell you where you crushed it and where you didn't.</div>
+      )}
+      {/* Entry point into the full Iris chat — go beyond the one-shot take and
+          actually talk to her about the budget. (Scott, 2026-07-06) */}
+      {available && (
+        <button onClick={() => setView('chat')}
+          className="relative mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:text-accent-light transition-colors">
+          Ask Iris anything →
+        </button>
       )}
     </div>
   );
