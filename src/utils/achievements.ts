@@ -57,6 +57,7 @@ export interface GamificationBaseline {
   netWorth: number;
   savingsRate: number;
   funBalance: number;
+  funSaved: number;
   funStreaks: Record<string, number>;
   /** Setup/engagement state at the start line — so "connect a bank", "create a
    *  stash", etc. only unlock when the ACTION happens after Iris starts watching,
@@ -104,6 +105,7 @@ export function captureBaseline(ctx: AchievementContext, at: string): Gamificati
     netWorth: ctx.netWorth,
     savingsRate: ctx.savingsRate,
     funBalance: maxFunBalance(ctx),
+    funSaved: maxSavedToDate(ctx),
     funStreaks: Object.fromEntries(ctx.game.fun.map((f) => [f.person, f.streak.current])),
     engagement: ctx.engagement,
   };
@@ -128,6 +130,15 @@ function threshold(
 }
 
 const mo = (n: number) => `${n} mo`;
+
+/** A cumulative achievement measured SINCE the start line: earned when the value
+ *  has GROWN by `target` past the baseline. A big pre-existing total doesn't
+ *  count — "$10k banked" means $10k banked AFTER Iris started, not $10k absolute
+ *  (which would be nearly free if you already had $8k). Progress is delta/target. */
+function thresholdSince(value: number, base: number | null, target: number, detail?: string): AchievementEval {
+  const delta = base === null ? 0 : Math.max(0, value - base);
+  return { earned: delta >= target, progress: clamp01(delta / target), detail };
+}
 
 /** A do-it-once achievement, forward-only: earned only when the action becomes
  *  true AFTER the start line (baseline was false). An install that already has
@@ -213,7 +224,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'first-month-under-base', name: 'First Blood', description: 'One full month under your guaranteed base.',
     hypeCopy: 'One month in the green. That is not luck, that is the start of a body count.',
     icon: '🩸', tier: 'bronze', category: 'discipline', forwardOnly: true,
-    evaluate: (c, b) => threshold(c.scorecard.monthsUnderBase, 1, b?.monthsUnderBase ?? null),
+    evaluate: (c, b) => thresholdSince(c.scorecard.monthsUnderBase, b?.monthsUnderBase ?? null, 1),
   },
   {
     id: 'streak-2', name: 'Back to Back', description: 'Two straight months under your base.',
@@ -252,31 +263,31 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'under-base-12-lifetime', name: 'Dozen Down', description: 'Twelve lifetime months under base.',
     hypeCopy: 'A dozen clean months on the books. The scoreboard remembers every one.',
     icon: '🗓️', tier: 'silver', category: 'discipline', forwardOnly: true,
-    evaluate: (c, b) => threshold(c.scorecard.monthsUnderBase, 12, b?.monthsUnderBase ?? null, `${c.scorecard.monthsUnderBase} / 12`),
+    evaluate: (c, b) => thresholdSince(c.scorecard.monthsUnderBase, b?.monthsUnderBase ?? null, 12, `${Math.max(0, c.scorecard.monthsUnderBase - (b?.monthsUnderBase ?? c.scorecard.monthsUnderBase))} / 12`),
   },
   {
     id: 'banked-1k', name: 'Petty Cash', description: '$1,000 cumulative banked under base.',
     hypeCopy: 'A grand banked from just not-spending. Free money for the low price of self-control.',
     icon: '💵', tier: 'bronze', category: 'discipline', forwardOnly: true,
-    evaluate: (c, b) => threshold(c.scorecard.cumulativeBanked, 1000, b?.cumulativeBanked ?? null),
+    evaluate: (c, b) => thresholdSince(c.scorecard.cumulativeBanked, b?.cumulativeBanked ?? null, 1000),
   },
   {
     id: 'banked-10k', name: 'Five Figures Deep', description: '$10,000 cumulative banked under base.',
     hypeCopy: 'Ten grand you did not blow. That is a used car you decided not to be dumb about.',
     icon: '💰', tier: 'silver', category: 'discipline', forwardOnly: true,
-    evaluate: (c, b) => threshold(c.scorecard.cumulativeBanked, 10000, b?.cumulativeBanked ?? null),
+    evaluate: (c, b) => thresholdSince(c.scorecard.cumulativeBanked, b?.cumulativeBanked ?? null, 10000),
   },
   {
     id: 'banked-50k', name: 'The War Chest', description: '$50,000 cumulative banked under base.',
     hypeCopy: 'Fifty grand of pure restraint. This is a war chest now. Guard it like one.',
     icon: '🏦', tier: 'gold', category: 'discipline', forwardOnly: true,
-    evaluate: (c, b) => threshold(c.scorecard.cumulativeBanked, 50000, b?.cumulativeBanked ?? null),
+    evaluate: (c, b) => thresholdSince(c.scorecard.cumulativeBanked, b?.cumulativeBanked ?? null, 50000),
   },
   {
     id: 'banked-100k', name: 'Six-Figure Discipline', description: '$100,000 cumulative banked under base.',
     hypeCopy: 'Six figures banked one boring month at a time. You out-disciplined it into existence.',
     icon: '🏆', tier: 'platinum', category: 'prestige', forwardOnly: true,
-    evaluate: (c, b) => threshold(c.scorecard.cumulativeBanked, 100000, b?.cumulativeBanked ?? null),
+    evaluate: (c, b) => thresholdSince(c.scorecard.cumulativeBanked, b?.cumulativeBanked ?? null, 100000),
   },
 
   // ── funMoney (forward-only restraint) ──
@@ -302,13 +313,13 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'fun-banked-500', name: 'Pocket Padding', description: '$500 banked fun-money balance.',
     hypeCopy: 'Five hundred bucks of fun money you sat on instead of blew. Future-you is smirking.',
     icon: '🪙', tier: 'bronze', category: 'funMoney', forwardOnly: true,
-    evaluate: (c, b) => threshold(maxFunBalance(c), 500, b?.funBalance ?? null),
+    evaluate: (c, b) => thresholdSince(maxFunBalance(c), b?.funBalance ?? null, 500),
   },
   {
     id: 'fun-saved-1k', name: 'Restraint Dividend', description: '$1,000 promoted from fun-money restraint into savings.',
     hypeCopy: 'A grand you moved from could-have-splurged to actually-saved. That is the whole trick, and you pulled it off.',
     icon: '📈', tier: 'silver', category: 'funMoney', forwardOnly: true,
-    evaluate: (c, b) => threshold(maxSavedToDate(c), 1000, b ? 0 : null),
+    evaluate: (c, b) => thresholdSince(maxSavedToDate(c), b?.funSaved ?? null, 1000),
   },
 
   // ── couples ──
@@ -357,7 +368,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'household-saved-25k', name: 'Quarter-Hundred', description: 'Household banked + saved crossed $25,000.',
     hypeCopy: 'Twenty-five grand moved into the ours pile. That is real, that is yours, that is the point.',
     icon: '🧱', tier: 'silver', category: 'savings', forwardOnly: true,
-    evaluate: (c, b) => threshold(householdSaved(c), 25000, b?.cumulativeBanked ?? null),
+    evaluate: (c, b) => thresholdSince(householdSaved(c), b ? b.cumulativeBanked + b.funSaved : null, 25000),
   },
 
   // ── goals (completion events — counted only when crushed AFTER the start line) ──
@@ -397,7 +408,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'nw-up-100k', name: 'Uphill Climb', description: 'Grew net worth $100k after Iris started watching.',
     hypeCopy: 'A hundred grand of real growth on your watch. The line goes up.',
     icon: '📈', tier: 'gold', category: 'netWorth', forwardOnly: true,
-    evaluate: (c, b) => threshold(c.netWorth, (b?.netWorth ?? c.netWorth) + 100000, b ? b.netWorth : null),
+    evaluate: (c, b) => thresholdSince(c.netWorth, b?.netWorth ?? null, 100000),
   },
   {
     id: 'three-mil-club', name: 'The Three Million Club', description: '$3,000,000 net worth.',
