@@ -151,6 +151,22 @@ function didForward(current: boolean, wasAtBaseline: boolean | undefined): Achie
 // Cross-cutting derivations used by several achievements.
 const bestFunStreak = (c: AchievementContext) => c.game.fun.reduce((m, f) => Math.max(m, f.streak.current), 0);
 const baseBestFunStreak = (b: GamificationBaseline | null) => (b ? Math.max(0, ...Object.values(b.funStreaks), 0) : null);
+// Joint "both banked" streak — the min of both partners' current fun-money
+// streaks. Needs 2+ pots to mean anything; a solo household never fires these.
+const minFunStreak = (c: AchievementContext) => (c.game.fun.length >= 2 ? Math.min(...c.game.fun.map((f) => f.streak.current)) : 0);
+const baseMinFunStreak = (b: GamificationBaseline | null) => {
+  if (!b) return null;
+  const vals = Object.values(b.funStreaks);
+  return vals.length >= 2 ? Math.min(...vals) : null;
+};
+// Sustained "same page" — both banking AND the household under base, together,
+// for the same run of months (min across all three streaks).
+const minSyncStreak = (c: AchievementContext) => (c.game.fun.length >= 2 ? Math.min(c.game.underBase.current, ...c.game.fun.map((f) => f.streak.current)) : 0);
+const baseMinSyncStreak = (b: GamificationBaseline | null) => {
+  if (!b) return null;
+  const vals = Object.values(b.funStreaks);
+  return vals.length >= 2 ? Math.min(b.underBaseStreak, ...vals) : null;
+};
 const maxFunBalance = (c: AchievementContext) => c.funMoney.reduce((m, f) => Math.max(m, f.balance ?? 0), 0);
 const maxSavedToDate = (c: AchievementContext) => c.funMoney.reduce((m, f) => Math.max(m, f.savedToDate ?? 0), 0);
 const householdSaved = (c: AchievementContext) => c.scorecard.cumulativeBanked + c.funMoney.reduce((s, f) => s + (f.savedToDate ?? 0), 0);
@@ -340,13 +356,32 @@ export const ACHIEVEMENTS: Achievement[] = [
     },
   },
   {
+    // Bugfix (2026-07-06): this was missing forwardOnly, so a household with
+    // a pre-existing fun-money streak at first run could fire it hollow — the
+    // same class of bug the clean-slate pass fixed elsewhere. No unlocks
+    // existed yet, so making it forward-only here costs nothing.
     id: 'household-machine', name: 'Household Machine', description: 'Both partners on a 3-month fun-money streak at once.',
     hypeCopy: 'Both of you, three months straight, dialed in together. This household is a machine now.',
-    icon: '⚙️', tier: 'gold', category: 'couples',
-    evaluate: (c) => {
-      const minStreak = c.game.fun.length >= 2 ? Math.min(...c.game.fun.map((f) => f.streak.current)) : 0;
-      return threshold(minStreak, 3, null, `${minStreak} / 3 each`);
-    },
+    icon: '⚙️', tier: 'gold', category: 'couples', forwardOnly: true,
+    evaluate: (c, b) => threshold(minFunStreak(c), 3, baseMinFunStreak(b), `${minFunStreak(c)} / 3 each`),
+  },
+  {
+    id: 'household-machine-6', name: 'In Sync', description: 'Both partners on a 6-month fun-money streak at once.',
+    hypeCopy: 'Half a year, both of you, no gaps. That is not luck, that is a system.',
+    icon: '⚙️', tier: 'platinum', category: 'couples', forwardOnly: true,
+    evaluate: (c, b) => threshold(minFunStreak(c), 6, baseMinFunStreak(b), `${minFunStreak(c)} / 6 each`),
+  },
+  {
+    id: 'household-machine-12', name: 'Perfectly Aligned', description: 'Both partners on a 12-month fun-money streak at once.',
+    hypeCopy: 'A full year, both of you, together, every single month. This is the ceiling.',
+    icon: '👑', tier: 'platinum', category: 'prestige', forwardOnly: true, secret: true,
+    evaluate: (c, b) => threshold(minFunStreak(c), 12, baseMinFunStreak(b), `${minFunStreak(c)} / 12 each`),
+  },
+  {
+    id: 'synchronized-discipline', name: 'Locked In Together', description: 'Both banking fun money AND living under base, same 3 months.',
+    hypeCopy: 'Fun money banked, household under base, three months straight, both of you. This is the whole game working at once.',
+    icon: '🧩', tier: 'gold', category: 'couples', forwardOnly: true,
+    evaluate: (c, b) => threshold(minSyncStreak(c), 3, baseMinSyncStreak(b), `${minSyncStreak(c)} / 3 each`),
   },
   {
     id: 'both-saved', name: 'Both Chipping In', description: 'Both partners promoted fun-money restraint into savings.',
