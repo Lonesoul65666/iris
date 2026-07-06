@@ -27,7 +27,7 @@ function game(over: Partial<GameState> = {}): GameState {
 function engagement(over: Partial<EngagementSignals> = {}): EngagementSignals {
   return {
     connectedData: false, createdStash: false, stashCount: 0, crushedGoals: 0, committedMove: false,
-    setFunOpening: false, gotAdvisorTake: false, monthsActive: 0, ...over,
+    setFunOpening: false, gotAdvisorTake: false, monthsActive: 0, daysSinceLastVisit: null, ...over,
   };
 }
 
@@ -174,6 +174,37 @@ describe('synchronized-discipline requires banking AND under-base together', () 
     });
     const { states } = evaluateAchievements(c, baseline, [], NOW);
     expect(states.find((s) => s.achievement.id === 'synchronized-discipline')!.earned).toBe(true);
+  });
+});
+
+describe('comeback-after-week — the pick-me-up trophy', () => {
+  it('does not fire on a fresh install with no prior visit to compare', () => {
+    const c = ctx({ engagement: engagement({ daysSinceLastVisit: null }) });
+    const baseline = captureBaseline(c, NOW.toISOString());
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    expect(states.find((s) => s.achievement.id === 'comeback-after-week')!.earned).toBe(false);
+  });
+
+  it('does not fire for a short gap (a couple days away is not "away")', () => {
+    const baseline = captureBaseline(ctx({ engagement: engagement({ daysSinceLastVisit: null }) }), NOW.toISOString());
+    const c = ctx({ engagement: engagement({ daysSinceLastVisit: 2 }) });
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    expect(states.find((s) => s.achievement.id === 'comeback-after-week')!.earned).toBe(false);
+  });
+
+  it('fires the first time someone returns after 7+ days away', () => {
+    const baseline = captureBaseline(ctx({ engagement: engagement({ daysSinceLastVisit: null }) }), NOW.toISOString());
+    const c = ctx({ engagement: engagement({ daysSinceLastVisit: 9 }) });
+    const { newlyUnlocked } = evaluateAchievements(c, baseline, [], NOW);
+    expect(newlyUnlocked.map((a) => a.id)).toContain('comeback-after-week');
+  });
+
+  it('does not re-fire on a SECOND long gap already true at baseline (permanent, one-shot)', () => {
+    // Baseline captured while already mid-gap (edge case) — must not count as a fresh crossing.
+    const baseline = captureBaseline(ctx({ engagement: engagement({ daysSinceLastVisit: 10 }) }), NOW.toISOString());
+    const c = ctx({ engagement: engagement({ daysSinceLastVisit: 10 }) });
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    expect(states.find((s) => s.achievement.id === 'comeback-after-week')!.earned).toBe(false);
   });
 });
 
