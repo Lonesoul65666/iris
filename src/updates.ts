@@ -33,6 +33,7 @@ export const UPDATES: UpdateEntry[] = [
       'Your dashboard now opens with “This Week’s Focus” — the 1–3 money moves that actually matter this week, pulled straight from your real numbers.',
       'It stays put all week instead of shuffling every time you open the app, and refreshes on Monday.',
       'New “Coming up · next 30 days” section — a forward calendar of your recurring bills so you can see what’s hitting when.',
+      'New “Subscriptions & recurring” radar — every recurring charge ranked by what it costs you per month, so creep is easy to spot.',
       'This “What’s New” card is new too — you’ll see it once after each update, then it gets out of your way.',
     ],
   },
