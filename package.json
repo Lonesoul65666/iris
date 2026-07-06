@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "server": "node --env-file=.env.local server/standalone.ts",
-    "start": "npm run build && node --env-file=.env.local server/standalone.ts"
+    "start": "npm run build && node --env-file=.env.local server/standalone.ts",
+    "update": "git pull --ff-only && npm install"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
