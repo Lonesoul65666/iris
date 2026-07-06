@@ -15,6 +15,8 @@ import OnTargetEarnings from '../components/Dashboard/OnTargetEarnings';
 import { computeAllStashes } from '../utils/stashMath';
 import { laneOf, isOverBudget } from '../utils/budgetLanes';
 import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
+import { computeScorecard } from '../utils/savingsScorecard';
+import { computeGameState, gameGreeting } from '../utils/gamification';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -48,10 +50,19 @@ export default function DashboardView() {
     netWorthSnapshots,
     dashBuckets, dashSinkingFunds, dashDeployConfirms, monthlyInv,
     rawExpenses,
+    dashFunMoney,
     monthToDate, safeToSpend,
     setView,
     profile,
   } = useAppData();
+
+  // Game state — the zero-AI "money as a hobby" layer (streaks + the live
+  // announcer greeting). Derived from the scorecard + fun-money ledger; no LLM.
+  const gameState = useMemo(
+    () => computeGameState(computeScorecard(rawExpenses), dashFunMoney, rawExpenses),
+    [rawExpenses, dashFunMoney],
+  );
+  const greeting = gameGreeting(gameState);
   const { hasPortfolio } = useHasRealData();
   const modules = useEnabledModules();
 
@@ -218,6 +229,17 @@ export default function DashboardView() {
               <span className="text-lg text-text-secondary">
                 {flavor.icon} {flavor.greeting}{greetingNames ? <>, <span className="text-text-primary font-semibold">{greetingNames}</span></> : ''}.
               </span>
+              {/* Live announcer — templated, ZERO-AI game-state greeting. */}
+              {greeting.headline && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {gameState.underBase.active && gameState.underBase.current > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 text-xs font-bold tabular-nums whitespace-nowrap">
+                      {gameState.underBase.current}-mo streak
+                    </span>
+                  )}
+                  <span className="text-sm text-text-secondary">{greeting.headline}</span>
+                </div>
+              )}
               <SyncStatus />
             </div>
             <div className="hidden md:flex items-center gap-3 term-label">
