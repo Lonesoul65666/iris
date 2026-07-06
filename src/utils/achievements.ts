@@ -1,0 +1,454 @@
+// Achievements engine — the permanent trophy layer of the "money as a hobby"
+// system. PURE. Achievements are the source of truth (a permanent wall of what
+// you've earned); when a NEW one unlocks the caller emits a `celebration` Nudge
+// through the existing NudgeCard for the "FUCK YEAH" moment. See
+// project_iris_gamification_roadmap (Tier 2).
+//
+// FORWARD-ONLY RULE (Scott, load-bearing): anything the user could already be
+// sitting on from backfilled/imported data (streak lengths, months-under-base,
+// net worth) is gated against a BASELINE captured on first run — it only fires
+// for progress made AFTER Iris started watching. Genuine completion/engagement
+// events (crushed a goal, connected a bank) are NOT forward-only. On the first
+// run current === baseline, so nothing forward-only fires ("no trophies for
+// June"); real completions still can.
+//
+// Tone: full-send coach voice, EMOJIS OFF in copy (icon field holds the emoji).
+
+import type { FunMoney, Stash } from '../types/budget';
+import type { Scorecard } from './savingsScorecard';
+import type { GameState } from './gamification';
+
+export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'platinum';
+export type AchievementCategory =
+  | 'discipline' | 'funMoney' | 'couples' | 'savings'
+  | 'goals' | 'netWorth' | 'exploration' | 'prestige';
+
+/** Engagement/feature signals the engine can read without new event tracking —
+ *  derived at the call site from existing collections. */
+export interface EngagementSignals {
+  connectedData: boolean;   // real accounts/transactions present
+  createdStash: boolean;    // at least one Have-To/Want-To exists
+  crushedGoals: number;     // count of retired (achievedAt) stashes
+  committedMove: boolean;   // at least one DeployConfirmation exists
+  setFunOpening: boolean;   // a fun-money pot has been anchored/seeded
+  gotAdvisorTake: boolean;  // has run "Iris's Take" at least once
+  monthsActive: number;     // full months of data
+}
+
+export interface AchievementContext {
+  scorecard: Scorecard;
+  game: GameState;
+  funMoney: FunMoney[];
+  stashes: Stash[];
+  netWorth: number;
+  savingsRate: number;      // 0..100
+  engagement: EngagementSignals;
+}
+
+/** Snapshot of the metrics that forward-only achievements measure against.
+ *  Captured ONCE on first run; everything already true becomes the start line. */
+export interface GamificationBaseline {
+  capturedAt: string;
+  underBaseStreak: number;
+  monthsUnderBase: number;
+  cumulativeBanked: number;
+  netWorth: number;
+  funStreaks: Record<string, number>;
+}
+
+export interface AchievementEval {
+  earned: boolean;
+  progress: number;         // 0..1 toward earning (for the locked/progress display)
+  detail?: string;          // optional live sub-text ("3 / 6 months")
+}
+
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  hypeCopy: string;
+  icon: string;
+  tier: AchievementTier;
+  category: AchievementCategory;
+  secret?: boolean;
+  forwardOnly?: boolean;
+  evaluate: (ctx: AchievementContext, baseline: GamificationBaseline | null) => AchievementEval;
+}
+
+/** An unlocked-achievement record (persisted as JSON in a setting). */
+export interface UnlockRecord {
+  id: string;
+  unlockedAt: string;       // ISO
+}
+
+// ─── Baseline ───
+
+export function captureBaseline(ctx: AchievementContext, at: string): GamificationBaseline {
+  return {
+    capturedAt: at,
+    underBaseStreak: ctx.game.underBase.current,
+    monthsUnderBase: ctx.scorecard.monthsUnderBase,
+    cumulativeBanked: ctx.scorecard.cumulativeBanked,
+    netWorth: ctx.netWorth,
+    funStreaks: Object.fromEntries(ctx.game.fun.map((f) => [f.person, f.streak.current])),
+  };
+}
+
+// ─── evaluate() helpers ───
+
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+
+/** A threshold achievement: earned when `value >= threshold`. When forwardOnly,
+ *  also require the baseline to have been BELOW the threshold (so a value the
+ *  user was already sitting on doesn't unlock it). */
+function threshold(
+  value: number,
+  target: number,
+  base: number | null,
+  detail?: string,
+): AchievementEval {
+  const crossedForward = base === null ? false : base < target;
+  const earned = value >= target && (base === null ? true : crossedForward);
+  return { earned, progress: clamp01(value / target), detail };
+}
+
+const mo = (n: number) => `${n} mo`;
+
+// Cross-cutting derivations used by several achievements.
+const bestFunStreak = (c: AchievementContext) => c.game.fun.reduce((m, f) => Math.max(m, f.streak.current), 0);
+const baseBestFunStreak = (b: GamificationBaseline | null) => (b ? Math.max(0, ...Object.values(b.funStreaks), 0) : null);
+const funLead = (c: AchievementContext) => {
+  if (c.game.fun.length < 2) return 0;
+  const s = c.game.fun.map((f) => f.streak.current).sort((a, z) => z - a);
+  return s[0] - s[1];
+};
+const maxFunBalance = (c: AchievementContext) => c.funMoney.reduce((m, f) => Math.max(m, f.balance ?? 0), 0);
+const maxSavedToDate = (c: AchievementContext) => c.funMoney.reduce((m, f) => Math.max(m, f.savedToDate ?? 0), 0);
+const householdSaved = (c: AchievementContext) => c.scorecard.cumulativeBanked + c.funMoney.reduce((s, f) => s + (f.savedToDate ?? 0), 0);
+const crushSavedMax = (c: AchievementContext) => c.stashes.reduce((m, s) => Math.max(m, s.achievement?.savedAmount ?? 0), 0);
+const crushMonthsMax = (c: AchievementContext) => c.stashes.reduce((m, s) => Math.max(m, s.achievement?.monthsSaving ?? 0), 0);
+
+// ─── The catalog ───
+// Seed set spanning categories/tiers/forward-only; enriched toward ~50 from the
+// design pass. Each owns its unlock logic in evaluate(). Add freely — new
+// achievements ship like console achievement packs (Scott's Xbox model).
+
+export const ACHIEVEMENTS: Achievement[] = [
+  // ── exploration (real engagement — NOT forward-only; can fire on first run) ──
+  {
+    id: 'connect-bank', name: 'Plugged In', description: 'Connected real money to Iris.',
+    hypeCopy: 'Bank is connected, the lights are on. Iris can finally see the whole board — let us play.',
+    icon: '🔌', tier: 'bronze', category: 'exploration',
+    evaluate: (c) => ({ earned: c.engagement.connectedData, progress: c.engagement.connectedData ? 1 : 0 }),
+  },
+  {
+    id: 'first-stash', name: 'Planted a Flag', description: 'Created your first Have-To or Want-To.',
+    hypeCopy: 'You gave a future expense a name and a home. That is the moment money stops happening TO you.',
+    icon: '🚩', tier: 'bronze', category: 'exploration',
+    evaluate: (c) => ({ earned: c.engagement.createdStash, progress: c.engagement.createdStash ? 1 : 0 }),
+  },
+  {
+    id: 'three-stashes', name: 'Portfolio of Plans', description: 'Have three stashes going at once.',
+    hypeCopy: 'Three pots at once. You are not putting out fires anymore, you are planning them out of existence.',
+    icon: '🗂️', tier: 'bronze', category: 'exploration',
+    evaluate: (c) => threshold(c.stashes.length, 3, null, `${c.stashes.length} / 3`),
+  },
+  {
+    id: 'first-move', name: 'Made a Move', description: 'Committed your first monthly money move.',
+    hypeCopy: 'You did not just look at the plan, you DID it. Committed and executed. That is the whole ballgame.',
+    icon: '♟️', tier: 'bronze', category: 'exploration',
+    evaluate: (c) => ({ earned: c.engagement.committedMove, progress: c.engagement.committedMove ? 1 : 0 }),
+  },
+  {
+    id: 'set-fun-balances', name: 'Rules of Engagement', description: 'Anchored fun money for the household.',
+    hypeCopy: 'Fun money has a scoreboard now. Let the friendly bloodsport begin.',
+    icon: '📊', tier: 'bronze', category: 'exploration',
+    evaluate: (c) => ({ earned: c.engagement.setFunOpening, progress: c.engagement.setFunOpening ? 1 : 0 }),
+  },
+  {
+    id: 'first-iris-take', name: 'Faced the Music', description: 'Asked Iris for her honest take.',
+    hypeCopy: 'You asked the hard question and Iris kept it real. Coaching, not cuddling.',
+    icon: '🎤', tier: 'bronze', category: 'exploration',
+    evaluate: (c) => ({ earned: c.engagement.gotAdvisorTake, progress: c.engagement.gotAdvisorTake ? 1 : 0 }),
+  },
+  {
+    id: 'used-3-months', name: 'Sticking Around', description: 'Used Iris across three months.',
+    hypeCopy: 'Three months in and still showing up. Most people quit budgeting apps by week two. Not you.',
+    icon: '📆', tier: 'bronze', category: 'exploration',
+    evaluate: (c) => threshold(c.engagement.monthsActive, 3, null, `${c.engagement.monthsActive} / 3`),
+  },
+  {
+    id: 'used-12-months', name: 'Anniversary', description: 'Used Iris across twelve months.',
+    hypeCopy: 'A year with Iris. Through good months and ugly ones, you kept opening the door. That loyalty built something real.',
+    icon: '🎂', tier: 'gold', category: 'exploration',
+    evaluate: (c) => threshold(c.engagement.monthsActive, 12, null, `${c.engagement.monthsActive} / 12`),
+  },
+
+  // ── discipline (forward-only streak/count/banked milestones) ──
+  {
+    id: 'first-month-under-base', name: 'First Blood', description: 'One full month under your guaranteed base.',
+    hypeCopy: 'One month in the green. That is not luck, that is the start of a body count.',
+    icon: '🩸', tier: 'bronze', category: 'discipline', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.scorecard.monthsUnderBase, 1, b?.monthsUnderBase ?? null),
+  },
+  {
+    id: 'streak-2', name: 'Back to Back', description: 'Two straight months under your base.',
+    hypeCopy: 'Two in a row. Anybody can fluke one — you just proved it was not an accident.',
+    icon: '⛓️', tier: 'bronze', category: 'discipline', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.game.underBase.current, 2, b?.underBaseStreak ?? null, mo(c.game.underBase.current)),
+  },
+  {
+    id: 'streak-3', name: 'On a Heater', description: 'Three-month under-base streak.',
+    hypeCopy: 'Three straight. The household is on a heater — do not you dare cool off.',
+    icon: '🔥', tier: 'silver', category: 'discipline', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.game.underBase.current, 3, b?.underBaseStreak ?? null, mo(c.game.underBase.current)),
+  },
+  {
+    id: 'streak-6', name: 'Half-Year Hitman', description: 'Six straight months under your base.',
+    hypeCopy: 'Six months, six clean kills. That is not a habit anymore, that is a lifestyle.',
+    icon: '🎯', tier: 'gold', category: 'discipline', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.game.underBase.current, 6, b?.underBaseStreak ?? null, mo(c.game.underBase.current)),
+  },
+  {
+    id: 'streak-12', name: 'The Perfect Year', description: 'Twelve straight months under your base.',
+    hypeCopy: 'Twelve for twelve. A full lap around the sun without a single blown month. Frame this one.',
+    icon: '👑', tier: 'platinum', category: 'prestige', forwardOnly: true, secret: true,
+    evaluate: (c, b) => threshold(c.game.underBase.current, 12, b?.underBaseStreak ?? null, mo(c.game.underBase.current)),
+  },
+  {
+    id: 'comeback-kid', name: 'Comeback Kid', description: 'Rebuilt a 3-month streak after breaking one.',
+    hypeCopy: 'Blew the streak, put your head down, ran it back to three. Losers quit, you re-racked.',
+    icon: '🔄', tier: 'silver', category: 'discipline', forwardOnly: true,
+    evaluate: (c, b) => {
+      const rebuilt = c.game.underBase.current >= 3 && c.game.underBase.best > c.game.underBase.current;
+      return { earned: rebuilt && (b === null ? false : b.underBaseStreak < 3 || b.underBaseStreak < c.game.underBase.best), progress: clamp01(c.game.underBase.current / 3) };
+    },
+  },
+  {
+    id: 'under-base-12-lifetime', name: 'Dozen Down', description: 'Twelve lifetime months under base.',
+    hypeCopy: 'A dozen clean months on the books. The scoreboard remembers every one.',
+    icon: '🗓️', tier: 'silver', category: 'discipline', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.scorecard.monthsUnderBase, 12, b?.monthsUnderBase ?? null, `${c.scorecard.monthsUnderBase} / 12`),
+  },
+  {
+    id: 'banked-1k', name: 'Petty Cash', description: '$1,000 cumulative banked under base.',
+    hypeCopy: 'A grand banked from just not-spending. Free money for the low price of self-control.',
+    icon: '💵', tier: 'bronze', category: 'discipline', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.scorecard.cumulativeBanked, 1000, b?.cumulativeBanked ?? null),
+  },
+  {
+    id: 'banked-10k', name: 'Five Figures Deep', description: '$10,000 cumulative banked under base.',
+    hypeCopy: 'Ten grand you did not blow. That is a used car you decided not to be dumb about.',
+    icon: '💰', tier: 'silver', category: 'discipline', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.scorecard.cumulativeBanked, 10000, b?.cumulativeBanked ?? null),
+  },
+  {
+    id: 'banked-50k', name: 'The War Chest', description: '$50,000 cumulative banked under base.',
+    hypeCopy: 'Fifty grand of pure restraint. This is a war chest now. Guard it like one.',
+    icon: '🏦', tier: 'gold', category: 'discipline', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.scorecard.cumulativeBanked, 50000, b?.cumulativeBanked ?? null),
+  },
+  {
+    id: 'banked-100k', name: 'Six-Figure Discipline', description: '$100,000 cumulative banked under base.',
+    hypeCopy: 'Six figures banked one boring month at a time. You out-disciplined it into existence.',
+    icon: '🏆', tier: 'platinum', category: 'prestige', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.scorecard.cumulativeBanked, 100000, b?.cumulativeBanked ?? null),
+  },
+
+  // ── funMoney (forward-only restraint) ──
+  {
+    id: 'fun-first-month', name: 'Held the Line', description: 'One month at/under your fun-money allowance.',
+    hypeCopy: 'One month, under your own number, on purpose. Grown-up money behavior and it looks good on you.',
+    icon: '🎮', tier: 'bronze', category: 'funMoney', forwardOnly: true,
+    evaluate: (c, b) => threshold(bestFunStreak(c), 1, baseBestFunStreak(b), mo(bestFunStreak(c))),
+  },
+  {
+    id: 'fun-streak-3', name: 'Restraint Arc', description: 'Three straight months under fun-money allowance.',
+    hypeCopy: 'Three months of not lighting your fun budget on fire. Character development, live and in color.',
+    icon: '🧘', tier: 'silver', category: 'funMoney', forwardOnly: true,
+    evaluate: (c, b) => threshold(bestFunStreak(c), 3, baseBestFunStreak(b), mo(bestFunStreak(c))),
+  },
+  {
+    id: 'fun-streak-6', name: 'Iron Wallet', description: 'Six straight months under fun-money allowance.',
+    hypeCopy: 'Six months your fun money could not tempt you. That wallet is made of iron now.',
+    icon: '🔒', tier: 'gold', category: 'funMoney', forwardOnly: true,
+    evaluate: (c, b) => threshold(bestFunStreak(c), 6, baseBestFunStreak(b), mo(bestFunStreak(c))),
+  },
+  {
+    id: 'fun-banked-500', name: 'Pocket Padding', description: '$500 banked fun-money balance.',
+    hypeCopy: 'Five hundred bucks of fun money you sat on instead of blew. Future-you is smirking.',
+    icon: '🪙', tier: 'bronze', category: 'funMoney',
+    evaluate: (c) => threshold(maxFunBalance(c), 500, null),
+  },
+  {
+    id: 'fun-saved-1k', name: 'Restraint Dividend', description: '$1,000 promoted from fun-money restraint into savings.',
+    hypeCopy: 'A grand you moved from could-have-splurged to actually-saved. That is the whole trick, and you pulled it off.',
+    icon: '📈', tier: 'silver', category: 'funMoney', forwardOnly: true,
+    evaluate: (c, b) => threshold(maxSavedToDate(c), 1000, b ? 0 : null),
+  },
+
+  // ── couples ──
+  {
+    id: 'both-banked-1mo', name: 'Power Couple', description: 'You both banked fun money the same month.',
+    hypeCopy: 'Both of you came in under, same month, same team. That is not a household, that is a two-person heist crew.',
+    icon: '🤝', tier: 'bronze', category: 'couples',
+    evaluate: (c) => {
+      const both = c.game.fun.length >= 2 && c.game.fun.every((f) => f.streak.active);
+      return { earned: both, progress: c.game.fun.length ? c.game.fun.filter((f) => f.streak.active).length / c.game.fun.length : 0 };
+    },
+  },
+  {
+    id: 'h2h-lead-1', name: 'Taking the Lead', description: 'Pulled ahead in the head-to-head fun-money streak.',
+    hypeCopy: 'You are up on your partner. Enjoy the lead — they are reading this too, and they are pissed.',
+    icon: '🥇', tier: 'bronze', category: 'couples',
+    evaluate: (c) => ({ earned: funLead(c) >= 1, progress: funLead(c) >= 1 ? 1 : 0 }),
+  },
+  {
+    id: 'h2h-lead-3', name: 'Ruthless', description: 'Held a head-to-head fun-money lead of 3+ months.',
+    hypeCopy: 'Three-month lead and climbing. At this point you are not competing, you are bullying.',
+    icon: '😈', tier: 'silver', category: 'couples',
+    evaluate: (c) => threshold(funLead(c), 3, null, `+${funLead(c)}`),
+  },
+
+  // ── savings (forward-only rate + household saved) ──
+  {
+    id: 'savings-rate-10', name: 'Double Digits', description: 'Hit a 10% savings rate.',
+    hypeCopy: 'Ten percent of gross, socked away. You just quietly beat most of the country.',
+    icon: '🌱', tier: 'bronze', category: 'savings', forwardOnly: true,
+    evaluate: (c, b) => ({ earned: c.savingsRate >= 10 && b !== null, progress: clamp01(c.savingsRate / 10) }),
+  },
+  {
+    id: 'savings-rate-20', name: 'Twenty Club', description: 'Hit a 20% savings rate.',
+    hypeCopy: 'One in every five dollars, saved. That is not budgeting, that is a money-printing hobby.',
+    icon: '💸', tier: 'silver', category: 'savings', forwardOnly: true,
+    evaluate: (c, b) => ({ earned: c.savingsRate >= 20 && b !== null, progress: clamp01(c.savingsRate / 20) }),
+  },
+  {
+    id: 'savings-rate-30', name: 'Serious Money', description: 'Hit a 30% savings rate.',
+    hypeCopy: 'Thirty percent. You are playing a completely different sport than the people around you.',
+    icon: '🚀', tier: 'gold', category: 'savings', forwardOnly: true,
+    evaluate: (c, b) => ({ earned: c.savingsRate >= 30 && b !== null, progress: clamp01(c.savingsRate / 30) }),
+  },
+  {
+    id: 'household-saved-25k', name: 'Quarter-Hundred', description: 'Household banked + saved crossed $25,000.',
+    hypeCopy: 'Twenty-five grand moved into the ours pile. That is real, that is yours, that is the point.',
+    icon: '🧱', tier: 'silver', category: 'savings', forwardOnly: true,
+    evaluate: (c, b) => threshold(householdSaved(c), 25000, b?.cumulativeBanked ?? null),
+  },
+
+  // ── goals (real completions — NOT forward-only) ──
+  {
+    id: 'first-crush', name: 'Goal Slayer', description: 'Crushed your first Want-To goal.',
+    hypeCopy: 'You saved for it, you bought it in cash, you owe nobody. THAT is what winning feels like.',
+    icon: '🗡️', tier: 'silver', category: 'goals',
+    evaluate: (c) => ({ earned: c.engagement.crushedGoals >= 1, progress: c.engagement.crushedGoals >= 1 ? 1 : 0 }),
+  },
+  {
+    id: 'crush-3', name: 'Serial Finisher', description: 'Crushed three Want-To goals.',
+    hypeCopy: 'Three goals set, three goals executed. You turned someday into a to-do list you actually finish.',
+    icon: '🎖️', tier: 'gold', category: 'goals',
+    evaluate: (c) => threshold(c.engagement.crushedGoals, 3, null, `${c.engagement.crushedGoals} / 3`),
+  },
+  {
+    id: 'crush-10', name: 'The Closer', description: 'Crushed ten Want-To goals.',
+    hypeCopy: 'Ten dreams funded and cashed out, zero debt. You are not dreaming anymore, you are placing orders.',
+    icon: '💎', tier: 'platinum', category: 'prestige',
+    evaluate: (c) => threshold(c.engagement.crushedGoals, 10, null, `${c.engagement.crushedGoals} / 10`),
+  },
+  {
+    id: 'crush-big', name: 'Whale Hunter', description: 'Crushed a single Want-To worth $10,000+.',
+    hypeCopy: 'A five-figure goal, paid in full, from savings. You harpooned the big one.',
+    icon: '🐋', tier: 'gold', category: 'goals', secret: true,
+    evaluate: (c) => ({ earned: crushSavedMax(c) >= 10000, progress: clamp01(crushSavedMax(c) / 10000) }),
+  },
+  {
+    id: 'crush-patient', name: 'The Slow Cook', description: 'Crushed a goal that took 12+ months.',
+    hypeCopy: 'A full year of chipping away, and you never blinked. Patience like that should be illegal.',
+    icon: '🐢', tier: 'silver', category: 'goals', secret: true,
+    evaluate: (c) => ({ earned: crushMonthsMax(c) >= 12, progress: clamp01(crushMonthsMax(c) / 12) }),
+  },
+
+  // ── netWorth (forward-only prestige; jumps on account connect → must be forward) ──
+  {
+    id: 'nw-up-100k', name: 'Uphill Climb', description: 'Grew net worth $100k after Iris started watching.',
+    hypeCopy: 'A hundred grand of real growth on your watch. The line goes up.',
+    icon: '📈', tier: 'gold', category: 'netWorth', forwardOnly: true,
+    evaluate: (c, b) => threshold(c.netWorth, (b?.netWorth ?? c.netWorth) + 100000, b ? b.netWorth : null),
+  },
+  {
+    id: 'three-mil-club', name: 'The Three Million Club', description: '$3,000,000 net worth.',
+    hypeCopy: 'Three million dollars. This is the pie-in-the-sky, order-the-good-tequila tier. Absolute unit.',
+    icon: '🛸', tier: 'platinum', category: 'prestige', forwardOnly: true, secret: true,
+    evaluate: (c, b) => threshold(c.netWorth, 3_000_000, b ? b.netWorth : null),
+  },
+
+  // ── prestige (composed) ──
+  {
+    id: 'full-send', name: 'The Full Send', description: 'A 12-month streak AND a crushed goal.',
+    hypeCopy: 'Perfect year on defense, a goal crushed on offense. You did not just play the game — you ran up the score.',
+    icon: '🏅', tier: 'platinum', category: 'prestige', forwardOnly: true, secret: true,
+    evaluate: (c, b) => {
+      const earned = c.game.underBase.best >= 12 && c.engagement.crushedGoals >= 1 && (b === null ? false : b.underBaseStreak < 12);
+      return { earned, progress: clamp01(Math.min(c.game.underBase.best / 12, c.engagement.crushedGoals)) };
+    },
+  },
+];
+
+// ─── Evaluation ───
+
+export interface AchievementState {
+  achievement: Achievement;
+  earned: boolean;
+  unlockedAt: string | null;   // from the persisted record when earned before
+  progress: number;
+  detail?: string;
+}
+
+export interface EvaluateResult {
+  states: AchievementState[];
+  /** Achievements earned THIS evaluation that weren't already recorded. */
+  newlyUnlocked: Achievement[];
+}
+
+/** Evaluate the whole catalog against context + baseline + prior unlocks.
+ *  Once earned, an achievement stays earned (its recorded unlockedAt sticks even
+ *  if the live metric later dips — a trophy is permanent). */
+export function evaluateAchievements(
+  ctx: AchievementContext,
+  baseline: GamificationBaseline | null,
+  unlocked: UnlockRecord[],
+  now: Date = new Date(),
+): EvaluateResult {
+  const byId = new Map(unlocked.map((u) => [u.id, u]));
+  const states: AchievementState[] = [];
+  const newlyUnlocked: Achievement[] = [];
+
+  for (const a of ACHIEVEMENTS) {
+    const prior = byId.get(a.id);
+    if (prior) {
+      states.push({ achievement: a, earned: true, unlockedAt: prior.unlockedAt, progress: 1 });
+      continue;
+    }
+    const res = a.evaluate(ctx, baseline);
+    if (res.earned) {
+      newlyUnlocked.push(a);
+      states.push({ achievement: a, earned: true, unlockedAt: now.toISOString(), progress: 1, detail: res.detail });
+    } else {
+      states.push({ achievement: a, earned: false, unlockedAt: null, progress: res.progress, detail: res.detail });
+    }
+  }
+
+  return { states, newlyUnlocked };
+}
+
+/** Summary counts for the Trophy Wall header. */
+export function achievementSummary(states: AchievementState[]): { earned: number; total: number; byTier: Record<AchievementTier, { earned: number; total: number }> } {
+  const tiers: AchievementTier[] = ['bronze', 'silver', 'gold', 'platinum'];
+  const byTier = Object.fromEntries(tiers.map((t) => [t, { earned: 0, total: 0 }])) as Record<AchievementTier, { earned: number; total: number }>;
+  let earned = 0;
+  for (const s of states) {
+    byTier[s.achievement.tier].total++;
+    if (s.earned) { earned++; byTier[s.achievement.tier].earned++; }
+  }
+  return { earned, total: states.length, byTier };
+}
