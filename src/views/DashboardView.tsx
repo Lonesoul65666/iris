@@ -19,6 +19,8 @@ import { computeScorecard } from '../utils/savingsScorecard';
 import { computeGameState, gameGreeting } from '../utils/gamification';
 import NudgeCard from '../components/Nudge/NudgeCard';
 import TrophyWall from '../components/Achievements/TrophyWall';
+import Medallion from '../components/Achievements/Medallion';
+import { achievementById } from '../utils/achievements';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -222,11 +224,15 @@ export default function DashboardView() {
       {/* Achievement unlocks — the "FUCK YEAH" moment. Fresh unlocks this session
           surface as celebration cards up top (capped so a first-run batch doesn't
           bury the dashboard). Dismissing is cosmetic — the unlock is permanent. */}
-      {celebrationNudges.slice(0, 3).map((n, i) => (
-        <NudgeCard key={n.id} nudge={n} index={i}
-          onSnooze={() => dismissCelebration(n.id)}
-          onDismissForever={() => dismissCelebration(n.id)} />
-      ))}
+      {celebrationNudges.slice(0, 3).map((n, i) => {
+        const ach = achievementById(n.id.replace(/^achievement:/, ''));
+        return (
+          <NudgeCard key={n.id} nudge={n} index={i}
+            iconOverride={ach ? <Medallion achievement={ach} size={44} /> : undefined}
+            onSnooze={() => dismissCelebration(n.id)}
+            onDismissForever={() => dismissCelebration(n.id)} />
+        );
+      })}
 
       {/* ════ HERO ═══════════════════════════════════════════════════════ */}
       <div className="glass-card relative overflow-hidden">
