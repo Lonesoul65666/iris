@@ -90,6 +90,17 @@ describe('savings rate is forward-only', () => {
   });
 });
 
+describe('grandfathered (cleared before Iris started counting)', () => {
+  it('flags a forward-only achievement the user was already past at baseline', () => {
+    const c = ctx({ scorecard: scorecard({ monthsUnderBase: 3 }) });
+    const baseline = captureBaseline(c, NOW.toISOString()); // baseline monthsUnderBase = 3
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    const first = states.find((s) => s.achievement.id === 'first-month-under-base')!;
+    expect(first.earned).toBe(false);
+    expect(first.grandfathered).toBe(true);
+  });
+});
+
 describe('real completions fire regardless of baseline', () => {
   it('unlocks first-crush on the first run when a goal is already crushed', () => {
     const c = ctx({ engagement: engagement({ crushedGoals: 1 }) });

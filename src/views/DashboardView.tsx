@@ -18,6 +18,7 @@ import { categoryEmoji, formatRelDate } from '../utils/txDisplay';
 import { computeScorecard } from '../utils/savingsScorecard';
 import { computeGameState, gameGreeting } from '../utils/gamification';
 import NudgeCard from '../components/Nudge/NudgeCard';
+import TrophyWall from '../components/Achievements/TrophyWall';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ export default function DashboardView() {
     dashBuckets, dashSinkingFunds, dashDeployConfirms, monthlyInv,
     rawExpenses,
     dashFunMoney,
-    celebrationNudges, dismissCelebration,
+    celebrationNudges, dismissCelebration, achievementStates,
     monthToDate, safeToSpend,
     setView,
     profile,
@@ -555,6 +556,9 @@ export default function DashboardView() {
       {/* ════ On-Target Earnings — OTE over base, below the goals it feeds and
           above where the money's spent. Not front-and-center by design. ═══ */}
       <OnTargetEarnings expenses={rawExpenses} />
+
+      {/* ════ TROPHY ROOM — the permanent achievement wall ══════════════ */}
+      {achievementStates.length > 0 && <TrophyWall states={achievementStates} />}
 
       {/* ════ SPEND BY ACCOUNT ══════════════════════════════════════════ */}
       <AccountBreakdown />

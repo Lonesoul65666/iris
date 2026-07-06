@@ -409,6 +409,10 @@ export interface AchievementState {
   unlockedAt: string | null;   // from the persisted record when earned before
   progress: number;
   detail?: string;
+  /** Forward-only achievement the user was ALREADY past at baseline — it can
+   *  never unlock (they earned it before Iris started counting). Shown as
+   *  "before Iris", not a misleading 100%-but-locked tile. */
+  grandfathered?: boolean;
 }
 
 export interface EvaluateResult {
@@ -441,7 +445,10 @@ export function evaluateAchievements(
       newlyUnlocked.push(a);
       states.push({ achievement: a, earned: true, unlockedAt: now.toISOString(), progress: 1, detail: res.detail });
     } else {
-      states.push({ achievement: a, earned: false, unlockedAt: null, progress: res.progress, detail: res.detail });
+      // Forward-only + already at/over the bar means the user cleared it before
+      // the baseline — it can never unlock. Flag it so the wall says so.
+      const grandfathered = a.forwardOnly === true && res.progress >= 1;
+      states.push({ achievement: a, earned: false, unlockedAt: null, progress: res.progress, detail: res.detail, grandfathered });
     }
   }
 
