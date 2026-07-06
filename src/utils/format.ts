@@ -1,6 +1,7 @@
 /** Shared currency formatter — use this everywhere instead of local copies */
 export function formatCurrency(v: number): string {
-  if (Math.abs(v) >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
+  // Sign goes BEFORE the $ ("-$2.5M", not "$-2.5M").
+  if (Math.abs(v) >= 1000000) return `${v < 0 ? '-' : ''}$${(Math.abs(v) / 1000000).toFixed(1)}M`;
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
 }
 
