@@ -150,7 +150,9 @@ export async function saveFunMoney(fm: FunMoney[]): Promise<void> {
   // earner id when linked (stable across renames); person for legacy rows.
   await replaceCollection('funMoney', fm as unknown as Array<Record<string, unknown>>, (f) => {
     const row = f as unknown as FunMoney
-    return String(row.earnerId ?? row.person)
+    // Normalize the dedup key: trim + lowercase so a linked pot and a legacy
+    // twin can't survive side-by-side on a casing/whitespace mismatch.
+    return String(row.earnerId ?? row.person ?? '').trim().toLowerCase()
   })
 }
 
