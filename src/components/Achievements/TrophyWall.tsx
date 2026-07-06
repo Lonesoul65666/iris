@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { AchievementState, AchievementTier } from '../../utils/achievements';
 import { achievementSummary } from '../../utils/achievements';
+import Medallion from './Medallion';
 
 // The permanent trophy layer — earned achievements lit, locked ones dimmed with a
 // progress bar, secret+locked shown as mysteries. Reads evaluated states from the
@@ -76,8 +77,8 @@ export default function TrophyWall({ states, defaultOpen = false }: Props) {
                 s.earned ? `${t.ring} bg-white/[0.04]` : 'border-glass-border bg-white/[0.01] opacity-60'
               }`}
             >
-              <span className={`text-xl flex-shrink-0 ${s.earned ? '' : 'grayscale opacity-70'}`}>
-                {hidden ? '❓' : s.achievement.icon}
+              <span className="flex-shrink-0">
+                <Medallion achievement={s.achievement} locked={!s.earned} size={38} />
               </span>
               <div className="min-w-0 flex-1">
                 <div className={`text-xs font-semibold truncate ${s.earned ? 'text-text-primary' : 'text-text-secondary'}`}>

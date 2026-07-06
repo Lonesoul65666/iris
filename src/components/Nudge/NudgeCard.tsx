@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Nudge } from '../../utils/nudgeEngine';
 import { explainNudgeWhy, getCachedNudgeExplanation } from '../../services/nudgeExplain';
 
@@ -50,6 +50,8 @@ export interface NudgeCardProps {
   onDismissForever?: () => void;
   /** If true, hides the snooze/dismiss row (used for preview/static surfaces like FirstReport). */
   readOnly?: boolean;
+  /** Replaces the emoji icon with a custom node (e.g. an achievement Medallion). */
+  iconOverride?: ReactNode;
 }
 
 export default function NudgeCard({
@@ -59,6 +61,7 @@ export default function NudgeCard({
   onSnooze,
   onDismissForever,
   readOnly = false,
+  iconOverride,
 }: NudgeCardProps) {
   const s = severityStyles(nudge.severity);
   const snoozeLabel = nudge.oneShot ? 'Got it' : 'Remind me later';
@@ -68,7 +71,7 @@ export default function NudgeCard({
       className={`glass-card p-5 border ${s.border} bg-gradient-to-br ${s.bg} stagger-${Math.min(index + 1, 4)}`}
     >
       <div className="flex items-start gap-4">
-        <div className="text-3xl flex-shrink-0">{nudge.icon}</div>
+        <div className="flex-shrink-0">{iconOverride ?? <span className="text-3xl">{nudge.icon}</span>}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h3 className="text-base font-bold text-text-primary">{nudge.title}</h3>
