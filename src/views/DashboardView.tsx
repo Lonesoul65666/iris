@@ -21,6 +21,7 @@ import NudgeCard from '../components/Nudge/NudgeCard';
 import TrophyWall from '../components/Achievements/TrophyWall';
 import Medallion from '../components/Achievements/Medallion';
 import { achievementById } from '../utils/achievements';
+import DashSection from '../components/ui/DashSection';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -551,11 +552,16 @@ export default function DashboardView() {
           .filter(s => !s.stash.achievedAt && (s.stash.targetAmount > 0 || s.stash.targetDate))
           .map(s => ({ ...s.stash, currentBalance: s.balance }));
         if (goalFunds.length === 0) return null;
+        const done = goalFunds.filter(g => g.targetAmount > 0 && g.currentBalance >= g.targetAmount).length;
         return (
-          <GoalTracker
-            sinkingFunds={goalFunds}
-            monthlyInvestmentAmount={monthlyInv?.amount || 0}
-          />
+          <DashSection title="Have To's / Want To's" icon="🎯" defaultOpen
+            summary={`${done}/${goalFunds.length} complete`}>
+            <GoalTracker
+              sinkingFunds={goalFunds}
+              monthlyInvestmentAmount={monthlyInv?.amount || 0}
+              bare
+            />
+          </DashSection>
         );
       })()}
 
@@ -563,11 +569,18 @@ export default function DashboardView() {
           above where the money's spent. Not front-and-center by design. ═══ */}
       <OnTargetEarnings expenses={rawExpenses} />
 
-      {/* ════ TROPHY ROOM — the permanent achievement wall ══════════════ */}
-      {achievementStates.length > 0 && <TrophyWall states={achievementStates} />}
+      {/* ════ TROPHY ROOM — the permanent achievement wall (collapsed by default) ═ */}
+      {achievementStates.length > 0 && (
+        <DashSection title="Trophy Room" icon="🏆"
+          summary={`${achievementStates.filter(s => s.earned).length} of ${achievementStates.length} unlocked`}>
+          <TrophyWall states={achievementStates} bare defaultOpen />
+        </DashSection>
+      )}
 
-      {/* ════ SPEND BY ACCOUNT ══════════════════════════════════════════ */}
-      <AccountBreakdown />
+      {/* ════ SPEND BY ACCOUNT (collapsed by default) ═══════════════════ */}
+      <DashSection title="Spend by account" icon="🏦" summary="This month's spend across your accounts">
+        <AccountBreakdown bare />
+      </DashSection>
 
       {/* ════ RECENT ACTIVITY (only when NOT moved up beside Spending) + EQUITY/WEALTH ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
