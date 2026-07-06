@@ -22,6 +22,9 @@ import TrophyWall from '../components/Achievements/TrophyWall';
 import Medallion from '../components/Achievements/Medallion';
 import { achievementById } from '../utils/achievements';
 import DashSection from '../components/ui/DashSection';
+import { syncHealthNudges } from '../utils/syncHealth';
+import { getLastSyncSummary, hoursSinceLastSync } from '../lib/syncTellerTransactions';
+import type { Nudge } from '../utils/nudgeEngine';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -69,6 +72,18 @@ export default function DashboardView() {
     [rawExpenses, dashFunMoney],
   );
   const greeting = gameGreeting(gameState);
+
+  // Proactive sync-health — surface failed/rate-limited/stale refreshes so no
+  // data is silently missed. Re-checks after a sync (rawExpenses changes).
+  const [syncNudges, setSyncNudges] = useState<Nudge[]>([]);
+  useEffect(() => {
+    let live = true;
+    void Promise.all([getLastSyncSummary(), hoursSinceLastSync()]).then(([summary, hrs]) => {
+      if (live) setSyncNudges(syncHealthNudges(summary, hrs));
+    });
+    return () => { live = false; };
+  }, [rawExpenses]);
+
   const { hasPortfolio } = useHasRealData();
   const modules = useEnabledModules();
 
@@ -222,6 +237,16 @@ export default function DashboardView() {
 
   return (
     <div className="space-y-6 animate-fadeIn pb-8">
+      {/* Proactive sync-health — Iris flags failed / rate-limited / stale
+          refreshes so no bank data is silently missed. Dismiss = hide for now;
+          re-surfaces next session if still unhealthy. */}
+      {syncNudges.map((n, i) => (
+        <NudgeCard key={n.id} nudge={n} index={i}
+          onPrimary={n.primary?.view ? () => setView(n.primary!.view!) : undefined}
+          onSnooze={() => setSyncNudges((prev) => prev.filter((x) => x.id !== n.id))}
+          onDismissForever={() => setSyncNudges((prev) => prev.filter((x) => x.id !== n.id))} />
+      ))}
+
       {/* Achievement unlocks — the "FUCK YEAH" moment. Fresh unlocks this session
           surface as celebration cards up top (capped so a first-run batch doesn't
           bury the dashboard). Dismissing is cosmetic — the unlock is permanent. */}
