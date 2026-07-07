@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Icons } from '../ui/Icons';
-import { saveSetting } from '../../stores/portfolioStore';
 import type { View } from '../../types/views';
 import type { ActionItem } from '../ActionItems/ActionItems';
 import { useEnabledModules, visibleViews } from '../../hooks/useEnabledModules';
@@ -10,7 +9,7 @@ interface AppShellProps {
   view: View;
   setView: (v: View) => void;
   activeUser: string;
-  setActiveUser: (user: string | null) => void;
+  onLogout: () => void;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (v: boolean) => void;
   actionItems: ActionItem[];
@@ -20,7 +19,7 @@ interface AppShellProps {
 }
 
 export default function AppShell({
-  view, setView, activeUser, setActiveUser, sidebarCollapsed, setSidebarCollapsed,
+  view, setView, activeUser, onLogout, sidebarCollapsed, setSidebarCollapsed,
   actionItems, budgetSummary, overallScore, children,
 }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -213,7 +212,7 @@ export default function AppShell({
               </div>
               <span className="text-xs text-text-secondary">{activeUser}</span>
             </div>
-            <button onClick={() => { setActiveUser(null); saveSetting('active_user', ''); }}
+            <button onClick={onLogout}
               className="text-[10px] text-text-muted hover:text-text-secondary">Lock</button>
           </div>
         )}
