@@ -9,7 +9,7 @@ import { sendJson, readJsonBody, requireContext, methodNotAllowed, errorMessage,
 
 export async function handleSettingsList(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   try {
     const r = await ctx.pool.query<{ key: string; value: unknown; updated_at: string }>(
@@ -27,7 +27,7 @@ export async function handleSettingsList(req: Req, res: Res): Promise<void> {
 
 export async function handleSettingsGet(req: Req, res: Res, key: string): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   try {
     const r = await ctx.pool.query<{ value: unknown }>(
@@ -46,7 +46,7 @@ export async function handleSettingsGet(req: Req, res: Res, key: string): Promis
 
 export async function handleSettingsDelete(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { key?: unknown; keys?: unknown }
   try {
@@ -79,7 +79,7 @@ export async function handleSettingsDelete(req: Req, res: Res): Promise<void> {
 
 export async function handleSettingsSave(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { key?: unknown; value?: unknown }
   try {

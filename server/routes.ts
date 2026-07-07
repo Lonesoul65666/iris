@@ -24,6 +24,7 @@ import { handleExportFull } from './api-handlers/export.ts'
 import { handleAuditList, handleAuditAppend, handleAuditDelete } from './api-handlers/audit.ts'
 import { handleConnectorsList, handleConnectorsSave, handleConnectorsDelete } from './api-handlers/connectors.ts'
 import { handleTellerStatus, handleTellerAccounts, handleTellerBalances, handleTellerProbe, handleTellerTransactions, handleTellerImport, handleTellerImportIncome } from './api-handlers/teller.ts'
+import { handleAuthStatus, handleAuthSetup, handleAuthLogin, handleAuthLogout, handleAuthMe } from './api-handlers/auth.ts'
 
 type Req = IncomingMessage
 type Res = ServerResponse
@@ -98,6 +99,14 @@ export function registerIrisRoutes(use: UseFn): void {
   use('/api/connect/persist', handleConnectPersist)
   use('/api/connect', handleConnect)
   use('/api/health', handleHealth)
+
+  // Auth routes bypass the requireContext session gate (they ARE the gate).
+  // Order matters: longer prefixes before shorter shared stems.
+  use('/api/auth/status', handleAuthStatus)
+  use('/api/auth/setup', handleAuthSetup)
+  use('/api/auth/login', handleAuthLogin)
+  use('/api/auth/logout', handleAuthLogout)
+  use('/api/auth/me', handleAuthMe)
 
   use('/api/settings/list', handleSettingsList)
   use('/api/settings/save', handleSettingsSave)

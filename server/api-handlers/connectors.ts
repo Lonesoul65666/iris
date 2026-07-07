@@ -41,7 +41,7 @@ function isValidProvider(p: unknown): p is string {
 
 export async function handleConnectorsList(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   try {
     // NEVER return access_token — it's a live bank bearer credential and stays
@@ -62,7 +62,7 @@ export async function handleConnectorsList(req: Req, res: Res): Promise<void> {
 
 export async function handleConnectorsSave(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { connector?: unknown }
   try {
@@ -140,7 +140,7 @@ export async function handleConnectorsSave(req: Req, res: Res): Promise<void> {
 
 export async function handleConnectorsDelete(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { id?: unknown; all?: unknown }
   try {

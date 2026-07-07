@@ -40,7 +40,7 @@ interface ConnectorFetchError {
 
 export async function handleTellerAccounts(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
 
   // Fail fast with a clear message if certs aren't configured.
@@ -113,7 +113,7 @@ interface BalanceRow {
  */
 export async function handleTellerBalances(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
 
   const cfg = tellerConfigStatus()
@@ -188,7 +188,7 @@ export async function handleTellerBalances(req: Req, res: Res): Promise<void> {
  */
 export async function handleTellerTransactions(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
 
   const cfg = tellerConfigStatus()
@@ -279,7 +279,7 @@ interface ProbeAccountResult {
  */
 export async function handleTellerProbe(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
 
   const cfg = tellerConfigStatus()
@@ -376,7 +376,7 @@ interface ImportAccountSummary {
  */
 export async function handleTellerImport(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
 
   const cfg = tellerConfigStatus()
@@ -589,7 +589,7 @@ interface IncomeImportSummary {
  */
 export async function handleTellerImportIncome(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   const cfg = tellerConfigStatus()
   if (!cfg.configured || !cfg.certReadable || !cfg.keyReadable) {
