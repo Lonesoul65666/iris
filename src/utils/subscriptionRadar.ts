@@ -59,8 +59,16 @@ export function buildSubscriptionRadar(
 ): SubscriptionRadar {
   const minConfidence = opts.minConfidence ?? 0.5;
 
-  const items: RadarItem[] = candidates
-    .filter((c) => c.flow === 'outflow' && c.cadence !== 'irregular' && c.confidence >= minConfidence)
+  const kept = candidates.filter(
+    (c) => c.flow === 'outflow' && c.cadence !== 'irregular' && c.confidence >= minConfidence,
+  );
+
+  // Aggregate from the RAW monthly-equivalents, then round once — so the totals
+  // don't accumulate per-item rounding drift (and totalAnnual isn't 12× a
+  // rounded figure). Per-item displayed costs stay rounded to whole dollars.
+  const rawMonthly = kept.reduce((s, c) => s + monthlyEquivalent(c.avgAmount, c.cadence), 0);
+
+  const items: RadarItem[] = kept
     .map((c) => ({
       merchant: c.merchant,
       monthlyCost: Math.round(monthlyEquivalent(c.avgAmount, c.cadence)),
@@ -72,11 +80,10 @@ export function buildSubscriptionRadar(
     }))
     .sort((a, b) => b.monthlyCost - a.monthlyCost);
 
-  const totalMonthly = items.reduce((s, i) => s + i.monthlyCost, 0);
   return {
     items,
-    totalMonthly,
-    totalAnnual: totalMonthly * 12,
+    totalMonthly: Math.round(rawMonthly),
+    totalAnnual: Math.round(rawMonthly * 12),
     count: items.length,
   };
 }
