@@ -27,7 +27,7 @@ export async function handleCollectionsList(req: Req, res: Res, name: string): P
     sendJson(res, 400, { ok: false, error: 'invalid_collection_name' })
     return
   }
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   try {
     const r = await ctx.pool.query<{ key: string; data: Record<string, unknown>; updated_at: string }>(
@@ -52,7 +52,7 @@ export async function handleCollectionsDelete(req: Req, res: Res, name: string):
     sendJson(res, 400, { ok: false, error: 'invalid_collection_name' })
     return
   }
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { key?: unknown; keys?: unknown; all?: unknown }
   try {
@@ -100,7 +100,7 @@ export async function handleCollectionsReplace(req: Req, res: Res, name: string)
     sendJson(res, 400, { ok: false, error: 'invalid_collection_name' })
     return
   }
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
 
   let body: { items?: Array<{ key?: unknown; data?: unknown }> }
@@ -162,7 +162,7 @@ export async function handleCollectionsSave(req: Req, res: Res, name: string): P
     sendJson(res, 400, { ok: false, error: 'invalid_collection_name' })
     return
   }
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
 
   let body: { item?: { key?: unknown; data?: unknown }; items?: Array<{ key?: unknown; data?: unknown }> }

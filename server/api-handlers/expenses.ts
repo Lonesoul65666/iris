@@ -73,7 +73,7 @@ function normalizeAmount(input: unknown): number | null {
 
 export async function handleExpensesList(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   const url = new URL(req.url ?? '', 'http://localhost')
   const from = url.searchParams.get('from')
@@ -101,7 +101,7 @@ export async function handleExpensesList(req: Req, res: Res): Promise<void> {
 
 export async function handleExpensesDelete(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { id?: unknown; ids?: unknown; all?: unknown; source?: unknown; batchPrefix?: unknown }
   try {
@@ -159,7 +159,7 @@ export async function handleExpensesDelete(req: Req, res: Res): Promise<void> {
 
 export async function handleExpensesSave(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { expense?: Record<string, unknown> }
   try {

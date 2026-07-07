@@ -33,7 +33,7 @@ function rowToSource(row: { id: string; payer: string; subtype: string; status: 
 
 export async function handleIncomeSourcesList(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   try {
     const r = await ctx.pool.query<{
@@ -81,7 +81,7 @@ function upsertSourceParams(userId: string, s: IncomeSourceShape): unknown[] {
 
 export async function handleIncomeSourcesSave(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { source?: unknown }
   try {
@@ -105,7 +105,7 @@ export async function handleIncomeSourcesSave(req: Req, res: Res): Promise<void>
 
 export async function handleIncomeSourcesSaveBatch(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { sources?: unknown }
   try {
@@ -149,7 +149,7 @@ export async function handleIncomeSourcesSaveBatch(req: Req, res: Res): Promise<
 
 export async function handleIncomeSourcesDelete(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { id?: unknown; ids?: unknown }
   try {

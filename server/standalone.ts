@@ -16,7 +16,8 @@ import { readFile, stat } from 'node:fs/promises'
 import { resolve, join, extname, normalize, sep } from 'node:path'
 import { createRouter } from './router.ts'
 import { registerIrisRoutes } from './routes.ts'
-import { autoConnectFromEnv } from './db-pool.ts'
+import { autoConnectFromEnv, getPool } from './db-pool.ts'
+import { accountCount } from './api-handlers/auth-core.ts'
 import { isYahooProxy, proxyYahoo } from './yf-proxy.ts'
 
 const PORT = Number(process.env.PORT ?? process.env.IRIS_PORT ?? 5173)
@@ -108,14 +109,30 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error(`[iris] DATABASE_URL connect failed: ${err instanceof Error ? err.message : String(err)}`)
   }
-  // Bind loopback ONLY by default — the API has no auth yet, so a wide bind
-  // would expose all financial data + money moves to any device on the LAN.
-  // Opt into LAN/partner-mode explicitly with IRIS_LAN=1 (add auth first).
-  const HOST = process.env.IRIS_LAN === '1' ? '0.0.0.0' : '127.0.0.1'
+  // Bind loopback by default. IRIS_LAN=1 opts into a wide (network-reachable)
+  // bind for self-hosting behind a tunnel. Auth now exists, BUT it only engages
+  // once login accounts are created — so REFUSE a wide bind until accounts
+  // exist, or we'd expose an unauthenticated instance to the network. Fall back
+  // to loopback with a loud warning rather than exposing open data.
+  let wantLan = process.env.IRIS_LAN === '1'
+  if (wantLan) {
+    try {
+      const pool = getPool()
+      const count = pool ? await accountCount(pool) : 0
+      if (count === 0) {
+        wantLan = false
+        console.warn('[iris] REFUSING LAN bind: no login accounts exist yet. Finish first-run setup (create accounts) before exposing. Falling back to loopback.')
+      }
+    } catch {
+      wantLan = false
+      console.warn('[iris] REFUSING LAN bind: could not verify accounts exist. Falling back to loopback.')
+    }
+  }
+  const HOST = wantLan ? '0.0.0.0' : '127.0.0.1'
   server.listen(PORT, HOST, () => {
     const where = HOST === '0.0.0.0' ? `all interfaces (LAN) :${PORT}` : `http://localhost:${PORT}`
     console.log(`[iris] standalone server listening on ${where}`)
-    if (HOST === '0.0.0.0') console.warn('[iris] WARNING: LAN mode — /api has no auth yet; only enable on a trusted network')
+    if (HOST === '0.0.0.0') console.warn('[iris] LAN mode — reachable off this machine. Ensure it sits behind your tunnel/auth.')
     console.log(`[iris] serving client from ${DIST}`)
   })
 }

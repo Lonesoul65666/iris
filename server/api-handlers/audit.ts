@@ -18,7 +18,7 @@ interface AuditEntryShape {
 
 export async function handleAuditList(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   const url = new URL(req.url ?? '', 'http://localhost')
   const entityId = url.searchParams.get('entityId')
@@ -44,7 +44,7 @@ export async function handleAuditList(req: Req, res: Res): Promise<void> {
 
 export async function handleAuditAppend(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { entry?: unknown }
   try {
@@ -74,7 +74,7 @@ export async function handleAuditAppend(req: Req, res: Res): Promise<void> {
 
 export async function handleAuditDelete(req: Req, res: Res): Promise<void> {
   if (req.method !== 'POST') return methodNotAllowed(res)
-  const ctx = requireContext(res)
+  const ctx = await requireContext(req, res)
   if (!ctx) return
   let body: { all?: unknown; id?: unknown }
   try {
