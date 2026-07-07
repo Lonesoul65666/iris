@@ -65,12 +65,61 @@ npm run server              # standalone Node server, auto-connects + migrates
 Open the printed URL. The database schema **auto-applies on first connect**
 (idempotent — a machine hitting the already-set-up shared DB just no-ops), so
 there's no manual migration step. Because it's the same `DATABASE_URL`, all your
-budgets, transactions, stashes, and achievements are already there. Log in with
-your **PIN**; pick who you are (Scott / Claire) — that's a per-device identity
-lock, not a separate data set.
+budgets, transactions, stashes, and achievements are already there. **Log in**
+with the account you created during first-run setup (below).
 
 > Dev mode alternative: `npm run dev` (Vite on :5173) instead of `npm run
 > server`. Same data either way.
+
+---
+
+## First-run setup (once, on the host)
+
+The very first time you open Iris after adding auth, it walks you through it in
+the browser — no file editing:
+
+1. **(Fresh host only)** If `DATABASE_URL` isn't set, a "Connect Iris" screen
+   asks for your Supabase connection string and saves it locally.
+2. **"Set up Iris"** — create your login accounts. Any names you want (Scott,
+   Claire, whoever), each with a password (6+ chars). Add as many people as you
+   like. These are logins that all share the same household data.
+3. **Log in.** Done — you're in.
+
+Until accounts exist, the app stays open on loopback (exactly as before), and
+the server **refuses to expose itself to the network** — so finish this step
+before turning on remote access.
+
+---
+
+## Access it from anywhere (Tailscale)
+
+Goal: reach Iris from your phone or any device, over a private network, for
+free. One host runs it; everything else is a browser.
+
+1. **Install Tailscale** on the host machine and sign in: <https://tailscale.com/download>
+   (free Personal plan — up to 6 people, unlimited devices). Install the
+   Tailscale app on your phone / other laptops and sign in with the same
+   account so they join your private network ("tailnet").
+2. **Start Iris in LAN mode** on the host (only after first-run setup exists):
+   ```bash
+   # Windows PowerShell:  $env:IRIS_LAN=1; npm run server
+   # macOS/Linux:         IRIS_LAN=1 npm run server
+   ```
+   (Or add `IRIS_LAN=1` to `.env.local`.) The server binds all interfaces; it
+   still refuses this if no accounts exist yet.
+3. **Serve it over the tailnet with HTTPS** (so secure login cookies work):
+   ```bash
+   tailscale serve --bg 5173
+   ```
+   Tailscale prints an `https://<host>.<your-tailnet>.ts.net` URL and handles
+   the TLS certificate automatically.
+4. **Open that URL** on any device signed into your tailnet — phone included.
+   Log in, and you're using Iris remotely. Add it to your phone's home screen
+   for an app-like icon.
+
+Because it's on your private tailnet (not the public internet) **and** behind
+real login, it's doubly gated. The host just needs to be on when you want
+access — the data lives in Supabase around the clock regardless.
 
 ---
 

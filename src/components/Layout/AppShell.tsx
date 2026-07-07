@@ -104,8 +104,9 @@ export default function AppShell({
         bg-surface-1 border-r border-glass-border flex flex-col transition-all duration-200
       `}>
         <div className={`p-4 border-b border-glass-border flex items-center cursor-pointer hover:bg-white/[0.03] transition-colors ${sidebarCollapsed ? 'md:justify-center' : 'gap-3'}`}
-          onClick={() => { setView(allowed.has('chat') ? 'chat' : 'dashboard'); setMobileMenuOpen(false); }}>
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-indigo-500 flex items-center justify-center text-white font-bold text-sm">S</div>
+          title="Talk to Iris"
+          onClick={() => { setView('chat'); setMobileMenuOpen(false); }}>
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-indigo-500 flex items-center justify-center text-white font-bold text-sm">I</div>
           {!sidebarCollapsed && <span className="gradient-text font-bold text-lg tracking-tight">Iris</span>}
           {/* Close button for mobile sidebar */}
           <button onClick={(e) => { e.stopPropagation(); setMobileMenuOpen(false); }} className="ml-auto md:hidden p-1 text-text-muted hover:text-text-primary">

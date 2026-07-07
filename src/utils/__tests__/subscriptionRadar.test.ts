@@ -42,8 +42,11 @@ describe('buildSubscriptionRadar', () => {
     expect(r.items.map((i) => i.merchant)).toEqual(['Insurance', 'Coffee', 'Netflix']);
     expect(r.items[0].monthlyCost).toBe(100);
     expect(r.count).toBe(3);
-    expect(r.totalMonthly).toBe(100 + 22 + 16); // rounded
-    expect(r.totalAnnual).toBe(r.totalMonthly * 12);
+    expect(r.totalMonthly).toBe(138); // round(100 + 21.725 + 16)
+    // totalAnnual comes from the RAW monthly sum, not 12× the rounded total —
+    // so it's within a couple dollars of totalMonthly*12, not exactly equal.
+    expect(r.totalAnnual).toBe(Math.round((100 + 5 * 4.345 + 16) * 12)); // 1653
+    expect(Math.abs(r.totalAnnual - r.totalMonthly * 12)).toBeLessThanOrEqual(5);
   });
 
   it('excludes inflows, irregular cadence, and low-confidence charges', () => {
