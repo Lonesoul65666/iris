@@ -13,6 +13,7 @@ import SampleDataPanel from '../components/Settings/SampleDataPanel';
 import UserManagementPanel from '../components/Settings/UserManagementPanel';
 import type { UserProfile } from '../types/portfolio';
 import { getSetting } from '../stores/portfolioStore';
+import { APP_VERSION } from '../updates';
 import { setupLLMRouter, listInstalledOllamaModels } from '../services/llm';
 import type { LLMRoutingPreference } from '../types/llm';
 
@@ -99,6 +100,8 @@ export default function SettingsView() {
           </button>
         </div>
       </div>
+
+      <UpdatePanel />
 
       {/* Getting Started */}
       {!llmReady && (
@@ -679,6 +682,51 @@ function ConvictionHoldsPanel({ accounts, setAccounts }: {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── In-app updater ───────────────────────────────────────────────────────────
+// Click → the host git-pulls the latest, reinstalls, and rebuilds. Frontend
+// changes go live on refresh; server changes want a host restart (reported).
+function UpdatePanel() {
+  const [state, setState] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
+  const [msg, setMsg] = useState('');
+  const [restart, setRestart] = useState(false);
+
+  const run = async () => {
+    setState('working'); setMsg(''); setRestart(false);
+    try {
+      const res = await fetch('/api/update', { method: 'POST' });
+      const body = await res.json().catch(() => ({})) as { ok?: boolean; message?: string; restartNeeded?: boolean };
+      if (body.ok) { setState('done'); setMsg(body.message ?? 'Done.'); setRestart(!!body.restartNeeded); }
+      else { setState('error'); setMsg(body.message ?? 'Update failed.'); }
+    } catch {
+      setState('error'); setMsg('Could not reach the server.');
+    }
+  };
+
+  return (
+    <div className="glass-card p-6">
+      <h3 className="font-semibold text-text-primary mb-1">Updates</h3>
+      <p className="text-xs text-text-secondary mb-3">
+        You're on version <span className="font-semibold text-text-primary">{APP_VERSION}</span>. Pull the
+        latest from GitHub and rebuild — right here, no terminal.
+      </p>
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={run} disabled={state === 'working'}
+          className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-dim text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-wait">
+          {state === 'working' ? 'Updating…' : 'Check for updates'}
+        </button>
+        {state === 'done' && !restart && (
+          <button onClick={() => window.location.reload()}
+            className="px-4 py-2 rounded-lg bg-surface-2 hover:bg-surface-3 border border-glass-border text-sm text-text-secondary transition-colors">
+            Refresh now
+          </button>
+        )}
+      </div>
+      {state === 'working' && <p className="text-xs text-text-muted mt-3">Pulling, installing, and rebuilding — this can take a minute.</p>}
+      {msg && <p className={`text-xs mt-3 ${state === 'error' ? 'text-negative' : 'text-positive'}`}>{msg}</p>}
     </div>
   );
 }
