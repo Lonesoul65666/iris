@@ -17,7 +17,7 @@ function getSteps(userName: string): TutorialStep[] {
     {
       title: `Welcome to Iris, ${userName}!`,
       description:
-        'Iris is your personal financial intelligence dashboard. It brings together budget tracking, investment health monitoring, and AI-powered insights — all in one place. Let\u2019s take a quick tour.',
+        "Iris is a budget you'll actually want to open. It tracks what you spend, coaches you on it in a voice with real opinions, and turns staying disciplined into a game you play together. Let's take a quick tour.",
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" />
@@ -28,7 +28,7 @@ function getSteps(userName: string): TutorialStep[] {
     {
       title: 'Your Dashboard',
       description:
-        'The stat cards at the top show your financial snapshot at a glance — net worth, monthly spend, investment performance, and more. Click any card to dive deeper into that area.',
+        'This is home base. "This Week’s Focus" up top surfaces the 1–3 money moves that actually matter right now, and it holds steady all week instead of shuffling every time you open the app. Below that: net worth, safe-to-spend, and how you’re tracking against your guaranteed base.',
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -39,9 +39,9 @@ function getSteps(userName: string): TutorialStep[] {
       ),
     },
     {
-      title: 'What Iris Sees',
+      title: "Have-To's, Want-To's & Fun Money",
       description:
-        'Iris automatically spots issues across your finances — over-budget categories, investment risks, upcoming bills, and action items. Look for the red and yellow badges to see what needs your attention.',
+        "Fund the bills you HAVE to cover (taxes, insurance) and the things you WANT (a trip, the remodel) as separate pots that grow every month. Fun Money is the guilt-free part — a head-to-head game where restraint banks real savings. Small wins here earn real trophies on the Achievements wall.",
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -52,7 +52,7 @@ function getSteps(userName: string): TutorialStep[] {
     {
       title: 'Import Your Statements',
       description:
-        'Head to Budget, then open the Transactions tab to import your bank and credit card statements. Iris auto-categorizes every transaction so you can see exactly where your money goes.',
+        "Head to Budget, then open the Transactions tab to import your bank and credit card statements. Iris auto-categorizes every transaction and spots your recurring bills automatically — that's what powers the cash-flow calendar and subscription radar on your dashboard.",
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -64,7 +64,7 @@ function getSteps(userName: string): TutorialStep[] {
     {
       title: 'Ask Iris Anything',
       description:
-        'Click the purple chat button in the bottom-right corner or use the Ask Iris sidebar link. Ask about your portfolio, get investment advice, model what-if scenarios, or just explore your data conversationally.',
+        'Look for "Ask Iris anything →" under Iris’s Take on the Budget page — that’s the door into a full conversation with Iris about your actual numbers. She’ll tell you where you crushed it and where you didn’t. No hallucinated advice, just your real spending, straight talk.',
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
