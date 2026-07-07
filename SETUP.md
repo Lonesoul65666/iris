@@ -52,7 +52,7 @@ That's your backup + the source every other machine pulls from.
 
 ```bash
 git clone https://github.com/<you>/iris.git
-cd iris/signal-app          # (this folder)
+cd iris                     # the repo root IS the app (no subfolder)
 npm install
 
 cp .env.example .env.local
