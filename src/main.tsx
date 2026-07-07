@@ -40,20 +40,9 @@ async function boot(): Promise<void> {
   // eslint-disable-next-line no-console
   console.info('[iris] db bootstrap:', r)
 
-  if (r.status === 'no_credential') {
-    rootEl.innerHTML = `
-      <div style="padding:48px;font-family:system-ui,sans-serif;color:#aaa;max-width:680px;">
-        <h1 style="color:#7c5cff;">Iris needs a database connection</h1>
-        <p>The server has no <code>DATABASE_URL</code> configured, and there's no connection string in this browser's <code>localStorage</code>.</p>
-        <p><strong>Recommended (server-side, no browser needed):</strong> add your Supabase Session Pooler URI to <code>.env.local</code>:</p>
-        <pre style="background:#1a1a1a;padding:12px;border-radius:6px;color:#ddd;">DATABASE_URL=&lt;your Supabase Session Pooler URI&gt;</pre>
-        <p>then restart the server.</p>
-        <p style="color:#777;">Or, for a one-off in this browser, run in DevTools and reload:</p>
-        <pre style="background:#1a1a1a;padding:12px;border-radius:6px;color:#999;">localStorage.setItem('iris_db_connection_string', '&lt;your URI&gt;')</pre>
-      </div>
-    `
-    return
-  }
+  // no_credential (fresh host, no DATABASE_URL) is no longer a dead-end: render
+  // the app and let AuthGate's ConnectScreen collect the connection string
+  // through the UI — the friendly first-run "reconnector".
 
   if (r.status === 'error') {
     rootEl.innerHTML = `
