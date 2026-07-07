@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useAppData, formatCurrency } from '../../context/AppDataContext';
 import { computeScorecard } from '../../utils/savingsScorecard';
+import InfoTooltip from '../ui/InfoTooltip';
 
 /**
  * "Living under the base" — System 1 of the two-system model (Phase 1 V1).
@@ -31,7 +32,10 @@ export default function SavingsScorecard() {
     <div className="glass-card p-6 relative overflow-hidden">
       <div className="flex items-start justify-between mb-4 gap-3">
         <div className="min-w-0">
-          <div className="term-label">Living under the base</div>
+          <div className="term-label flex items-center gap-1.5">
+            Living under the base
+            <InfoTooltip text="Green months mean your TOTAL real spend — everyday plus lumpy taxes/travel — came in under your guaranteed base. Red months went over; variable pay covers the gap, but the bar shows the truth either way." />
+          </div>
           <div className="text-xs text-text-muted mt-1">
             Base <span className="text-text-secondary font-medium mono-num">{formatCurrency(sc.guaranteedBase)}/mo</span>
             <span className="text-text-muted/70"> · green = total spend under base · variable covers the rest</span>
