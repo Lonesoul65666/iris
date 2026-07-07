@@ -20,10 +20,8 @@ import { isDefaultPortfolio } from './components/Dashboard/SetupChecklist';
 import { useEnabledModules } from './hooks/useEnabledModules';
 import type { View } from './types/views';
 
-// DEV_MODE only suppresses the tutorial overlay during local dev.
-// User auth + onboarding are now driven by stored settings (`auth_users`,
+// User auth + onboarding are driven by stored settings (`auth_users`,
 // `onboarding_complete`) — no name is hardcoded anywhere in the app shell.
-const DEV_MODE = true;
 
 export type { View };
 
@@ -109,8 +107,8 @@ function AppInner({ loading, activeUser, setActiveUser, sidebarCollapsed, setSid
       overallScore={overallScore}
     >
       <AppContent />
-      {/* Tutorial Overlay — suppressed when DEV_MODE is true */}
-      {!DEV_MODE && showTutorialOverlay && showTutorial && activeUser && (
+      {/* Tutorial Overlay — first-run only, per user (see useTutorialStatus). */}
+      {showTutorialOverlay && showTutorial && activeUser && (
         <Tutorial userName={activeUser} onComplete={() => setShowTutorialOverlay(false)} />
       )}
     </AppShell>
