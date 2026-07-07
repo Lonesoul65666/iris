@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, type ReactNode } from 'react';
 
 /** Collapsible dashboard section with icon, title, summary when collapsed, and smooth height animation */
 export default function DashSection({ title, icon, summary, defaultOpen = false, accent, children }: {
-  title: string; icon: string; summary: ReactNode; defaultOpen?: boolean; accent?: string; children: ReactNode;
+  title: ReactNode; icon: string; summary: ReactNode; defaultOpen?: boolean; accent?: string; children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [height, setHeight] = useState<number | undefined>(defaultOpen ? undefined : 0);
@@ -35,8 +35,12 @@ export default function DashSection({ title, icon, summary, defaultOpen = false,
 
   return (
     <div className={`glass-card overflow-hidden ${accent || ''}`}>
-      <button onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between p-5 hover:bg-white/[0.02] transition-colors">
+      {/* A real <button> here would make any interactive title content (e.g. an
+          InfoTooltip's own button) an invalid nested button — div+role mirrors
+          the pattern already used for BudgetView's clickable tiles. */}
+      <div role="button" tabIndex={0} onClick={() => setOpen(!open)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open); } }}
+        className="w-full flex items-center justify-between p-5 hover:bg-white/[0.02] transition-colors cursor-pointer">
         <div className="flex items-center gap-3 min-w-0">
           <span className="text-lg flex-shrink-0">{icon}</span>
           <div className="text-left min-w-0">
@@ -47,7 +51,7 @@ export default function DashSection({ title, icon, summary, defaultOpen = false,
         <svg className={`w-4 h-4 text-text-muted transition-transform duration-300 flex-shrink-0 ml-3 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
-      </button>
+      </div>
       <div
         ref={contentRef}
         style={{

@@ -21,6 +21,7 @@ import NudgeCard from '../components/Nudge/NudgeCard';
 import Medallion from '../components/Achievements/Medallion';
 import { achievementById, achievementSummary } from '../utils/achievements';
 import DashSection from '../components/ui/DashSection';
+import InfoTooltip from '../components/ui/InfoTooltip';
 import CashflowCalendar from '../components/Budget/CashflowCalendar';
 import SubscriptionRadar from '../components/Budget/SubscriptionRadar';
 import { detectRecurring } from '../utils/recurringDetector';
@@ -309,6 +310,7 @@ export default function DashboardView() {
           <div className="flex items-center gap-2">
             <span className="text-lg">🎯</span>
             <h2 className="text-sm font-bold uppercase tracking-wider text-text-secondary">This Week's Focus</h2>
+            <InfoTooltip text="The 1–3 moves that matter most this week, picked from your real numbers. The list holds steady all week and refreshes Monday — it won't reshuffle every time you open the app." />
           </div>
           {weeklyBriefing.map((n, i) => (
             <NudgeCard key={n.id} nudge={n} index={i} snoozeLabel="Dismiss"
@@ -395,7 +397,10 @@ export default function DashboardView() {
               <div className="flex items-stretch gap-4">
                 <div className="hidden lg:block w-px bg-gradient-to-b from-transparent via-cyber-cyan/40 to-transparent" />
                 <div className="cursor-pointer" onClick={() => setView('budget')}>
-                  <div className="term-label">Safe to spend · this month</div>
+                  <div className="term-label flex items-center gap-1.5">
+                    Safe to spend · this month
+                    <InfoTooltip text="What's left in your flexible budget for the rest of the month, after bills and reserves are set aside. Spend up to this without dipping into savings." />
+                  </div>
                   <div className={`text-3xl md:text-4xl font-black mt-2 leading-none mono-num ${safeToSpend.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
                     {safeToSpend.amount >= 0 ? '' : '−'}{formatCurrency(Math.abs(safeToSpend.amount))}
                   </div>
@@ -655,7 +660,10 @@ export default function DashboardView() {
       {/* ════ COMING UP — forward cash-flow calendar (collapsed by default) ═══
           Projects detected recurring bills over the next 30 days. */}
       {cashflowForecast.count > 0 && (
-        <DashSection title="Coming up · next 30 days" icon="📅"
+        <DashSection
+          title={<span className="inline-flex items-center gap-1.5">Coming up · next 30 days
+            <InfoTooltip text="Bills Iris has spotted a pattern for, projected forward onto the days they're expected to hit — so you can see what's coming before it does." /></span>}
+          icon="📅"
           summary={`~${formatCurrency(cashflowForecast.total)} across ${cashflowForecast.count} bill${cashflowForecast.count === 1 ? '' : 's'}`}>
           <CashflowCalendar forecast={cashflowForecast} />
         </DashSection>
@@ -663,7 +671,10 @@ export default function DashboardView() {
 
       {/* ════ SUBSCRIPTION RADAR — recurring charges ranked by monthly cost ═══ */}
       {subscriptionRadar.count > 0 && (
-        <DashSection title="Subscriptions & recurring" icon="🔁"
+        <DashSection
+          title={<span className="inline-flex items-center gap-1.5">Subscriptions & recurring
+            <InfoTooltip text="Every recurring charge Iris has detected, ranked by what it actually costs you per month (a weekly $5 coffee and a yearly $300 bill both get normalized to a monthly figure) — the easiest way to spot creep." /></span>}
+          icon="🔁"
           summary={`${subscriptionRadar.count} charges · ${formatCurrency(subscriptionRadar.totalMonthly)}/mo`}>
           <SubscriptionRadar radar={subscriptionRadar} />
         </DashSection>

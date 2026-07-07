@@ -8,6 +8,7 @@ import { useMemo } from 'react';
 import type { Expense } from '../../types/budget';
 import { computeOteStatus } from '../../utils/oteEarnings';
 import { formatCurrency } from '../../utils/format';
+import InfoTooltip from '../ui/InfoTooltip';
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 // Tallest bar tops out at this % of the plot height, leaving room for the value
@@ -82,7 +83,10 @@ export default function OnTargetEarnings({ expenses, now = new Date() }: { expen
     <div className="glass-card p-6">
       <div className="flex items-start justify-between gap-4 mb-1">
         <div>
-          <div className="term-label">OTE over base · take-home since {sinceLabel}</div>
+          <div className="term-label flex items-center gap-1.5">
+            OTE over base · take-home since {sinceLabel}
+            <InfoTooltip text="Your end-of-month check pays over your regular base check — this is that extra cash, net of taxes, that actually lands in checking and needs deploying. Not a target you're chasing, just the real take-home overage." />
+          </div>
           <div className="flex items-baseline gap-2 mt-1">
             <span className="text-3xl md:text-4xl font-black text-positive mono-num leading-none">{formatCurrency(totalOverage)}</span>
             <span className="text-sm text-text-muted">brought home over base</span>

@@ -1,5 +1,6 @@
 import { useAppData } from '../context/AppDataContext';
 import TrophyWall from '../components/Achievements/TrophyWall';
+import InfoTooltip from '../components/ui/InfoTooltip';
 
 /**
  * Dedicated Achievements destination — the Trophy Room moved off the dashboard
@@ -13,7 +14,10 @@ export default function AchievementsView() {
   return (
     <div className="space-y-6 animate-fadeIn">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Achievements</h1>
+        <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
+          Achievements
+          <InfoTooltip text="Everything here is forward-only: a milestone only unlocks for progress made AFTER you started using Iris. Whatever you'd already done — months under budget, money already banked — was your start line, not a freebie trophy." />
+        </h1>
         <p className="text-text-secondary text-sm mt-1">
           The trophy wall — earned, in progress, and what's still a secret. Money as a hobby.
         </p>
