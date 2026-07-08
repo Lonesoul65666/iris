@@ -3,6 +3,9 @@ import type { IncomingMessage } from 'node:http'
 import {
   hashPassword, verifyPassword, normalizeUsername,
   hashToken, parseCookies, serializeSessionCookie, clearSessionCookie,
+  validatePasswordStrength, isPasswordExpired, isSessionIdleExpired,
+  computeLockout, isLocked,
+  MIN_PASSWORD_LEN, PASSWORD_MAX_AGE_MS, LOCKOUT_THRESHOLD,
 } from '../api-handlers/auth-core.ts'
 
 const reqWith = (headers: Record<string, string>) => ({ headers }) as unknown as IncomingMessage
@@ -54,6 +57,75 @@ describe('parseCookies', () => {
     expect(parseCookies(undefined)).toEqual({})
     expect(parseCookies('')).toEqual({})
     expect(parseCookies('k=a%20b')).toEqual({ k: 'a b' })
+  })
+})
+
+describe('validatePasswordStrength', () => {
+  it('rejects passwords shorter than the minimum', () => {
+    expect(validatePasswordStrength('short')).toMatch(/at least/)
+    expect(validatePasswordStrength('x'.repeat(MIN_PASSWORD_LEN - 1))).toMatch(/at least/)
+  })
+  it('accepts passwords at or above the minimum', () => {
+    expect(validatePasswordStrength('x'.repeat(MIN_PASSWORD_LEN))).toBeNull()
+    expect(validatePasswordStrength('correct horse battery staple')).toBeNull()
+  })
+  it('rejects non-strings without throwing', () => {
+    expect(validatePasswordStrength(undefined as unknown as string)).toMatch(/at least/)
+    expect(validatePasswordStrength(12345678901 as unknown as string)).toMatch(/at least/)
+  })
+})
+
+describe('isPasswordExpired', () => {
+  const now = Date.UTC(2026, 6, 7)
+  it('is false for a freshly-changed password', () => {
+    expect(isPasswordExpired(new Date(now).toISOString(), now)).toBe(false)
+  })
+  it('is true once older than the max age', () => {
+    const old = new Date(now - PASSWORD_MAX_AGE_MS - 1000).toISOString()
+    expect(isPasswordExpired(old, now)).toBe(true)
+  })
+  it('is false right at the boundary and for missing/garbage input', () => {
+    expect(isPasswordExpired(new Date(now - PASSWORD_MAX_AGE_MS + 1000).toISOString(), now)).toBe(false)
+    expect(isPasswordExpired(null, now)).toBe(false)
+    expect(isPasswordExpired('not a date', now)).toBe(false)
+  })
+})
+
+describe('isSessionIdleExpired', () => {
+  const now = Date.UTC(2026, 6, 7)
+  it('is false when recently used', () => {
+    expect(isSessionIdleExpired(new Date(now - 60_000).toISOString(), now)).toBe(false)
+  })
+  it('is true after a long idle gap', () => {
+    expect(isSessionIdleExpired(new Date(now - 25 * 60 * 60 * 1000).toISOString(), now)).toBe(true)
+  })
+  it('is false for missing/garbage input (fail-open — absolute expiry still guards)', () => {
+    expect(isSessionIdleExpired(null, now)).toBe(false)
+    expect(isSessionIdleExpired('nope', now)).toBe(false)
+  })
+})
+
+describe('computeLockout', () => {
+  it('increments below the threshold without locking', () => {
+    expect(computeLockout(0)).toEqual({ attempts: 1, locked: false })
+    expect(computeLockout(LOCKOUT_THRESHOLD - 2)).toEqual({ attempts: LOCKOUT_THRESHOLD - 1, locked: false })
+  })
+  it('locks and resets the counter on hitting the threshold', () => {
+    expect(computeLockout(LOCKOUT_THRESHOLD - 1)).toEqual({ attempts: 0, locked: true })
+  })
+  it('treats a non-finite prior count as zero', () => {
+    expect(computeLockout(NaN as unknown as number)).toEqual({ attempts: 1, locked: false })
+  })
+})
+
+describe('isLocked', () => {
+  const now = Date.UTC(2026, 6, 7)
+  it('is true while lockedUntil is in the future', () => {
+    expect(isLocked({ lockedUntil: new Date(now + 60_000).toISOString() }, now)).toBe(true)
+  })
+  it('is false when lockedUntil has passed or is absent', () => {
+    expect(isLocked({ lockedUntil: new Date(now - 1000).toISOString() }, now)).toBe(false)
+    expect(isLocked({ lockedUntil: null }, now)).toBe(false)
   })
 })
 

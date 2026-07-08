@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { connectDatabase, setupAccounts, login, type AuthUser } from '../../lib/authClient';
+import { connectDatabase, setupAccounts, login, changePassword, type AuthUser } from '../../lib/authClient';
 
-// The three first-run/auth surfaces. Full-screen, on-brand (dark + accent).
+/** Minimum password length — mirrors MIN_PASSWORD_LEN on the server. */
+export const MIN_PASSWORD_LEN = 10;
+
+// The auth surfaces. Full-screen, on-brand (dark + accent).
 
 function Shell({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
@@ -48,23 +51,24 @@ export function ConnectScreen({ onConnected }: { onConnected: () => void }) {
   );
 }
 
-interface AccountRow { username: string; password: string }
+interface AccountRow { username: string; password: string; confirm: string }
 
 /** First run: create the login accounts (any names). */
 export function SetupScreen({ onDone }: { onDone: () => void }) {
-  const [rows, setRows] = useState<AccountRow[]>([{ username: '', password: '' }, { username: '', password: '' }]);
+  const [rows, setRows] = useState<AccountRow[]>([{ username: '', password: '', confirm: '' }, { username: '', password: '', confirm: '' }]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const update = (i: number, field: keyof AccountRow, v: string) =>
     setRows((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: v } : r)));
-  const addRow = () => setRows((prev) => [...prev, { username: '', password: '' }]);
+  const addRow = () => setRows((prev) => [...prev, { username: '', password: '', confirm: '' }]);
   const removeRow = (i: number) => setRows((prev) => prev.filter((_, j) => j !== i));
 
   const submit = async () => {
     const clean = rows.filter((r) => r.username.trim() && r.password);
-    if (clean.length === 0) { setError('Add at least one username and password.'); return; }
-    if (clean.some((r) => r.password.length < 6)) { setError('Passwords must be at least 6 characters.'); return; }
+    if (clean.length === 0) { setError('Add at least one name and password.'); return; }
+    if (clean.some((r) => r.password.length < MIN_PASSWORD_LEN)) { setError(`Passwords must be at least ${MIN_PASSWORD_LEN} characters.`); return; }
+    if (clean.some((r) => r.password !== r.confirm)) { setError("Password and confirmation don't match — check for a typo."); return; }
     setBusy(true); setError('');
     const r = await setupAccounts(clean.map((c) => ({ username: c.username.trim(), password: c.password, displayName: c.username.trim() })));
     setBusy(false);
@@ -74,14 +78,16 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
 
   return (
     <Shell title="Set up Iris" subtitle="Create the logins for this household">
-      <div className="space-y-3">
+      <div className="space-y-4">
         {rows.map((row, i) => (
           <div key={i} className="flex gap-2 items-start">
             <div className="flex-1 space-y-2">
               <input className={inputCls} placeholder="Name (e.g. Scott)" value={row.username}
                 onChange={(e) => update(i, 'username', e.target.value)} autoFocus={i === 0} />
-              <input className={inputCls} type="password" placeholder="Password (6+ chars)" value={row.password}
+              <input className={inputCls} type="password" placeholder={`Password (${MIN_PASSWORD_LEN}+ chars)`} value={row.password}
                 onChange={(e) => update(i, 'password', e.target.value)} />
+              <input className={inputCls} type="password" placeholder="Confirm password" value={row.confirm}
+                onChange={(e) => update(i, 'confirm', e.target.value)} />
             </div>
             {rows.length > 1 && (
               <button onClick={() => removeRow(i)} title="Remove" className="text-text-muted hover:text-negative text-lg leading-none mt-2 px-1">×</button>
@@ -92,6 +98,61 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
       <button onClick={addRow} className="text-xs text-accent hover:text-accent-light mt-3">+ Add another person</button>
       {error && <p className="text-negative text-xs mt-3">{error}</p>}
       <button className={`${btnCls} mt-4`} onClick={submit} disabled={busy}>{busy ? 'Creating…' : 'Create accounts'}</button>
+    </Shell>
+  );
+}
+
+/** Shared password-change form (current → new → confirm). Reused by the forced
+ *  re-set screen and the voluntary Settings panel. Returns success via onDone. */
+export function ChangePasswordForm({ onDone, onCancel, compact }: { onDone?: () => void; onCancel?: () => void; compact?: boolean }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(false);
+
+  const submit = async () => {
+    if (!current || !next) return;
+    if (next.length < MIN_PASSWORD_LEN) { setError(`New password must be at least ${MIN_PASSWORD_LEN} characters.`); return; }
+    if (next !== confirm) { setError("New password and confirmation don't match — check for a typo."); return; }
+    setBusy(true); setError('');
+    const r = await changePassword(current, next);
+    setBusy(false);
+    if (r.ok) {
+      setDone(true); setCurrent(''); setNext(''); setConfirm('');
+      onDone?.();
+    } else {
+      setError(r.message ?? 'Could not change password.');
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <input className={inputCls} type="password" placeholder="Current password" value={current}
+        onChange={(e) => { setCurrent(e.target.value); setDone(false); }} autoFocus={!compact} />
+      <input className={inputCls} type="password" placeholder={`New password (${MIN_PASSWORD_LEN}+ chars)`} value={next}
+        onChange={(e) => { setNext(e.target.value); setDone(false); }} />
+      <input className={inputCls} type="password" placeholder="Confirm new password" value={confirm}
+        onChange={(e) => { setConfirm(e.target.value); setDone(false); }}
+        onKeyDown={(e) => e.key === 'Enter' && submit()} />
+      {error && <p className="text-negative text-xs">{error}</p>}
+      {done && <p className="text-positive text-xs">Password updated.</p>}
+      <div className="flex items-center gap-2">
+        <button className={btnCls} onClick={submit} disabled={busy || !current || !next}>{busy ? 'Saving…' : 'Update password'}</button>
+        {onCancel && (
+          <button onClick={onCancel} className="px-4 py-2.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-glass-border text-sm text-text-secondary transition-colors">Cancel</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Forced full-screen re-set when a password has aged out (reuse allowed). */
+export function ForcedChangePasswordScreen({ onDone }: { onDone: () => void }) {
+  return (
+    <Shell title="Time to refresh your password" subtitle="It's been a while — set a new one to keep going (you can reuse the same one)">
+      <ChangePasswordForm onDone={onDone} />
     </Shell>
   );
 }
