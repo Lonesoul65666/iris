@@ -4,6 +4,8 @@
 export interface AuthUser {
   username: string
   displayName: string
+  /** Password has aged out — the app forces a re-set before continuing. */
+  mustChangePassword?: boolean
 }
 
 export interface AuthStatus {
@@ -47,6 +49,21 @@ export async function login(username: string, password: string): Promise<{ ok: b
 
 export async function logout(): Promise<void> {
   try { await fetch('/api/auth/logout', { method: 'POST' }) } catch { /* ignore */ }
+}
+
+/** Change the logged-in account's password. The session cookie rides along. */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    })
+    const body = await res.json().catch(() => ({})) as { ok?: boolean; message?: string; error?: string }
+    return { ok: !!body.ok, message: body.message ?? body.error }
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : 'Network error.' }
+  }
 }
 
 /** Connect the backend to a Postgres URI and persist it to .env.local so it

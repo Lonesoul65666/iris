@@ -26,6 +26,19 @@ export interface UpdateEntry {
 
 export const UPDATES: UpdateEntry[] = [
   {
+    version: '2026.07.07',
+    date: '2026-07-07',
+    title: 'Account security hardening',
+    notes: [
+      'Iris can now safely live behind a URL you reach from anywhere — logins are protected against guessing.',
+      'Too many wrong password tries now temporarily locks that account for 15 minutes.',
+      'New passwords need at least 10 characters and a confirmation field, so a typo can’t lock you out.',
+      'You can now change your password anytime under Settings → Security.',
+      'Sessions no longer stay logged in forever — an untouched browser signs itself out (idle 24h, 14 days max).',
+      'Locked out or forgot a password? Run reset-password.bat on the host to set a new one.',
+    ],
+  },
+  {
     version: '2026.07.06',
     date: '2026-07-06',
     title: 'This Week’s Focus, Coming Up + What’s New',

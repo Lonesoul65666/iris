@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getAuthStatus, logout as apiLogout, type AuthStatus, type AuthUser } from '../../lib/authClient';
-import { ConnectScreen, SetupScreen, LoginScreen } from './AuthScreens';
+import { ConnectScreen, SetupScreen, LoginScreen, ForcedChangePasswordScreen } from './AuthScreens';
 
 /**
  * Auth state machine + gate. Resolves /api/auth/status, then shows the right
@@ -41,7 +41,13 @@ export default function AuthGate({ children }: { children: (user: AuthUser, logo
   );
 
   if (!status) return Loading;
-  if (user) return <>{children(user, handleLogout)}</>;
+  if (user) {
+    // Password aged out → block the app behind a forced re-set (reuse allowed).
+    if (user.mustChangePassword) {
+      return <ForcedChangePasswordScreen onDone={() => setUser({ ...user, mustChangePassword: false })} />;
+    }
+    return <>{children(user, handleLogout)}</>;
+  }
   if (!status.configured) return <ConnectScreen onConnected={() => void refresh()} />;
   if (status.needsSetup) return <SetupScreen onDone={() => void refresh()} />;
   return <LoginScreen onAuthenticated={(u) => setUser(u)} />;

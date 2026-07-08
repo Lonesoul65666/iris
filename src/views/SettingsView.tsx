@@ -11,6 +11,7 @@ import PaycheckPanel from '../components/Settings/PaycheckPanel';
 import NotificationSettings from '../components/Settings/NotificationSettings';
 import SampleDataPanel from '../components/Settings/SampleDataPanel';
 import UserManagementPanel from '../components/Settings/UserManagementPanel';
+import { ChangePasswordForm } from '../components/Auth/AuthScreens';
 import type { UserProfile } from '../types/portfolio';
 import { getSetting } from '../stores/portfolioStore';
 import { APP_VERSION } from '../updates';
@@ -102,6 +103,8 @@ export default function SettingsView() {
       </div>
 
       <UpdatePanel />
+
+      <SecurityPanel />
 
       {/* Getting Started */}
       {!llmReady && (
@@ -680,6 +683,35 @@ function ConvictionHoldsPanel({ accounts, setAccounts }: {
               </button>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Security / password ────────────────────────────────────────────────────
+// Change the logged-in account's password. Collapsed by default so it stays out
+// of the way; expands to the shared current → new → confirm form.
+function SecurityPanel() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="glass-card p-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h3 className="font-semibold text-text-primary mb-1">Security</h3>
+          <p className="text-xs text-text-secondary">Change your login password. You'll confirm the new one to avoid a typo locking you out.</p>
+        </div>
+        {!open && (
+          <button onClick={() => setOpen(true)}
+            className="px-3 py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-glass-border text-xs text-text-secondary hover:text-accent transition-colors whitespace-nowrap">
+            Change password
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="mt-4 max-w-sm">
+          <ChangePasswordForm onCancel={() => setOpen(false)} />
         </div>
       )}
     </div>
