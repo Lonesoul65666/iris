@@ -51,6 +51,47 @@ declare global {
   }
 }
 
+// ── Plaid Link (Teller's replacement) ────────────────────────────────────────
+const PLAID_SCRIPT_SRC = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js'
+
+interface PlaidLinkMetadata {
+  institution?: { name?: string; institution_id?: string }
+}
+interface PlaidLinkHandler { open: () => void; destroy?: () => void }
+interface PlaidLinkGlobal {
+  create: (opts: {
+    token: string
+    onSuccess: (publicToken: string, metadata: PlaidLinkMetadata) => void
+    onExit?: (err: unknown, metadata: unknown) => void
+    onEvent?: (eventName: string, metadata: unknown) => void
+  }) => PlaidLinkHandler
+}
+declare global {
+  interface Window {
+    Plaid?: PlaidLinkGlobal
+  }
+}
+
+function loadPlaidScript(): Promise<PlaidLinkGlobal> {
+  if (typeof window === 'undefined') return Promise.reject(new Error('no_window'))
+  if (window.Plaid) return Promise.resolve(window.Plaid)
+  return new Promise<PlaidLinkGlobal>((resolve, reject) => {
+    const done = () => (window.Plaid ? resolve(window.Plaid) : reject(new Error('plaid_script_loaded_but_global_missing')))
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${PLAID_SCRIPT_SRC}"]`)
+    if (existing) {
+      existing.addEventListener('load', done, { once: true })
+      existing.addEventListener('error', () => reject(new Error('plaid_script_load_error')), { once: true })
+      return
+    }
+    const s = document.createElement('script')
+    s.src = PLAID_SCRIPT_SRC
+    s.async = true
+    s.addEventListener('load', done, { once: true })
+    s.addEventListener('error', () => reject(new Error('plaid_script_load_error')), { once: true })
+    document.head.appendChild(s)
+  })
+}
+
 interface ConnectorRow {
   id: string
   provider: string
@@ -187,6 +228,45 @@ export default function ConnectorsPanel() {
     }
   }, [refresh])
 
+  const openPlaidConnect = useCallback(async () => {
+    setStatus(null)
+    setBusy(true)
+    try {
+      // 1) mint a link_token from our backend, 2) open Plaid Link, 3) exchange
+      //    the returned public_token for a durable access_token (server-side).
+      const { link_token } = await api<{ ok: true; link_token: string }>('/api/plaid/link-token', { method: 'POST' })
+      const Plaid = await loadPlaidScript()
+      const handler = Plaid.create({
+        token: link_token,
+        onSuccess: (publicToken, metadata) => {
+          void (async () => {
+            try {
+              await api<{ ok: true }>('/api/plaid/exchange', {
+                method: 'POST',
+                body: JSON.stringify({
+                  public_token: publicToken,
+                  institution: metadata.institution?.name ?? 'Unknown bank',
+                  institution_id: metadata.institution?.institution_id ?? null,
+                }),
+              })
+              setStatus(`Connected: ${metadata.institution?.name ?? 'bank'}`)
+              await refresh()
+            } catch (e) {
+              setStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`)
+            } finally {
+              setBusy(false)
+            }
+          })()
+        },
+        onExit: () => { setBusy(false) },
+      })
+      handler.open()
+    } catch (e) {
+      setStatus(`Plaid Link failed to load: ${e instanceof Error ? e.message : String(e)}`)
+      setBusy(false)
+    }
+  }, [refresh])
+
   const syncBalances = useCallback(async () => {
     setStatus(null)
     setBusy(true)
@@ -228,13 +308,21 @@ export default function ConnectorsPanel() {
         Environment: <span className="font-mono">{TELLER_ENVIRONMENT}</span> · App ID: <span className="font-mono">{TELLER_APPLICATION_ID}</span>
       </p>
 
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <button
-          onClick={openConnect}
+          onClick={() => void openPlaidConnect()}
           disabled={busy}
           className="px-4 py-2 bg-accent hover:bg-accent-dim rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50"
         >
-          {busy ? 'Opening Teller…' : 'Connect a bank (Teller)'}
+          {busy ? 'Opening Plaid…' : 'Connect a bank (Plaid)'}
+        </button>
+        <button
+          onClick={openConnect}
+          disabled={busy}
+          title="Teller shut down its API in 2026 — kept only for reference; use Plaid."
+          className="px-3 py-2 bg-surface-3 hover:bg-surface-4 rounded-lg text-xs text-text-muted transition-colors disabled:opacity-50"
+        >
+          {busy ? '…' : 'Teller (retired)'}
         </button>
         <button
           onClick={() => void syncBalances()}
