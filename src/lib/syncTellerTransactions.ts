@@ -1,6 +1,12 @@
-// On-demand delta sync for Teller transactions + income.
+// On-demand delta sync for bank transactions + income.
 //
-// Design (verified against Teller docs, 2026-06-11):
+// CUTOVER (2026-07-11): now targets PLAID (/api/plaid/import[-income]) — Teller
+// shut down its API. The endpoints are drop-in compatible (same {inserted,
+// updated,through,errors} shape), so the delta-window, debounce, partial-sync,
+// and rate-limit handling below are unchanged. Export/state-key names keep the
+// "teller" spelling only to avoid churn across importers; they mean "bank sync".
+//
+// Original design notes (still accurate):
 //   • No published rate-limit number on the dev tier — Teller returns 429 and
 //     expects back-off. So we never poll; we sync only on a human click (button
 //     or the 48h staleness banner), and debounce rapid re-clicks. That pattern
@@ -109,7 +115,7 @@ export async function syncTellerTransactions(opts?: { force?: boolean }): Promis
   // ── Transactions ──────────────────────────────────────────────
   let txRes: Response;
   try {
-    txRes = await fetch(`/api/teller/import?since=${since}`, { method: 'POST' });
+    txRes = await fetch(`/api/plaid/import?since=${since}`, { method: 'POST' });
   } catch (err) {
     await disarmDebounce();
     throw err;
@@ -140,7 +146,7 @@ export async function syncTellerTransactions(opts?: { force?: boolean }): Promis
   // and persist a partial summary so the state stays honest.
   let incRes: Response | null = null;
   try {
-    incRes = await fetch(`/api/teller/import-income?since=${since}`, { method: 'POST' });
+    incRes = await fetch(`/api/plaid/import-income?since=${since}`, { method: 'POST' });
   } catch {
     incRes = null;
   }

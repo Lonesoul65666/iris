@@ -14,8 +14,8 @@ import {
   plaidConfigStatus, createLinkToken, exchangePublicToken, getAccounts, getTransactions,
   PlaidApiError, type PlaidAccount,
 } from '../plaid-client.ts'
-import { plaidTxnToExpense, classifyPlaidTxn } from '../plaid-map.ts'
-import type { MappedExpense } from '../teller-map.ts'
+import { plaidTxnToExpense, plaidTxnToIncome, classifyPlaidTxn } from '../plaid-map.ts'
+import type { MappedExpense, MappedIncome } from '../teller-map.ts'
 
 function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
@@ -308,4 +308,102 @@ export async function handlePlaidImport(req: Req, res: Res): Promise<void> {
   const totalAmount = Math.round(perAccount.reduce((s, a) => s + a.keptAmount, 0) * 100) / 100
   const through = toWrite.reduce((m, e) => (e.date > m ? e.date : m), '')
   sendJson(res, 200, { ok: true, dryRun, batch, since, totalKept, totalAmount, written, inserted, updated, skippedTombstoned, through, perAccount, errors })
+}
+
+/**
+ * Import income INFLOWS from Plaid (employer deposits / reimbursements), mapped
+ * via the reused Teller income classifier. Mirrors handleTellerImportIncome.
+ *   POST /api/plaid/import-income?since=YYYY-MM-DD&dryRun=1
+ */
+export async function handlePlaidImportIncome(req: Req, res: Res): Promise<void> {
+  if (req.method !== 'POST') return methodNotAllowed(res)
+  const ctx = await requireContext(req, res)
+  if (!ctx) return
+  const cfg = plaidConfigStatus()
+  if (!cfg.configured) { sendJson(res, 503, { ok: false, error: 'plaid_not_configured', status: cfg }); return }
+
+  const url = new URL(req.url ?? '', 'http://localhost')
+  const since = url.searchParams.get('since') ?? isoDaysAgo(90)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) { sendJson(res, 400, { ok: false, error: 'invalid_since', expected: 'YYYY-MM-DD' }); return }
+  const dryRun = url.searchParams.get('dryRun') === '1'
+  const batch = `plaid-income-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}`
+
+  let rows: PlaidConnectorRow[]
+  try {
+    const r = await ctx.pool.query<PlaidConnectorRow>(
+      `SELECT id, institution, access_token FROM connectors
+        WHERE user_id = $1 AND provider = 'plaid' AND status = 'active'`,
+      [ctx.userId],
+    )
+    rows = r.rows
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) })
+    return
+  }
+
+  const errors: ConnectorFetchError[] = []
+  const toWrite: MappedIncome[] = []
+  let income = 0, reimbursement = 0, incomeAmount = 0, reimbursementAmount = 0
+
+  for (const row of rows) {
+    let data: Awaited<ReturnType<typeof getTransactions>>
+    try {
+      data = await getTransactions(row.access_token, since, isoToday())
+    } catch (err) {
+      errors.push({ connectorId: row.id, institution: row.institution, status: err instanceof PlaidApiError ? err.status : null, code: err instanceof PlaidApiError ? err.code : 'request_failed', message: errorMessage(err) })
+      continue
+    }
+    const acctById = new Map(data.accounts.map((a) => [a.account_id, a]))
+    for (const t of data.transactions) {
+      const a = acctById.get(t.account_id)
+      if (!a) continue
+      const inc = plaidTxnToIncome(t, a, row.institution, batch)
+      if (!inc) continue
+      if (inc.transactionType === 'reimbursement') { reimbursement++; reimbursementAmount = Math.round((reimbursementAmount + inc.amount) * 100) / 100 }
+      else { income++; incomeAmount = Math.round((incomeAmount + inc.amount) * 100) / 100 }
+      toWrite.push(inc)
+    }
+  }
+
+  let written = 0, inserted = 0, updated = 0
+  if (!dryRun && toWrite.length > 0) {
+    const client = await ctx.pool.connect()
+    try {
+      await client.query('BEGIN')
+      for (const e of toWrite) {
+        const w = await client.query<{ inserted: boolean }>(
+          `INSERT INTO expenses (id, user_id, date, amount, data, updated_at)
+           VALUES ($1, $2, $3, $4, $5::jsonb, now())
+           ON CONFLICT (user_id, id) DO UPDATE
+             SET date = EXCLUDED.date,
+                 amount = EXCLUDED.amount,
+                 data = EXCLUDED.data || jsonb_strip_nulls(jsonb_build_object(
+                   'category',            expenses.data->'category',
+                   'isWorkExpense',       expenses.data->'isWorkExpense',
+                   'reimbursementStatus', expenses.data->'reimbursementStatus',
+                   'notes',               expenses.data->'notes',
+                   'recurring',           expenses.data->'recurring',
+                   'incomeSubtype',       expenses.data->'incomeSubtype',
+                   'incomeSourceId',      expenses.data->'incomeSourceId',
+                   'spender',             expenses.data->'spender'
+                 )),
+                 updated_at = now()
+           RETURNING (xmax = 0) AS inserted`,
+          [e.id, ctx.userId, e.date, e.amount, JSON.stringify(e)],
+        )
+        if (w.rows[0]?.inserted) inserted++; else updated++
+      }
+      await client.query('COMMIT')
+      written = toWrite.length
+    } catch (err) {
+      try { await client.query('ROLLBACK') } catch { /* connection may be dead */ }
+      sendJson(res, 500, { ok: false, error: 'write_failed', message: errorMessage(err), batch })
+      return
+    } finally {
+      client.release()
+    }
+  }
+
+  const through = toWrite.reduce((m, e) => (e.date > m ? e.date : m), '')
+  sendJson(res, 200, { ok: true, dryRun, batch, since, income, reimbursement, incomeAmount, reimbursementAmount, written, inserted, updated, through, errors })
 }

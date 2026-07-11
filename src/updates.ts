@@ -26,6 +26,18 @@ export interface UpdateEntry {
 
 export const UPDATES: UpdateEntry[] = [
   {
+    version: '2026.07.11',
+    date: '2026-07-11',
+    title: 'Bank sync moved to Plaid',
+    notes: [
+      'Our bank connector, Teller, shut down its API — so bank & card sync now runs on Plaid instead.',
+      'One-time step: reconnect your banks under Settings → Connectors → “Connect a bank (Plaid)”.',
+      'Your history is untouched — new transactions map back to the same accounts automatically.',
+      'The dashboard “Update” button now pulls through Plaid; everything else works exactly as before.',
+      'Investments (Fidelity) and crypto (Coinbase) were never on Teller, so they’re unaffected.',
+    ],
+  },
+  {
     version: '2026.07.07',
     date: '2026-07-07',
     title: 'Account security hardening',
