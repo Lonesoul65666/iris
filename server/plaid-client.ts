@@ -153,9 +153,46 @@ export interface TransactionsSyncPage {
 }
 
 /** One page of the incremental transactions feed. Pass the prior cursor (or
- *  omit for a first full sync); loop while `has_more`. */
+ *  omit for a first full sync); loop while `has_more`. Kept for future
+ *  cursor-based syncing; the current import uses the bounded getTransactions. */
 export async function transactionsSync(accessToken: string, cursor?: string): Promise<TransactionsSyncPage> {
   const body: Record<string, unknown> = { access_token: accessToken }
   if (cursor) body.cursor = cursor
   return plaidRequest('/transactions/sync', body)
+}
+
+interface TransactionsGetPage {
+  accounts: PlaidAccount[]
+  transactions: PlaidTransaction[]
+  total_transactions: number
+}
+
+/**
+ * Fetch all transactions in [startDate, endDate] (YYYY-MM-DD), paging through
+ * Plaid's offset pagination. Mirrors Teller's bounded "since" window so the
+ * import logic stays uniform. Right after linking, Plaid may still be preparing
+ * data and return PRODUCT_NOT_READY — the caller surfaces that as a retry.
+ */
+export async function getTransactions(accessToken: string, startDate: string, endDate: string): Promise<{ accounts: PlaidAccount[]; transactions: PlaidTransaction[] }> {
+  const pageSize = 500
+  const all: PlaidTransaction[] = []
+  let accounts: PlaidAccount[] = []
+  let offset = 0
+  let total = Infinity
+  let guard = 0
+  while (offset < total && guard < 100) {
+    guard++
+    const page = await plaidRequest<TransactionsGetPage>('/transactions/get', {
+      access_token: accessToken,
+      start_date: startDate,
+      end_date: endDate,
+      options: { count: pageSize, offset },
+    })
+    if (offset === 0) accounts = page.accounts
+    total = page.total_transactions
+    all.push(...page.transactions)
+    if (page.transactions.length === 0) break
+    offset += page.transactions.length
+  }
+  return { accounts, transactions: all }
 }

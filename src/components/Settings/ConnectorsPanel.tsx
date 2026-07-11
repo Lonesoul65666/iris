@@ -267,6 +267,23 @@ export default function ConnectorsPanel() {
     }
   }, [refresh])
 
+  const runPlaidDryRun = useCallback(async () => {
+    setStatus(null)
+    setBusy(true)
+    try {
+      const r = await api<{ ok: true; totalKept: number; through: string; written: number; perAccount: Array<{ institution: string; accountName: string; kept: number }> }>(
+        '/api/plaid/import?dryRun=1',
+        { method: 'POST' },
+      )
+      const byAcct = r.perAccount.map((a) => `${a.accountName}: ${a.kept}`).join(' · ')
+      setStatus(`Dry run — would import ${r.totalKept} transaction(s)${r.through ? ` through ${r.through}` : ''}. Nothing written. ${byAcct}`)
+    } catch (e) {
+      setStatus(`Dry run failed: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
   const syncBalances = useCallback(async () => {
     setStatus(null)
     setBusy(true)
@@ -323,6 +340,14 @@ export default function ConnectorsPanel() {
           className="px-3 py-2 bg-surface-3 hover:bg-surface-4 rounded-lg text-xs text-text-muted transition-colors disabled:opacity-50"
         >
           {busy ? '…' : 'Teller (retired)'}
+        </button>
+        <button
+          onClick={() => void runPlaidDryRun()}
+          disabled={busy || items.length === 0}
+          className="px-3 py-2 bg-surface-3 hover:bg-surface-4 rounded-lg text-xs text-text-secondary transition-colors disabled:opacity-50"
+          title="Preview what a Plaid import would pull — writes NOTHING"
+        >
+          {busy ? '…' : 'Test Plaid import (dry-run)'}
         </button>
         <button
           onClick={() => void syncBalances()}

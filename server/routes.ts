@@ -25,7 +25,7 @@ import { handleAuditList, handleAuditAppend, handleAuditDelete } from './api-han
 import { handleConnectorsList, handleConnectorsSave, handleConnectorsDelete } from './api-handlers/connectors.ts'
 import { handleTellerStatus, handleTellerAccounts, handleTellerBalances, handleTellerProbe, handleTellerTransactions, handleTellerImport, handleTellerImportIncome } from './api-handlers/teller.ts'
 import { handleAuthStatus, handleAuthSetup, handleAuthLogin, handleAuthLogout, handleAuthMe, handleAuthChangePassword } from './api-handlers/auth.ts'
-import { handlePlaidStatus, handlePlaidLinkToken, handlePlaidExchange, handlePlaidAccounts } from './api-handlers/plaid.ts'
+import { handlePlaidStatus, handlePlaidLinkToken, handlePlaidExchange, handlePlaidAccounts, handlePlaidImport } from './api-handlers/plaid.ts'
 import { handleUpdate } from './api-handlers/update.ts'
 
 type Req = IncomingMessage
@@ -156,6 +156,7 @@ export function registerIrisRoutes(use: UseFn): void {
   use('/api/plaid/link-token', handlePlaidLinkToken)
   use('/api/plaid/exchange', handlePlaidExchange)
   use('/api/plaid/accounts', handlePlaidAccounts)
+  use('/api/plaid/import', handlePlaidImport)
 
   // /api/collections/:name/{list,save,delete} — req.url after the prefix is
   // e.g. '/buckets/list' or '/sinkingFunds/save?...'.
