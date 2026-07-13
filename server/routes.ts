@@ -25,7 +25,7 @@ import { handleAuditList, handleAuditAppend, handleAuditDelete } from './api-han
 import { handleConnectorsList, handleConnectorsSave, handleConnectorsDelete } from './api-handlers/connectors.ts'
 import { handleTellerStatus, handleTellerAccounts, handleTellerBalances, handleTellerProbe, handleTellerTransactions, handleTellerImport, handleTellerImportIncome } from './api-handlers/teller.ts'
 import { handleAuthStatus, handleAuthSetup, handleAuthLogin, handleAuthLogout, handleAuthMe, handleAuthChangePassword } from './api-handlers/auth.ts'
-import { handlePlaidStatus, handlePlaidLinkToken, handlePlaidExchange, handlePlaidAccounts, handlePlaidImport, handlePlaidImportIncome } from './api-handlers/plaid.ts'
+import { handlePlaidStatus, handlePlaidLinkToken, handlePlaidExchange, handlePlaidAccounts, handlePlaidBalances, handlePlaidImport, handlePlaidImportIncome } from './api-handlers/plaid.ts'
 import { handleUpdate } from './api-handlers/update.ts'
 
 type Req = IncomingMessage
@@ -156,6 +156,7 @@ export function registerIrisRoutes(use: UseFn): void {
   use('/api/plaid/link-token', handlePlaidLinkToken)
   use('/api/plaid/exchange', handlePlaidExchange)
   use('/api/plaid/accounts', handlePlaidAccounts)
+  use('/api/plaid/balances', handlePlaidBalances)
   use('/api/plaid/import-income', handlePlaidImportIncome)
   use('/api/plaid/import', handlePlaidImport)
 

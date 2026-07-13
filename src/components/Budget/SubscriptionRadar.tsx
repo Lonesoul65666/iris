@@ -1,5 +1,4 @@
 import { formatCurrency } from '../../context/AppDataContext';
-import { categoryEmoji } from '../../utils/txDisplay';
 import type { SubscriptionRadar as Radar, RadarItem } from '../../utils/subscriptionRadar';
 
 /**
@@ -45,7 +44,6 @@ export default function SubscriptionRadar({ radar }: { radar: Radar }) {
         {radar.items.map((it, i) => (
           <div key={`${it.merchant}-${i}`} className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-base flex-shrink-0">{categoryEmoji(it.category)}</span>
               <span className="text-sm text-text-secondary truncate">{it.merchant}</span>
               {CADENCE_LABEL[it.cadence] && (
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-accent/10 text-accent-light flex-shrink-0">

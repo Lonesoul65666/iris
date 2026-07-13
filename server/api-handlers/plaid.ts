@@ -14,8 +14,8 @@ import {
   plaidConfigStatus, createLinkToken, exchangePublicToken, getAccounts, getTransactions,
   PlaidApiError, type PlaidAccount,
 } from '../plaid-client.ts'
-import { plaidTxnToExpense, plaidTxnToIncome, classifyPlaidTxn } from '../plaid-map.ts'
-import type { MappedExpense, MappedIncome } from '../teller-map.ts'
+import { plaidTxnToExpense, plaidTxnToIncome, classifyPlaidTxn, plaidToTellerAccount } from '../plaid-map.ts'
+import { mapAccountSource, type MappedExpense, type MappedIncome } from '../teller-map.ts'
 
 function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
@@ -142,6 +142,80 @@ export async function handlePlaidAccounts(req: Req, res: Res): Promise<void> {
     }
   }
   sendJson(res, 200, { ok: true, accounts, errors })
+}
+
+interface BalanceRow {
+  accountId: string
+  source: string
+  name: string
+  institution: string
+  type: string
+  subtype: string
+  lastFour: string
+  currency: string
+  ledger: number | null
+  available: number | null
+  kind: 'asset' | 'liability'
+}
+
+/**
+ * READ-ONLY balances across active Plaid connectors — the Teller-balances
+ * replacement that feeds cash accounts into the portfolio / net worth. Maps each
+ * account to the Iris source taxonomy (via the shared adapter) so the same
+ * `teller-<source>` portfolio rows update in place.
+ */
+export async function handlePlaidBalances(req: Req, res: Res): Promise<void> {
+  if (req.method !== 'GET') return methodNotAllowed(res)
+  const ctx = await requireContext(req, res)
+  if (!ctx) return
+  const cfg = plaidConfigStatus()
+  if (!cfg.configured) { sendJson(res, 503, { ok: false, error: 'plaid_not_configured', status: cfg }); return }
+
+  let rows: PlaidConnectorRow[]
+  try {
+    const r = await ctx.pool.query<PlaidConnectorRow>(
+      `SELECT id, institution, access_token FROM connectors
+        WHERE user_id = $1 AND provider = 'plaid' AND status = 'active' ORDER BY created_at DESC`,
+      [ctx.userId],
+    )
+    rows = r.rows
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: 'query_failed', message: errorMessage(err) })
+    return
+  }
+
+  const balances: BalanceRow[] = []
+  const errors: ConnectorFetchError[] = []
+  for (const row of rows) {
+    try {
+      const { accounts: accs } = await getAccounts(row.access_token)
+      for (const a of accs) {
+        const tellerAcct = plaidToTellerAccount(a, row.institution)
+        const isLiability = tellerAcct.subtype === 'credit_card'
+        balances.push({
+          accountId: a.account_id,
+          source: mapAccountSource(tellerAcct),
+          name: a.name,
+          institution: row.institution,
+          type: a.type,
+          subtype: a.subtype ?? '',
+          lastFour: a.mask ?? '',
+          currency: a.balances?.iso_currency_code ?? 'USD',
+          ledger: a.balances?.current ?? null,
+          available: a.balances?.available ?? null,
+          kind: isLiability ? 'liability' : 'asset',
+        })
+      }
+    } catch (err) {
+      errors.push({
+        connectorId: row.id, institution: row.institution,
+        status: err instanceof PlaidApiError ? err.status : null,
+        code: err instanceof PlaidApiError ? err.code : 'request_failed',
+        message: errorMessage(err),
+      })
+    }
+  }
+  sendJson(res, 200, { ok: true, balances, errors })
 }
 
 interface ImportAccountSummary {
