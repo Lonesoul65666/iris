@@ -26,7 +26,8 @@ import CashflowCalendar from '../components/Budget/CashflowCalendar';
 import SubscriptionRadar from '../components/Budget/SubscriptionRadar';
 import { detectRecurring } from '../utils/recurringDetector';
 import { forecastCashflow } from '../utils/cashflowForecast';
-import { buildSubscriptionRadar } from '../utils/subscriptionRadar';
+import { buildSubscriptionRadar, subKey, type SubscriptionStatusMap, type SubStatus } from '../utils/subscriptionRadar';
+import { buildSubscriptionNudges } from '../utils/subscriptionNudges';
 import { sectionFromBriefingId } from '../utils/weeklyBriefing';
 import { syncHealthNudges } from '../utils/syncHealth';
 import { getLastSyncSummary, hoursSinceLastSync } from '../lib/syncTellerTransactions';
@@ -85,11 +86,40 @@ export default function DashboardView() {
   // calendar ("what hits when") and the subscription radar ("how much each
   // costs/mo"). Detect once, derive both.
   const recurringCandidates = useMemo(() => detectRecurring(rawExpenses, { now: new Date() }), [rawExpenses]);
-  const cashflowForecast = useMemo(
-    () => forecastCashflow(recurringCandidates, { now: new Date(), horizonDays: 30 }),
-    [recurringCandidates],
+
+  // Subscription watchdog state: per-merchant cancel/ignore status + the
+  // "known" baseline set that gates new-charge alerts. Both persisted as
+  // settings (loaded below); default to empty until loaded.
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatusMap>({});
+  const [subBaseline, setSubBaseline] = useState<string[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const [status, baseline] = await Promise.all([
+        getSetting<SubscriptionStatusMap>('subscription_status'),
+        getSetting<string[]>('subscription_baseline'),
+      ]);
+      if (!live) return;
+      if (status) setSubscriptionStatus(status);
+      setSubBaseline(baseline ?? null);
+    })();
+    return () => { live = false; };
+  }, []);
+
+  const subscriptionRadar = useMemo(
+    () => buildSubscriptionRadar(recurringCandidates, { statusMap: subscriptionStatus }),
+    [recurringCandidates, subscriptionStatus],
   );
-  const subscriptionRadar = useMemo(() => buildSubscriptionRadar(recurringCandidates), [recurringCandidates]);
+
+  // Canceled/ignored charges drop out of the forward calendar too — no point
+  // projecting a bill you killed.
+  const cashflowForecast = useMemo(() => {
+    const excluded = new Set(
+      Object.entries(subscriptionStatus).filter(([, v]) => v.status !== 'active').map(([k]) => k),
+    );
+    const live = recurringCandidates.filter((c) => !excluded.has(subKey(c.merchant)));
+    return forecastCashflow(live, { now: new Date(), horizonDays: 30 });
+  }, [recurringCandidates, subscriptionStatus]);
 
   // Proactive sync-health — surface failed/rate-limited/stale refreshes so no
   // data is silently missed. Re-checks after a sync (rawExpenses changes), and
@@ -116,6 +146,54 @@ export default function DashboardView() {
     setSyncNudges((prev) => prev.filter((x) => x.id !== n.id));
     const rec: DismissState = { id: n.id, dismissedAt: new Date().toISOString(), permanent, title: n.title, snoozeDays: n.snoozeDays };
     await saveSetting(dismissSettingKey(n.id), rec);
+  }, []);
+
+  // Subscription watchdog nudges — resurrections (canceled charge bills again)
+  // + new-charge detections. First run with detected subs seeds the baseline
+  // SILENTLY so you aren't flooded with "new!" for everything you already have;
+  // only genuinely-new arrivals alert after that.
+  const [subNudges, setSubNudges] = useState<Nudge[]>([]);
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      // First run (no baseline yet) but subs exist → seed silently, no alerts.
+      if (subBaseline === null) {
+        if (subscriptionRadar.items.length > 0) {
+          const seed = subscriptionRadar.items.map((it) => subKey(it.merchant));
+          await saveSetting('subscription_baseline', seed);
+          if (live) setSubBaseline(seed);
+        }
+        return;
+      }
+      const { nudges } = buildSubscriptionNudges(subscriptionRadar, subBaseline);
+      const now = new Date();
+      const active: Nudge[] = [];
+      for (const n of nudges) {
+        const dismiss = (await getSetting<DismissState>(dismissSettingKey(n.id))) ?? null;
+        if (isNudgeActive(n, dismiss, now)) active.push(n);
+      }
+      if (live) setSubNudges(active);
+    })();
+    return () => { live = false; };
+  }, [subscriptionRadar, subBaseline]);
+
+  const dismissSubNudge = useCallback(async (n: Nudge, permanent: boolean) => {
+    setSubNudges((prev) => prev.filter((x) => x.id !== n.id));
+    const rec: DismissState = { id: n.id, dismissedAt: new Date().toISOString(), permanent, title: n.title, snoozeDays: n.snoozeDays };
+    await saveSetting(dismissSettingKey(n.id), rec);
+  }, []);
+
+  // Set (or clear) a subscription's cancel/ignore status + persist it. Restoring
+  // to active drops the entry (active is the implicit default).
+  const setSubStatus = useCallback((merchant: string, status: SubStatus) => {
+    const key = subKey(merchant);
+    setSubscriptionStatus((prev) => {
+      const next = { ...prev };
+      if (status === 'active') delete next[key];
+      else next[key] = { status, canceledOn: status === 'canceled' ? new Date().toISOString().slice(0, 10) : undefined };
+      void saveSetting('subscription_status', next);
+      return next;
+    });
   }, []);
 
   const { hasPortfolio } = useHasRealData();
@@ -279,6 +357,14 @@ export default function DashboardView() {
           onPrimary={n.primary?.view ? () => setView(n.primary!.view!) : undefined}
           onSnooze={() => void dismissSyncNudge(n, false)}
           onDismissForever={() => void dismissSyncNudge(n, true)} />
+      ))}
+
+      {/* Subscription watchdog — canceled charge billed again, or a new recurring
+          charge appeared. "Manage" jumps to the Subscriptions section. */}
+      {subNudges.map((n, i) => (
+        <NudgeCard key={n.id} nudge={n} index={i}
+          onSnooze={() => void dismissSubNudge(n, false)}
+          onDismissForever={() => void dismissSubNudge(n, true)} />
       ))}
 
       {/* What's New — one-time card after an update (version-gated). "Got it"
@@ -669,12 +755,12 @@ export default function DashboardView() {
       )}
 
       {/* ════ SUBSCRIPTION RADAR — recurring charges ranked by monthly cost ═══ */}
-      {subscriptionRadar.count > 0 && (
+      {(subscriptionRadar.count > 0 || subscriptionRadar.canceled.length > 0 || subscriptionRadar.ignored.length > 0) && (
         <DashSection
           title={<span className="inline-flex items-center gap-1.5">Subscriptions & Recurring
             <InfoTooltip text="Every recurring charge Iris has detected, ranked by what it actually costs you per month (a weekly $5 coffee and a yearly $300 bill both get normalized to a monthly figure) — the easiest way to spot creep." /></span>}
           summary={`${subscriptionRadar.count} charges · ${formatCurrency(subscriptionRadar.totalMonthly)}/mo`}>
-          <SubscriptionRadar radar={subscriptionRadar} />
+          <SubscriptionRadar radar={subscriptionRadar} onSetStatus={setSubStatus} />
         </DashSection>
       )}
 

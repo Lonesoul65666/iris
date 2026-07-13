@@ -62,6 +62,38 @@ describe('buildSubscriptionRadar', () => {
 
   it('is empty when nothing qualifies', () => {
     const r = buildSubscriptionRadar([]);
-    expect(r).toEqual({ items: [], totalMonthly: 0, totalAnnual: 0, count: 0 });
+    expect(r).toEqual({ items: [], canceled: [], ignored: [], totalMonthly: 0, totalAnnual: 0, count: 0 });
+  });
+
+  it('partitions by status and keeps canceled/ignored out of the active total', () => {
+    const r = buildSubscriptionRadar(
+      [
+        cand({ merchant: 'Netflix', cadence: 'monthly', avgAmount: 16 }),
+        cand({ merchant: 'SUNO', cadence: 'monthly', avgAmount: 10 }),
+        cand({ merchant: 'RandomBuy', cadence: 'monthly', avgAmount: 25 }),
+      ],
+      { statusMap: { suno: { status: 'canceled', canceledOn: '2026-06-30' }, randombuy: { status: 'ignored' } } },
+    );
+    expect(r.items.map((i) => i.merchant)).toEqual(['Netflix']);
+    expect(r.canceled.map((i) => i.merchant)).toEqual(['SUNO']);
+    expect(r.ignored.map((i) => i.merchant)).toEqual(['RandomBuy']);
+    expect(r.count).toBe(1);
+    expect(r.totalMonthly).toBe(16); // canceled + ignored excluded
+  });
+
+  it('flags a canceled charge that billed again AFTER the cancel date as resurrected', () => {
+    const r = buildSubscriptionRadar(
+      [cand({ merchant: 'SUNO', cadence: 'monthly', avgAmount: 10, lastDate: '2026-07-10' })],
+      { statusMap: { suno: { status: 'canceled', canceledOn: '2026-06-20' } } },
+    );
+    expect(r.canceled[0].resurrected).toBe(true);
+  });
+
+  it('does NOT flag a canceled charge whose last bill predates the cancel date', () => {
+    const r = buildSubscriptionRadar(
+      [cand({ merchant: 'SUNO', cadence: 'monthly', avgAmount: 10, lastDate: '2026-06-10' })],
+      { statusMap: { suno: { status: 'canceled', canceledOn: '2026-06-20' } } },
+    );
+    expect(r.canceled[0].resurrected).toBe(false);
   });
 });
