@@ -26,6 +26,18 @@ export interface UpdateEntry {
 
 export const UPDATES: UpdateEntry[] = [
   {
+    version: '2026.07.13',
+    date: '2026-07-13',
+    title: 'Subscription watchdog',
+    notes: [
+      'Subscriptions & Recurring is now manageable — hover a charge to mark it Canceled or "Not a sub".',
+      'Cancel something and it charges you again? Iris flags it up top — the cancellation may not have stuck.',
+      'New recurring charge shows up unexpectedly? You get a heads-up, so accidental signups don’t sneak by.',
+      'Canceled and ignored charges drop out of your monthly total and the Coming Up calendar.',
+      'Cleaned up the dashboard: clearer section titles, fewer icons.',
+    ],
+  },
+  {
     version: '2026.07.11',
     date: '2026-07-11',
     title: 'Bank sync moved to Plaid',

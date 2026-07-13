@@ -10,6 +10,16 @@ import type { ExpenseCategory } from '../types/budget';
  * you don't use — the Rocket-Money move. Pure + testable.
  */
 
+/** User-set state for a recurring charge. 'active' is the implicit default. */
+export type SubStatus = 'active' | 'canceled' | 'ignored';
+export interface SubStatusEntry { status: SubStatus; canceledOn?: string }
+export type SubscriptionStatusMap = Record<string, SubStatusEntry>;
+
+/** Stable key for a merchant across the status map + nudges (trim + lowercase). */
+export function subKey(merchant: string): string {
+  return merchant.trim().toLowerCase();
+}
+
 export interface RadarItem {
   merchant: string;
   /** Monthly-equivalent cost (weekly/biweekly annualized down, yearly/quarterly up). */
@@ -20,11 +30,19 @@ export interface RadarItem {
   category: ExpenseCategory;
   confidence: number;
   lastDate: string;
+  status: SubStatus;
+  /** True when a canceled charge has billed again AFTER its cancel date. */
+  resurrected: boolean;
 }
 
 export interface SubscriptionRadar {
-  /** Ranked by monthlyCost, highest first. */
+  /** ACTIVE charges, ranked by monthlyCost, highest first. */
   items: RadarItem[];
+  /** Marked canceled by the user (with resurrection flags). */
+  canceled: RadarItem[];
+  /** Marked "not a subscription" — hidden from the active list + forecast. */
+  ignored: RadarItem[];
+  /** Totals reflect ACTIVE charges only. */
   totalMonthly: number;
   totalAnnual: number;
   count: number;
@@ -51,6 +69,8 @@ export function monthlyEquivalent(amount: number, cadence: Cadence): number {
 export interface RadarOptions {
   /** Only include recurring charges at/above this confidence. Default 0.5. */
   minConfidence?: number;
+  /** User cancel/ignore state, keyed by subKey(merchant). */
+  statusMap?: SubscriptionStatusMap;
 }
 
 export function buildSubscriptionRadar(
@@ -58,32 +78,51 @@ export function buildSubscriptionRadar(
   opts: RadarOptions = {},
 ): SubscriptionRadar {
   const minConfidence = opts.minConfidence ?? 0.5;
+  const statusMap = opts.statusMap ?? {};
 
   const kept = candidates.filter(
     (c) => c.flow === 'outflow' && c.cadence !== 'irregular' && c.confidence >= minConfidence,
   );
 
-  // Aggregate from the RAW monthly-equivalents, then round once — so the totals
-  // don't accumulate per-item rounding drift (and totalAnnual isn't 12× a
-  // rounded figure). Per-item displayed costs stay rounded to whole dollars.
-  const rawMonthly = kept.reduce((s, c) => s + monthlyEquivalent(c.avgAmount, c.cadence), 0);
-
-  const items: RadarItem[] = kept
-    .map((c) => ({
-      merchant: c.merchant,
-      monthlyCost: Math.round(monthlyEquivalent(c.avgAmount, c.cadence)),
-      chargeAmount: Math.round(c.avgAmount),
-      cadence: c.cadence,
-      category: c.category,
-      confidence: c.confidence,
-      lastDate: c.lastDate,
-    }))
+  const all: RadarItem[] = kept
+    .map((c) => {
+      const entry = statusMap[subKey(c.merchant)];
+      const status: SubStatus = entry?.status ?? 'active';
+      // Resurrection: a canceled charge that billed again AFTER the cancel date.
+      const resurrected = status === 'canceled' && !!entry?.canceledOn && c.lastDate > entry.canceledOn;
+      return {
+        merchant: c.merchant,
+        monthlyCost: Math.round(monthlyEquivalent(c.avgAmount, c.cadence)),
+        chargeAmount: Math.round(c.avgAmount),
+        cadence: c.cadence,
+        category: c.category,
+        confidence: c.confidence,
+        lastDate: c.lastDate,
+        status,
+        resurrected,
+        // keep the raw monthly for accurate active totals (rounded once below)
+        _rawMonthly: monthlyEquivalent(c.avgAmount, c.cadence),
+      } as RadarItem & { _rawMonthly: number };
+    })
     .sort((a, b) => b.monthlyCost - a.monthlyCost);
 
+  const byCost = (a: RadarItem, b: RadarItem) => b.monthlyCost - a.monthlyCost;
+  const active = all.filter((i) => i.status === 'active').sort(byCost);
+  const canceled = all.filter((i) => i.status === 'canceled').sort(byCost);
+  const ignored = all.filter((i) => i.status === 'ignored').sort(byCost);
+
+  // Totals from ACTIVE raw monthly-equivalents, rounded once (no drift).
+  const rawMonthly = active.reduce((s, i) => s + (i as RadarItem & { _rawMonthly: number })._rawMonthly, 0);
+  const strip = (i: RadarItem & { _rawMonthly?: number }): RadarItem => {
+    const { _rawMonthly, ...rest } = i; void _rawMonthly; return rest;
+  };
+
   return {
-    items,
+    items: active.map(strip),
+    canceled: canceled.map(strip),
+    ignored: ignored.map(strip),
     totalMonthly: Math.round(rawMonthly),
     totalAnnual: Math.round(rawMonthly * 12),
-    count: items.length,
+    count: active.length,
   };
 }
