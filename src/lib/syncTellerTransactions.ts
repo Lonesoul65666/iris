@@ -28,6 +28,14 @@ const DELTA_DAYS = 14;        // minimum trailing window to re-pull
 const DEBOUNCE_MIN = 5;       // a click within this window won't re-hit Teller
 export const STALE_HOURS = 48; // older than this → show the refresh prompt
 
+// Provider cutover floor: Teller's imported history ends 2026-07-06 (teller_ ids);
+// Plaid owns everything from here on (plaid_ ids). Clamp the sync window so Plaid
+// NEVER re-pulls a date Teller already covered — otherwise the same real
+// transaction lands twice (teller_<id> AND plaid_<id>) and double-counts. Once
+// enough time passes that the trailing window starts after this date, the clamp
+// is a no-op. Safe to remove after the old teller_ rows age out of relevance.
+const PLAID_CUTOVER = '2026-07-07';
+
 /** What a sync changed — persisted so the indicator survives a reload. */
 export interface SyncSummary {
   syncedAt: string;            // ISO
@@ -102,6 +110,9 @@ export async function syncTellerTransactions(opts?: { force?: boolean }): Promis
     const lastAnchor = new Date(new Date(last).getTime() - 2 * 86400000).toISOString().slice(0, 10);
     if (lastAnchor < since) since = lastAnchor;
   }
+  // Never reach back before the provider cutover — keeps Plaid off the dates the
+  // old teller_ rows already own, so nothing double-counts during the overlap.
+  if (since < PLAID_CUTOVER) since = PLAID_CUTOVER;
 
   const brokenBanks: string[] = [];
   const failedBanks: string[] = [];
