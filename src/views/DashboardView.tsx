@@ -661,9 +661,8 @@ export default function DashboardView() {
           Projects detected recurring bills over the next 30 days. */}
       {cashflowForecast.count > 0 && (
         <DashSection
-          title={<span className="inline-flex items-center gap-1.5">Coming up · next 30 days
+          title={<span className="inline-flex items-center gap-1.5">Coming Up · Next 30 Days
             <InfoTooltip text="Bills Iris has spotted a pattern for, projected forward onto the days they're expected to hit — so you can see what's coming before it does." /></span>}
-          icon="📅"
           summary={`~${formatCurrency(cashflowForecast.total)} across ${cashflowForecast.count} bill${cashflowForecast.count === 1 ? '' : 's'}`}>
           <CashflowCalendar forecast={cashflowForecast} />
         </DashSection>
@@ -672,9 +671,8 @@ export default function DashboardView() {
       {/* ════ SUBSCRIPTION RADAR — recurring charges ranked by monthly cost ═══ */}
       {subscriptionRadar.count > 0 && (
         <DashSection
-          title={<span className="inline-flex items-center gap-1.5">Subscriptions & recurring
+          title={<span className="inline-flex items-center gap-1.5">Subscriptions & Recurring
             <InfoTooltip text="Every recurring charge Iris has detected, ranked by what it actually costs you per month (a weekly $5 coffee and a yearly $300 bill both get normalized to a monthly figure) — the easiest way to spot creep." /></span>}
-          icon="🔁"
           summary={`${subscriptionRadar.count} charges · ${formatCurrency(subscriptionRadar.totalMonthly)}/mo`}>
           <SubscriptionRadar radar={subscriptionRadar} />
         </DashSection>

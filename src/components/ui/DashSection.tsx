@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 
-/** Collapsible dashboard section with icon, title, summary when collapsed, and smooth height animation */
+/** Collapsible dashboard section with optional icon, title, summary when collapsed, and smooth height animation */
 export default function DashSection({ title, icon, summary, defaultOpen = false, accent, children }: {
-  title: ReactNode; icon: string; summary: ReactNode; defaultOpen?: boolean; accent?: string; children: ReactNode;
+  title: ReactNode; icon?: string; summary: ReactNode; defaultOpen?: boolean; accent?: string; children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [height, setHeight] = useState<number | undefined>(defaultOpen ? undefined : 0);
@@ -42,7 +42,7 @@ export default function DashSection({ title, icon, summary, defaultOpen = false,
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open); } }}
         className="w-full flex items-center justify-between p-5 hover:bg-white/[0.02] transition-colors cursor-pointer">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="text-lg flex-shrink-0">{icon}</span>
+          {icon && <span className="text-lg flex-shrink-0">{icon}</span>}
           <div className="text-left min-w-0">
             <span className="text-sm font-semibold text-text-primary">{title}</span>
             {!open && <div className="text-xs text-text-muted mt-0.5 truncate">{summary}</div>}

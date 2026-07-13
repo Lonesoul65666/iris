@@ -32,10 +32,13 @@ export interface SyncBalancesResult {
 }
 
 export async function syncTellerBalances(): Promise<SyncBalancesResult> {
-  const res = await fetch('/api/teller/balances');
+  // Cutover 2026-07-11: balances now come from Plaid (Teller's API shut down).
+  // Same BalanceRow shape, same teller-<source> portfolio ids, so cash accounts
+  // update in place exactly as before.
+  const res = await fetch('/api/plaid/balances');
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-    throw new Error(`teller balances → ${res.status} ${body.error ?? body.message ?? ''}`);
+    throw new Error(`plaid balances → ${res.status} ${body.error ?? body.message ?? ''}`);
   }
   const body = (await res.json()) as { ok: boolean; balances: BalanceRow[]; errors: unknown[] };
   const today = new Date().toISOString().slice(0, 10);
