@@ -19,6 +19,7 @@ import { registerIrisRoutes } from './routes.ts'
 import { autoConnectFromEnv, getPool } from './db-pool.ts'
 import { accountCount } from './api-handlers/auth-core.ts'
 import { isYahooProxy, proxyYahoo } from './yf-proxy.ts'
+import { startPlaidAutoSync } from './plaid-sync.ts'
 
 const PORT = Number(process.env.PORT ?? process.env.IRIS_PORT ?? 5173)
 const DIST = resolve(process.cwd(), 'dist')
@@ -134,6 +135,9 @@ async function main(): Promise<void> {
     console.log(`[iris] standalone server listening on ${where}`)
     if (HOST === '0.0.0.0') console.warn('[iris] LAN mode — reachable off this machine. Ensure it sits behind your tunnel/auth.')
     console.log(`[iris] serving client from ${DIST}`)
+    // Keep bank data fresh without anyone clicking refresh (host-only; no-op if
+    // Plaid isn't configured on this machine).
+    startPlaidAutoSync()
   })
 }
 

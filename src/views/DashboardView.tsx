@@ -30,7 +30,8 @@ import { buildSubscriptionRadar, subKey, type SubscriptionStatusMap, type SubSta
 import { buildSubscriptionNudges } from '../utils/subscriptionNudges';
 import { sectionFromBriefingId } from '../utils/weeklyBriefing';
 import { syncHealthNudges } from '../utils/syncHealth';
-import { getLastSyncSummary, hoursSinceLastSync } from '../lib/syncTellerTransactions';
+import { getLastSyncSummary, hoursSinceLastSync, syncTellerTransactions } from '../lib/syncTellerTransactions';
+import { syncTellerBalances } from '../lib/syncTellerBalances';
 import { dismissSettingKey, isNudgeActive, type Nudge, type DismissState } from '../utils/nudgeEngine';
 import { getSetting, saveSetting } from '../stores/portfolioStore';
 
@@ -146,6 +147,19 @@ export default function DashboardView() {
     setSyncNudges((prev) => prev.filter((x) => x.id !== n.id));
     const rec: DismissState = { id: n.id, dismissedAt: new Date().toISOString(), permanent, title: n.title, snoozeDays: n.snoozeDays };
     await saveSetting(dismissSettingKey(n.id), rec);
+  }, []);
+
+  // Auto-refresh on open. Transactions sync is internally debounced (5 min), so
+  // opening/navigating repeatedly is cheap. Balances have no debounce, so only
+  // refresh them when it's been a while. The server timer keeps data fresh
+  // between opens; this catches you up the moment you look. Fire-and-forget —
+  // new rows surface on the next natural load, no jarring auto-reload.
+  useEffect(() => {
+    void (async () => {
+      void syncTellerTransactions();
+      const hrs = await hoursSinceLastSync();
+      if (hrs === null || hrs >= 4) void syncTellerBalances().catch(() => { /* best effort */ });
+    })();
   }, []);
 
   // Subscription watchdog nudges — resurrections (canceled charge bills again)

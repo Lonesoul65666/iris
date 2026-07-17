@@ -28,8 +28,9 @@ export const UPDATES: UpdateEntry[] = [
   {
     version: '2026.07.13',
     date: '2026-07-13',
-    title: 'Subscription watchdog',
+    title: 'Auto-refresh + subscription watchdog',
     notes: [
+      'Iris now refreshes your accounts automatically — no more clicking. It pulls when you open it, and the always-on host re-checks every 12 hours, so you stay current even after time away.',
       'Subscriptions & Recurring is now manageable — hover a charge to mark it Canceled or "Not a sub".',
       'Cancel something and it charges you again? Iris flags it up top — the cancellation may not have stuck.',
       'New recurring charge shows up unexpectedly? You get a heads-up, so accidental signups don’t sneak by.',
