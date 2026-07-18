@@ -192,7 +192,14 @@ export async function handlePlaidBalances(req: Req, res: Res): Promise<void> {
       const { accounts: accs } = await getAccounts(row.access_token)
       for (const a of accs) {
         const tellerAcct = plaidToTellerAccount(a, row.institution)
-        const isLiability = tellerAcct.subtype === 'credit_card'
+        const sub = tellerAcct.subtype
+        const isDepository = sub === 'checking' || sub === 'savings'
+        const isLiability = sub === 'credit_card'
+        // CASH balances only. Investment/retirement (401k, IRA, brokerage) and
+        // loan accounts are NOT cash — counting them here mis-books them as bank
+        // balances and double-counts anything tracked in the portfolio. They
+        // belong to the (future) Plaid Investments → Portfolio feature.
+        if (!isDepository && !isLiability) continue
         balances.push({
           accountId: a.account_id,
           source: mapAccountSource(tellerAcct),
