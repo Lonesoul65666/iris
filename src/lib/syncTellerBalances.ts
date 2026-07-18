@@ -22,7 +22,17 @@ interface BalanceRow {
   currency: string;
   ledger: number | null;
   available: number | null;
-  kind: 'asset' | 'liability';
+  kind: 'asset' | 'liability' | 'investment';
+}
+
+/** Map a Plaid investment subtype to an Iris account type. */
+function investmentAccountType(subtype: string): Account['type'] {
+  const s = (subtype || '').toLowerCase();
+  if (s.includes('401')) return '401k';
+  if (s.includes('roth')) return 'roth_ira';
+  if (s.includes('ira')) return 'ira';
+  if (s.includes('hsa')) return 'hsa';
+  return 'brokerage';
 }
 
 export interface SyncBalancesResult {
@@ -47,6 +57,30 @@ export async function syncTellerBalances(): Promise<SyncBalancesResult> {
   for (const b of body.balances) {
     if (b.kind === 'liability') {
       result.liabilities.push({ name: b.name, source: b.source, balanceOwed: b.ledger ?? b.available ?? 0 });
+      continue;
+    }
+    if (b.kind === 'investment') {
+      // Retirement/brokerage — counts in net worth, typed as investment (NOT
+      // bank cash). Unique id per Plaid account so multiple Fidelity accounts
+      // (which all map to source 'other') don't overwrite each other.
+      const bal = b.ledger ?? b.available ?? 0;
+      const id = `plaid-inv-${b.accountId}`;
+      const acct: Account = {
+        id,
+        name: b.lastFour ? `${b.name} (${b.lastFour})` : b.name,
+        institution: b.institution,
+        type: investmentAccountType(b.subtype),
+        status: 'active',
+        lastUpdated: today,
+        totalValue: bal,
+        holdings: [{
+          id: `${id}-value`, accountId: id, ticker: 'HOLDINGS', name: b.name,
+          assetClass: 'mutual_fund', shares: 1, avgCostBasis: bal, currentPrice: bal,
+          currentValue: bal, totalGainLoss: 0, totalGainLossPercent: 0, status: 'active', lastUpdated: today,
+        }],
+      };
+      await saveAccount(acct);
+      result.assetsSynced.push({ name: acct.name, source: b.source, balance: bal });
       continue;
     }
     // Depository → a single-cash-holding bank account.
