@@ -156,7 +156,7 @@ interface BalanceRow {
   currency: string
   ledger: number | null
   available: number | null
-  kind: 'asset' | 'liability'
+  kind: 'asset' | 'liability' | 'investment'
 }
 
 /**
@@ -192,14 +192,14 @@ export async function handlePlaidBalances(req: Req, res: Res): Promise<void> {
       const { accounts: accs } = await getAccounts(row.access_token)
       for (const a of accs) {
         const tellerAcct = plaidToTellerAccount(a, row.institution)
-        const sub = tellerAcct.subtype
-        const isDepository = sub === 'checking' || sub === 'savings'
-        const isLiability = sub === 'credit_card'
-        // CASH balances only. Investment/retirement (401k, IRA, brokerage) and
-        // loan accounts are NOT cash — counting them here mis-books them as bank
-        // balances and double-counts anything tracked in the portfolio. They
-        // belong to the (future) Plaid Investments → Portfolio feature.
-        if (!isDepository && !isLiability) continue
+        // depository = cash asset; credit = liability; investment (401k/IRA/
+        // brokerage) = tracked in net worth but NOT as spendable cash. Loan/
+        // other are skipped (mortgage is tracked manually in the profile).
+        let kind: 'asset' | 'liability' | 'investment'
+        if (a.type === 'depository') kind = 'asset'
+        else if (a.type === 'credit') kind = 'liability'
+        else if (a.type === 'investment') kind = 'investment'
+        else continue
         balances.push({
           accountId: a.account_id,
           source: mapAccountSource(tellerAcct),
@@ -211,7 +211,7 @@ export async function handlePlaidBalances(req: Req, res: Res): Promise<void> {
           currency: a.balances?.iso_currency_code ?? 'USD',
           ledger: a.balances?.current ?? null,
           available: a.balances?.available ?? null,
-          kind: isLiability ? 'liability' : 'asset',
+          kind,
         })
       }
     } catch (err) {
