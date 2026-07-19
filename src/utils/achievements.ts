@@ -84,6 +84,15 @@ export interface Achievement {
   category: AchievementCategory;
   secret?: boolean;
   forwardOnly?: boolean;
+  /** How the unlock gets celebrated. 'nudge' (default) renders through the
+   *  existing NudgeCard — small, stacks with others, dismiss-and-move-on.
+   *  'takeover' renders as a full-screen "HELL YEAH" overlay instead — reserved
+   *  for the big, rare moments (net-worth milestones) that deserve to stop you
+   *  in your tracks rather than sit in a stack of three. */
+  celebrationStyle?: 'nudge' | 'takeover';
+  /** For net-worth milestones: the dollar level this rung represents. Powers the
+   *  ordered ladder + the "Next up: $X →" forward-pull line on the takeover. */
+  milestoneTarget?: number;
   evaluate: (ctx: AchievementContext, baseline: GamificationBaseline | null) => AchievementEval;
 }
 
@@ -133,6 +142,10 @@ function threshold(
 }
 
 const mo = (n: number) => `${n} mo`;
+// Compact money for milestone detail lines: $1.0M at/above a million, $NNNk below.
+export const formatNetWorthShort = (n: number) =>
+  n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : `$${Math.round(n / 1000)}k`;
+const fmtM = formatNetWorthShort;
 
 /** A cumulative achievement measured SINCE the start line: earned when the value
  *  has GROWN by `target` past the baseline. A big pre-existing total doesn't
@@ -472,11 +485,74 @@ export const ACHIEVEMENTS: Achievement[] = [
     icon: '📈', tier: 'gold', category: 'netWorth', forwardOnly: true,
     evaluate: (c, b) => thresholdSince(c.netWorth, b?.netWorth ?? null, 100000),
   },
+
+  // ── net-worth MILESTONES — the "HELL YEAH" ladder. Level-based (not growth,
+  // like nw-up-100k above), forward-only so a level you were already past at
+  // baseline doesn't fire hollow. celebrationStyle 'takeover' — these are the
+  // ones big enough to earn the full-screen overlay instead of a stacked
+  // NudgeCard (Scott, 2026-07-18: crossing $1M fired nothing — this is the fix).
+  // Ladder spacing: every $250k up to $1M, every $500k through $3M, then the big
+  // aspirational jumps ($5M, $10M). $4M intentionally skipped — once you're past
+  // $3M the every-500k cadence would feel like noise; big leaps read bigger.
+  {
+    id: 'nw-250k', name: 'Quarter Million', description: '$250,000 net worth.',
+    hypeCopy: 'A quarter million on the board. The foundation is real and it is yours.',
+    icon: '🌱', tier: 'bronze', category: 'netWorth', forwardOnly: true, celebrationStyle: 'takeover', milestoneTarget: 250_000,
+    evaluate: (c, b) => threshold(c.netWorth, 250_000, b ? b.netWorth : null, fmtM(c.netWorth)),
+  },
+  {
+    id: 'nw-500k', name: 'Halfway to a Mil', description: '$500,000 net worth.',
+    hypeCopy: 'Half a million. Say it out loud, it sounds even better than it looks on the screen.',
+    icon: '🚀', tier: 'silver', category: 'netWorth', forwardOnly: true, celebrationStyle: 'takeover', milestoneTarget: 500_000,
+    evaluate: (c, b) => threshold(c.netWorth, 500_000, b ? b.netWorth : null, fmtM(c.netWorth)),
+  },
+  {
+    id: 'nw-750k', name: 'Closing In', description: '$750,000 net worth.',
+    hypeCopy: 'Seven fifty. The seven figures are not a rumor anymore, they are a scheduled arrival.',
+    icon: '🔥', tier: 'silver', category: 'netWorth', forwardOnly: true, celebrationStyle: 'takeover', milestoneTarget: 750_000,
+    evaluate: (c, b) => threshold(c.netWorth, 750_000, b ? b.netWorth : null, fmtM(c.netWorth)),
+  },
+  {
+    id: 'nw-1m', name: 'The Millionaire', description: '$1,000,000 net worth.',
+    hypeCopy: 'ONE. MILLION. DOLLARS. Say it like Dr. Evil, you earned the bit. Welcome to the club.',
+    icon: '👑', tier: 'gold', category: 'netWorth', forwardOnly: true, celebrationStyle: 'takeover', milestoneTarget: 1_000_000,
+    evaluate: (c, b) => threshold(c.netWorth, 1_000_000, b ? b.netWorth : null, fmtM(c.netWorth)),
+  },
+  {
+    id: 'nw-1_5m', name: 'One and Change', description: '$1,500,000 net worth.',
+    hypeCopy: 'A million and a half. You didn\'t just cross the line, you kept walking.',
+    icon: '📈', tier: 'gold', category: 'netWorth', forwardOnly: true, celebrationStyle: 'takeover', milestoneTarget: 1_500_000,
+    evaluate: (c, b) => threshold(c.netWorth, 1_500_000, b ? b.netWorth : null, fmtM(c.netWorth)),
+  },
+  {
+    id: 'nw-2m', name: 'Two Comma Club', description: '$2,000,000 net worth.',
+    hypeCopy: 'Two commas in the number now. That is not a typo, that is your life.',
+    icon: '💎', tier: 'gold', category: 'netWorth', forwardOnly: true, celebrationStyle: 'takeover', milestoneTarget: 2_000_000,
+    evaluate: (c, b) => threshold(c.netWorth, 2_000_000, b ? b.netWorth : null, fmtM(c.netWorth)),
+  },
+  {
+    id: 'nw-2_5m', name: 'Two and a Half', description: '$2,500,000 net worth.',
+    hypeCopy: 'Two and a half million. Whatever you\'re doing, keep doing exactly that.',
+    icon: '🏆', tier: 'platinum', category: 'netWorth', forwardOnly: true, celebrationStyle: 'takeover', milestoneTarget: 2_500_000,
+    evaluate: (c, b) => threshold(c.netWorth, 2_500_000, b ? b.netWorth : null, fmtM(c.netWorth)),
+  },
   {
     id: 'three-mil-club', name: 'The Three Million Club', description: '$3,000,000 net worth.',
     hypeCopy: 'Three million dollars. This is the pie-in-the-sky, order-the-good-tequila tier. Absolute unit.',
-    icon: '🛸', tier: 'platinum', category: 'prestige', forwardOnly: true, secret: true,
-    evaluate: (c, b) => threshold(c.netWorth, 3_000_000, b ? b.netWorth : null),
+    icon: '🛸', tier: 'platinum', category: 'prestige', forwardOnly: true, celebrationStyle: 'takeover', milestoneTarget: 3_000_000,
+    evaluate: (c, b) => threshold(c.netWorth, 3_000_000, b ? b.netWorth : null, fmtM(c.netWorth)),
+  },
+  {
+    id: 'nw-5m', name: 'Generational', description: '$5,000,000 net worth.',
+    hypeCopy: 'Five million dollars. This is the "kids never worry about money" tier. Frame this one.',
+    icon: '🛰️', tier: 'platinum', category: 'prestige', forwardOnly: true, secret: true, celebrationStyle: 'takeover', milestoneTarget: 5_000_000,
+    evaluate: (c, b) => threshold(c.netWorth, 5_000_000, b ? b.netWorth : null, fmtM(c.netWorth)),
+  },
+  {
+    id: 'nw-10m', name: 'Eight Figures', description: '$10,000,000 net worth.',
+    hypeCopy: 'Ten million dollars. Eight figures. This is the top of the mountain — and you built the mountain.',
+    icon: '🌌', tier: 'platinum', category: 'prestige', forwardOnly: true, secret: true, celebrationStyle: 'takeover', milestoneTarget: 10_000_000,
+    evaluate: (c, b) => threshold(c.netWorth, 10_000_000, b ? b.netWorth : null, fmtM(c.netWorth)),
   },
 
   // ── prestige (composed) ──
@@ -565,15 +641,44 @@ export function achievementById(id: string): Achievement | undefined {
   return BY_ID.get(id);
 }
 
-/** Celebration nudges for every unlock the user hasn't acknowledged yet. Driven
- *  by the persisted records (not the transient "newly unlocked this run"), so the
- *  moment survives reloads/StrictMode and simply waits until dismissed. */
+/** The net-worth ladder, ordered low→high — the rungs with a milestoneTarget. */
+const MILESTONE_LADDER = ACHIEVEMENTS
+  .filter((a) => a.milestoneTarget !== undefined)
+  .sort((a, b) => (a.milestoneTarget ?? 0) - (b.milestoneTarget ?? 0));
+
+/** The next rung above a given dollar level — for the "Next up: $X →" line on a
+ *  celebration. null at the top of the ladder (nothing left to chase). */
+export function nextNetWorthMilestone(afterTarget: number): Achievement | null {
+  return MILESTONE_LADDER.find((a) => (a.milestoneTarget ?? 0) > afterTarget) ?? null;
+}
+
+/** Celebration nudges for every 'nudge'-style unlock the user hasn't
+ *  acknowledged yet ('takeover'-style unlocks go through
+ *  `pendingMilestoneUnlocks` instead — see `pendingMilestoneUnlocks`). Driven
+ *  by the persisted records (not the transient "newly unlocked this run"), so
+ *  the moment survives reloads/StrictMode and simply waits until dismissed. */
 export function pendingCelebrationNudges(unlocked: UnlockRecord[]): Nudge[] {
   return unlocked
     .filter((u) => !u.celebrated)
     .map((u) => achievementById(u.id))
-    .filter((a): a is Achievement => Boolean(a))
+    .filter((a): a is Achievement => a != null && a.celebrationStyle !== 'takeover')
     .map(achievementToNudge);
+}
+
+/** A pending full-screen unlock — a 'takeover'-style achievement not yet
+ *  acknowledged. Oldest-unlocked-first, so if several fire in one evaluation
+ *  (e.g. a backfill jumps past two thresholds at once) they queue in the
+ *  order they were actually crossed rather than array order. */
+export interface PendingMilestone { achievement: Achievement; unlockedAt: string }
+export function pendingMilestoneUnlocks(unlocked: UnlockRecord[]): PendingMilestone[] {
+  return unlocked
+    .filter((u) => !u.celebrated)
+    .map((u) => {
+      const achievement = achievementById(u.id);
+      return achievement ? { achievement, unlockedAt: u.unlockedAt } : null;
+    })
+    .filter((x): x is PendingMilestone => x !== null && x.achievement.celebrationStyle === 'takeover')
+    .sort((a, b) => a.unlockedAt.localeCompare(b.unlockedAt));
 }
 
 /** Summary counts for the Trophy Wall header. */

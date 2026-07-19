@@ -54,6 +54,44 @@
   50%      { transform: translate(-1.4rem, -1.2rem) scale(1.1); }
 }
 
+.milestone-pop {
+  animation: milestone-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes milestone-pop {
+  0%   { transform: scale(0.85); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Celebration confetti — a brief fall-and-fade burst, live unlock only. */
+.confetti-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.confetti-piece {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  opacity: 0;
+  animation-name: confetti-fall;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+@keyframes confetti-fall {
+  0%   { opacity: 0; transform: translate(0, 0) rotate(0deg); }
+  10%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--drift, 0), 100vh) rotate(var(--rot, 360deg)); }
+}
+
+/* Respect the OS "reduce motion" setting — no pop, no confetti. */
+@media (prefers-reduced-motion: reduce) {
+  .milestone-pop { animation: none; }
+  .confetti-layer { display: none; }
+}
+
 .term-label {
   font-family: var(--font-sans);
   font-size: 11px;

@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { Scorecard } from '../savingsScorecard';
 import type { GameState } from '../gamification';
-import type { AchievementContext, GamificationBaseline, EngagementSignals } from '../achievements';
+import type { AchievementContext, GamificationBaseline, EngagementSignals, UnlockRecord } from '../achievements';
 import {
   captureBaseline, evaluateAchievements, achievementSummary, ACHIEVEMENTS,
+  pendingCelebrationNudges, pendingMilestoneUnlocks, nextNetWorthMilestone, formatNetWorthShort,
 } from '../achievements';
 
 function scorecard(over: Partial<Scorecard> = {}): Scorecard {
@@ -300,5 +301,77 @@ describe('exploration + summary', () => {
   it('every achievement has a unique id', () => {
     const ids = ACHIEVEMENTS.map((a) => a.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('net-worth milestones (takeover celebration)', () => {
+  it('crossing $1M after a lower baseline unlocks nw-1m — the exact bug this fixes', () => {
+    const baseline: GamificationBaseline = {
+      capturedAt: NOW.toISOString(), underBaseStreak: 0, monthsUnderBase: 0, cumulativeBanked: 0,
+      netWorth: 300_000, savingsRate: 0, funBalance: 0, funSaved: 0, funStreaks: {}, engagement: engagement(),
+    };
+    const c = ctx({ netWorth: 1_001_842 });
+    const { states, newlyUnlocked } = evaluateAchievements(c, baseline, [], NOW);
+    const nw1m = states.find((s) => s.achievement.id === 'nw-1m')!;
+    expect(nw1m.earned).toBe(true);
+    expect(nw1m.achievement.celebrationStyle).toBe('takeover');
+    expect(newlyUnlocked.map((a) => a.id)).toContain('nw-1m');
+    // Lower rungs the household already cleared unlock in the same pass too.
+    expect(states.find((s) => s.achievement.id === 'nw-500k')!.earned).toBe(true);
+    expect(states.find((s) => s.achievement.id === 'nw-750k')!.earned).toBe(true);
+    // Rungs still ahead stay locked.
+    expect(states.find((s) => s.achievement.id === 'nw-1_5m')!.earned).toBe(false);
+  });
+
+  it('a net worth already past $1M at baseline is grandfathered, not a hollow unlock', () => {
+    const c = ctx({ netWorth: 1_200_000 });
+    const baseline = captureBaseline(c, NOW.toISOString());
+    const { states } = evaluateAchievements(c, baseline, [], NOW);
+    const nw1m = states.find((s) => s.achievement.id === 'nw-1m')!;
+    expect(nw1m.earned).toBe(false);
+    expect(nw1m.grandfathered).toBe(true);
+  });
+});
+
+describe('celebration pipeline splits by style', () => {
+  it('pendingCelebrationNudges excludes takeover-style unlocks', () => {
+    const unlocked: UnlockRecord[] = [
+      { id: 'nw-1m', unlockedAt: NOW.toISOString(), celebrated: false },
+      { id: 'first-crush', unlockedAt: NOW.toISOString(), celebrated: false },
+    ];
+    const nudges = pendingCelebrationNudges(unlocked);
+    expect(nudges.map((n) => n.id)).toEqual(['achievement:first-crush']);
+  });
+
+  it('pendingMilestoneUnlocks returns only takeover-style, uncelebrated unlocks, oldest first', () => {
+    const unlocked: UnlockRecord[] = [
+      { id: 'nw-1_5m', unlockedAt: '2026-07-20T00:00:00Z', celebrated: false },
+      { id: 'first-crush', unlockedAt: NOW.toISOString(), celebrated: false },
+      { id: 'nw-1m', unlockedAt: '2026-07-18T00:00:00Z', celebrated: false },
+      { id: 'nw-500k', unlockedAt: '2026-07-01T00:00:00Z', celebrated: true }, // already acked
+    ];
+    const pending = pendingMilestoneUnlocks(unlocked);
+    expect(pending.map((p) => p.achievement.id)).toEqual(['nw-1m', 'nw-1_5m']);
+  });
+});
+
+describe('net-worth ladder + next-up', () => {
+  it('every takeover milestone carries a milestoneTarget matching its threshold', () => {
+    const milestones = ACHIEVEMENTS.filter((a) => a.celebrationStyle === 'takeover');
+    expect(milestones.length).toBeGreaterThanOrEqual(10);
+    for (const m of milestones) expect(typeof m.milestoneTarget).toBe('number');
+  });
+
+  it('nextNetWorthMilestone returns the next rung up, or null at the ceiling', () => {
+    expect(nextNetWorthMilestone(1_000_000)?.milestoneTarget).toBe(1_500_000);
+    expect(nextNetWorthMilestone(250_000)?.milestoneTarget).toBe(500_000);
+    expect(nextNetWorthMilestone(3_000_000)?.milestoneTarget).toBe(5_000_000); // $4M skipped
+    expect(nextNetWorthMilestone(10_000_000)).toBeNull(); // top of the ladder
+  });
+
+  it('formatNetWorthShort reads as money, not a mis-scaled "k"', () => {
+    expect(formatNetWorthShort(1_001_842)).toBe('$1.0M');
+    expect(formatNetWorthShort(300_000)).toBe('$300k');
+    expect(formatNetWorthShort(10_000_000)).toBe('$10.0M');
   });
 });

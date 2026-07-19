@@ -25,6 +25,7 @@ export default function SettingsView() {
     profile, setProfile, monthlyInv, setMonthlyInv,
     setChatMessages, llmReady, refreshLlmReady, setView,
     accounts, setAccounts,
+    soundEnabled, setSoundEnabled,
   } = useAppData();
 
   const [claudeKey, setClaudeKey] = useState('');
@@ -105,6 +106,31 @@ export default function SettingsView() {
       <UpdatePanel />
 
       <SecurityPanel />
+
+      {/* Preferences — small app-wide toggles. Sound is Iris's first (celebration
+          chime on milestone unlocks / trophy replays). */}
+      <div className="glass-card p-6">
+        <h3 className="font-semibold text-text-primary mb-2">Preferences</h3>
+        <label className="flex items-center justify-between gap-4 cursor-pointer">
+          <div>
+            <div className="text-sm text-text-primary font-medium">Celebration sound</div>
+            <div className="text-xs text-text-muted">A short chime when you unlock a milestone or replay a trophy.</div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={soundEnabled}
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+              soundEnabled ? 'bg-accent' : 'bg-white/15'
+            }`}
+          >
+            <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+              soundEnabled ? 'translate-x-5' : 'translate-x-0.5'
+            }`} />
+          </button>
+        </label>
+      </div>
 
       {/* Getting Started */}
       {!llmReady && (
