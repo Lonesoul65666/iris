@@ -77,6 +77,36 @@ export interface PersonFunStreak {
   streak: Streak;
 }
 
+/** Per-person, per-COMPLETED-month fun-money pass/fail (leftover ≥ 0 against the
+ *  allowance in effect that month). The current in-progress month is excluded —
+ *  only settled months count. Single source of truth for both the fun streaks
+ *  below and the Moments engine (which logs a Moment per qualifying month). */
+export interface PersonMonthResults {
+  person: string;
+  earnerId?: string;
+  months: { periodKey: string; passed: boolean }[]; // chronological, completed only
+}
+
+export function funMonthlyResults(
+  funMoney: FunMoney[],
+  expenses: Expense[],
+  now: Date = new Date(),
+): PersonMonthResults[] {
+  const monthly = computeMonthlySpending(expenses);
+  const byMonth = new Map(monthly.map((m) => [m.month, m]));
+  const curKey = currentMonthKey(now);
+
+  return funMoney.map((f) => {
+    const cat = f.category ?? funCategoryFor(f.person);
+    const start = f.startMonth ?? curKey;
+    const months = monthsUpTo(start, curKey).map((mk) => {
+      const spend = byMonth.get(mk)?.byCategory[cat] ?? 0;
+      return { periodKey: mk, passed: funBudgetForMonth(f, mk) - spend >= 0 };
+    });
+    return { person: f.person, earnerId: f.earnerId, months };
+  });
+}
+
 /** For each fun-money pot, the run of completed months the person spent at or
  *  under the allowance that was in effect that month (leftover ≥ 0). The current
  *  in-progress month is excluded — only settled months count toward the streak. */
@@ -85,20 +115,11 @@ export function funMoneyStreaks(
   expenses: Expense[],
   now: Date = new Date(),
 ): PersonFunStreak[] {
-  const monthly = computeMonthlySpending(expenses);
-  const byMonth = new Map(monthly.map((m) => [m.month, m]));
-  const curKey = currentMonthKey(now);
-
-  return funMoney.map((f) => {
-    const cat = f.category ?? funCategoryFor(f.person);
-    const start = f.startMonth ?? curKey;
-    const flags: boolean[] = [];
-    for (const mk of monthsUpTo(start, curKey)) {
-      const spend = byMonth.get(mk)?.byCategory[cat] ?? 0;
-      flags.push(funBudgetForMonth(f, mk) - spend >= 0);
-    }
-    return { person: f.person, earnerId: f.earnerId, streak: streakOf(flags) };
-  });
+  return funMonthlyResults(funMoney, expenses, now).map((r) => ({
+    person: r.person,
+    earnerId: r.earnerId,
+    streak: streakOf(r.months.map((m) => m.passed)),
+  }));
 }
 
 // ─── Aggregate game state + the templated announcer ───
