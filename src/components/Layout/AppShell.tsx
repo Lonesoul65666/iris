@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Icons } from '../ui/Icons';
 import type { View } from '../../types/views';
 import type { ActionItem } from '../ActionItems/ActionItems';
 import { useEnabledModules, visibleViews } from '../../hooks/useEnabledModules';
 import { useAppData } from '../../context/AppDataContext';
+import CelebrationOverlay, { type CelebrationView } from '../Achievements/CelebrationOverlay';
 
 interface AppShellProps {
   view: View;
@@ -23,7 +24,24 @@ export default function AppShell({
   actionItems, budgetSummary, overallScore, children,
 }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { budgetSection, setBudgetSection } = useAppData();
+  const {
+    budgetSection, setBudgetSection,
+    milestoneCelebrations, dismissMilestone,
+    replayCelebration, closeReplay, soundEnabled,
+  } = useAppData();
+
+  // Live unlocks take precedence over a replay; the queue drains first, then any
+  // trophy the user clicked to relive shows.
+  const live = milestoneCelebrations[0];
+  const celebrationView: CelebrationView | undefined = live
+    ? { achievement: live.achievement, unlockedAt: live.unlockedAt, mode: 'live' }
+    : replayCelebration
+      ? { achievement: replayCelebration.achievement, unlockedAt: replayCelebration.unlockedAt, mode: 'replay' }
+      : undefined;
+  const onCelebrationDismiss = useCallback(
+    (v: CelebrationView) => (v.mode === 'live' ? dismissMilestone(v.achievement.id) : closeReplay()),
+    [dismissMilestone, closeReplay],
+  );
   const modules = useEnabledModules();
   const allowed = visibleViews(modules);
 
@@ -263,6 +281,10 @@ export default function AppShell({
           </button>
         ))}
       </nav>
+
+      {/* Full-screen celebration — global so it fires over any view. Live unlocks
+          (net-worth crossings) drain first, then trophy replays. */}
+      <CelebrationOverlay view={celebrationView} soundEnabled={soundEnabled} onDismiss={onCelebrationDismiss} />
     </div>
   );
 }

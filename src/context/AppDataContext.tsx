@@ -29,8 +29,9 @@ import { computeScorecard } from '../utils/savingsScorecard';
 import { computeGameState } from '../utils/gamification';
 import { computeSavingsRate } from '../utils/savingsRate';
 import {
-  evaluateAchievements, captureBaseline, pendingCelebrationNudges,
-  type AchievementState, type AchievementContext, type GamificationBaseline, type UnlockRecord,
+  evaluateAchievements, captureBaseline, pendingCelebrationNudges, pendingMilestoneUnlocks,
+  type AchievementState, type AchievementContext, type GamificationBaseline, type UnlockRecord, type PendingMilestone,
+  type Achievement,
 } from '../utils/achievements';
 import type { Nudge } from '../utils/nudgeEngine';
 import { setAuditActor } from '../stores/auditLogStore';
@@ -75,6 +76,21 @@ interface AppDataContextValue {
   celebrationNudges: Nudge[];
   /** Dismiss a celebration nudge (the unlock stays permanently recorded). */
   dismissCelebration: (id: string) => void;
+  /** Pending full-screen "HELL YEAH" unlocks (net-worth milestones etc.) — queued
+   *  oldest-first; the overlay shows one at a time and pops the queue on dismiss. */
+  milestoneCelebrations: PendingMilestone[];
+  /** Dismiss the front-of-queue milestone (same permanent record as achievements). */
+  dismissMilestone: (achievementId: string) => void;
+  /** Re-open an already-earned trophy's celebration to relive it (the couples
+   *  "you saw it, I didn't" case). null when nothing's being replayed. */
+  replayCelebration: { achievement: Achievement; unlockedAt: string | null } | null;
+  /** Open the replay overlay for an earned achievement. */
+  openReplay: (achievement: Achievement, unlockedAt: string | null) => void;
+  /** Close the replay overlay (no persistence — replay never changes state). */
+  closeReplay: () => void;
+  /** Whether celebration sound effects play. Persisted; the app's first sound. */
+  soundEnabled: boolean;
+  setSoundEnabled: (on: boolean) => void;
   /** "This Week's Focus" — the 1–3 frozen action items for the current week. */
   weeklyBriefing: Nudge[];
   /** Dismiss a briefing item for this week (re-evaluated next Monday). */
@@ -183,6 +199,9 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
   const [dashFunMoney, setDashFunMoney] = useState<FunMoney[]>([]);
   const [achievementStates, setAchievementStates] = useState<AchievementState[]>([]);
   const [celebrationNudges, setCelebrationNudges] = useState<Nudge[]>([]);
+  const [milestoneCelebrations, setMilestoneCelebrations] = useState<PendingMilestone[]>([]);
+  const [replayCelebration, setReplayCelebration] = useState<{ achievement: Achievement; unlockedAt: string | null } | null>(null);
+  const [soundEnabled, setSoundEnabledState] = useState(true);
   const [weeklyBriefing, setWeeklyBriefing] = useState<Nudge[]>([]);
   const [whatsNew, setWhatsNew] = useState<Nudge | null>(null);
   const [spendingSummary, setSpendingSummary] = useState<SpendingSummary | null>(null);
@@ -814,15 +833,41 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       setAchievementStates(states);
       // Show every not-yet-acknowledged unlock (waits across reloads until dismissed).
       setCelebrationNudges(pendingCelebrationNudges(merged));
+      setMilestoneCelebrations(pendingMilestoneUnlocks(merged));
     })(), 500);
     return () => { live = false; clearTimeout(timer); };
   }, [rawExpenses, dashFunMoney, dashSinkingFunds, dashDeployConfirms, dashPaycheck, monthlyInv, totalNetWorth]);
 
-  const dismissCelebration = useCallback(async (nudgeId: string) => {
-    setCelebrationNudges((prev) => prev.filter((n) => n.id !== nudgeId));
-    const id = nudgeId.replace(/^achievement:/, '');
+  const acknowledgeUnlock = useCallback(async (id: string) => {
     const unlocked = (await getSetting<UnlockRecord[]>('achievements_unlocked')) ?? [];
     await saveSetting('achievements_unlocked', unlocked.map((u) => (u.id === id ? { ...u, celebrated: true } : u)));
+  }, []);
+
+  const dismissCelebration = useCallback((nudgeId: string) => {
+    setCelebrationNudges((prev) => prev.filter((n) => n.id !== nudgeId));
+    void acknowledgeUnlock(nudgeId.replace(/^achievement:/, ''));
+  }, [acknowledgeUnlock]);
+
+  const dismissMilestone = useCallback((achievementId: string) => {
+    setMilestoneCelebrations((prev) => prev.filter((m) => m.achievement.id !== achievementId));
+    void acknowledgeUnlock(achievementId);
+  }, [acknowledgeUnlock]);
+
+  const openReplay = useCallback((achievement: Achievement, unlockedAt: string | null) => {
+    setReplayCelebration({ achievement, unlockedAt });
+  }, []);
+  const closeReplay = useCallback(() => setReplayCelebration(null), []);
+
+  // Sound preference — persisted; defaults on (opt-out). Iris's first sound.
+  useEffect(() => {
+    void (async () => {
+      const stored = await getSetting<boolean>('sound_enabled');
+      if (stored === false) setSoundEnabledState(false);
+    })();
+  }, []);
+  const setSoundEnabled = useCallback((on: boolean) => {
+    setSoundEnabledState(on);
+    void saveSetting('sound_enabled', on);
   }, []);
 
   // ── "What's New" — one-time card after an update ──────────────────────────
@@ -876,7 +921,8 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     chatMessages, setChatMessages, chatLoading,
     apiKey, apiKeyInput, setApiKeyInput,
     actionItems, dashBuckets, dashPaycheck, dashSinkingFunds, dashDeployConfirms, dashFunMoney,
-    achievementStates, celebrationNudges, dismissCelebration,
+    achievementStates, celebrationNudges, dismissCelebration, milestoneCelebrations, dismissMilestone,
+    replayCelebration, openReplay, closeReplay, soundEnabled, setSoundEnabled,
     weeklyBriefing, dismissBriefingItem, whatsNew, dismissWhatsNew,
     spendingSummary, monthComparison, rawExpenses,
     insights, insightsExpanded, setInsightsExpanded,

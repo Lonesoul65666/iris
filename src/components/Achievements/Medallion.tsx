@@ -30,7 +30,8 @@ const GLYPHS: Record<string, ReactElement> = {
 
 function glyphFor(a: Achievement): keyof typeof GLYPHS {
   const byId: Record<string, keyof typeof GLYPHS> = {
-    'streak-12': 'crown', 'three-mil-club': 'crown',
+    'streak-12': 'crown', 'three-mil-club': 'crown', 'nw-5m': 'crown',
+    'nw-1m': 'crown', 'nw-1_5m': 'crown', 'nw-2m': 'crown', 'nw-2_5m': 'crown',
     'banked-1k': 'coin', 'banked-10k': 'coin', 'banked-50k': 'coin', 'fun-banked-500': 'coin',
     'banked-100k': 'trophy', 'crush-10': 'trophy', 'full-send': 'trophy',
     'first-crush': 'target', 'crush-big': 'target',

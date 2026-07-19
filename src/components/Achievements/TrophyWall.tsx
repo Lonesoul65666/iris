@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { AchievementState, AchievementTier } from '../../utils/achievements';
 import { achievementSummary } from '../../utils/achievements';
+import { useAppData } from '../../context/AppDataContext';
 import Medallion from './Medallion';
 
 // The permanent trophy layer — earned achievements lit, locked ones dimmed with a
@@ -26,6 +27,7 @@ interface Props {
 
 export default function TrophyWall({ states, defaultOpen = false, bare = false }: Props) {
   const [showAll, setShowAll] = useState(defaultOpen);
+  const { openReplay } = useAppData();
   const summary = useMemo(() => achievementSummary(states), [states]);
 
   // Earned first (highest tier first), then locked-in-progress, then grandfathered
@@ -73,13 +75,20 @@ export default function TrophyWall({ states, defaultOpen = false, bare = false }
         {visible.map((s) => {
           const t = TIER_STYLE[s.achievement.tier];
           const hidden = s.achievement.secret && !s.earned;
+          // Earned trophies are clickable → relive the celebration (the couples
+          // "you saw it, I didn't" replay). Locked ones stay static.
+          const replayable = s.earned;
           return (
             <div
               key={s.achievement.id}
-              title={hidden ? 'Secret — keep grinding' : `${s.achievement.name}: ${s.achievement.description}`}
+              onClick={replayable ? () => openReplay(s.achievement, s.unlockedAt) : undefined}
+              role={replayable ? 'button' : undefined}
+              tabIndex={replayable ? 0 : undefined}
+              onKeyDown={replayable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openReplay(s.achievement, s.unlockedAt); } } : undefined}
+              title={hidden ? 'Secret — keep grinding' : replayable ? `${s.achievement.name}: ${s.achievement.description} · click to replay` : `${s.achievement.name}: ${s.achievement.description}`}
               className={`rounded-xl border p-2.5 flex items-start gap-2 transition-colors ${
                 s.earned ? `${t.ring} bg-white/[0.04]` : 'border-glass-border bg-white/[0.01] opacity-60'
-              }`}
+              } ${replayable ? 'cursor-pointer hover:bg-white/[0.08] focus:outline-none focus:ring-1 focus:ring-accent/60' : ''}`}
             >
               <span className="flex-shrink-0">
                 <Medallion achievement={s.achievement} locked={!s.earned} size={38} />
