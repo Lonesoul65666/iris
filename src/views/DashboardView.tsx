@@ -69,6 +69,7 @@ export default function DashboardView() {
     rawExpenses,
     dashFunMoney,
     celebrationNudges, dismissCelebration, achievementStates,
+    momentCelebrations, dismissMomentCelebration, liveQuest,
     weeklyBriefing, dismissBriefingItem, whatsNew, dismissWhatsNew, setBudgetSection,
     monthToDate, safeToSpend,
     setView,
@@ -400,6 +401,44 @@ export default function DashboardView() {
             onDismissForever={() => dismissCelebration(n.id)} />
         );
       })}
+
+      {/* Moments — the repeatable heartbeat. Fresh monthly wins surface as quiet
+          celebration cards (NOT the full-screen takeover; that stays reserved for
+          rare achievements). Dismissing is cosmetic — the Moment is logged. */}
+      {momentCelebrations.slice(0, 3).map((n, i) => (
+        <NudgeCard key={n.id} nudge={n} index={i}
+          onSnooze={() => dismissMomentCelebration(n.id)}
+          onDismissForever={() => dismissMomentCelebration(n.id)} />
+      ))}
+
+      {/* Live current-month quest — the daily hook. Still-winnable "Beat the Clock"
+          for the month in progress, shown with buffer + days left + on/off track. */}
+      {liveQuest && (
+        <div className={`glass-card p-5 border bg-gradient-to-br ${
+          liveQuest.onTrack ? 'border-accent/40 from-accent/10 to-transparent' : 'border-warning/40 from-warning/10 to-transparent'
+        }`}>
+          <div className="flex items-center gap-3">
+            <span className="text-3xl flex-shrink-0">{liveQuest.icon}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-bold text-text-primary">This month's quest — {liveQuest.name}</h3>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${
+                  liveQuest.onTrack ? 'bg-accent/20 text-accent-light' : 'bg-warning/20 text-warning'
+                }`}>
+                  {liveQuest.onTrack ? 'On track' : 'Over base'}
+                </span>
+              </div>
+              <p className="text-sm text-text-secondary mt-1">
+                {liveQuest.onTrack ? (
+                  <><span className="font-bold text-text-primary mono-num">${Math.round(liveQuest.buffer).toLocaleString()}</span> of buffer left, <span className="font-semibold">{liveQuest.daysLeft} {liveQuest.daysLeft === 1 ? 'day' : 'days'}</span> to go. Hold the line to catch {liveQuest.label}.</>
+                ) : (
+                  <>Over base by <span className="font-bold text-negative mono-num">${Math.abs(Math.round(liveQuest.buffer)).toLocaleString()}</span> with <span className="font-semibold">{liveQuest.daysLeft} {liveQuest.daysLeft === 1 ? 'day' : 'days'}</span> left. Still time to pull it back.</>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ════ THIS WEEK'S FOCUS ═══════════════════════════════════════════
           The 1–3 frozen action items for the week — templated (zero-AI) and

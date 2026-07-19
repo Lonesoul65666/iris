@@ -26,13 +26,17 @@ import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getEarner
 import type { Expense, FunMoney, Earner } from '../types/budget';
 import { seedFunMoneyFromEarners, linkFunMoneyToEarners, computeFunMoneySpent } from '../utils/funMoney';
 import { computeScorecard } from '../utils/savingsScorecard';
-import { computeGameState } from '../utils/gamification';
+import { computeGameState, funMonthlyResults } from '../utils/gamification';
 import { computeSavingsRate } from '../utils/savingsRate';
 import {
   evaluateAchievements, captureBaseline, pendingCelebrationNudges, pendingMilestoneUnlocks,
   type AchievementState, type AchievementContext, type GamificationBaseline, type UnlockRecord, type PendingMilestone,
   type Achievement,
 } from '../utils/achievements';
+import {
+  evaluateMoments, captureMomentsBaseline, currentMonthQuest, pendingMomentCelebrations,
+  type MomentsContext, type MomentsBaseline, type MomentRecord, type MomentTally, type LiveQuest,
+} from '../utils/moments';
 import type { Nudge } from '../utils/nudgeEngine';
 import { setAuditActor } from '../stores/auditLogStore';
 import { applyTransactionsToBuckets, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, registerEarnerFunLabels, currentMonthKey } from '../utils/transactionAnalysis';
@@ -91,6 +95,13 @@ interface AppDataContextValue {
   /** Whether celebration sound effects play. Persisted; the app's first sound. */
   soundEnabled: boolean;
   setSoundEnabled: (on: boolean) => void;
+  /** Repeatable "Moments" — fresh ones surface as quiet celebration nudges. */
+  momentCelebrations: Nudge[];
+  dismissMomentCelebration: (id: string) => void;
+  /** Lifetime Moment tallies (count + streaks) for the collection/summary. */
+  momentTallies: MomentTally[];
+  /** The current month's live "Beat the Clock" quest — the daily hook. */
+  liveQuest: LiveQuest | null;
   /** "This Week's Focus" — the 1–3 frozen action items for the current week. */
   weeklyBriefing: Nudge[];
   /** Dismiss a briefing item for this week (re-evaluated next Monday). */
@@ -202,6 +213,9 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
   const [milestoneCelebrations, setMilestoneCelebrations] = useState<PendingMilestone[]>([]);
   const [replayCelebration, setReplayCelebration] = useState<{ achievement: Achievement; unlockedAt: string | null } | null>(null);
   const [soundEnabled, setSoundEnabledState] = useState(true);
+  const [momentCelebrations, setMomentCelebrations] = useState<Nudge[]>([]);
+  const [momentTallies, setMomentTallies] = useState<MomentTally[]>([]);
+  const [liveQuest, setLiveQuest] = useState<LiveQuest | null>(null);
   const [weeklyBriefing, setWeeklyBriefing] = useState<Nudge[]>([]);
   const [whatsNew, setWhatsNew] = useState<Nudge | null>(null);
   const [spendingSummary, setSpendingSummary] = useState<SpendingSummary | null>(null);
@@ -829,11 +843,28 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
           await saveSetting('achievements_unlocked', merged);
         }
       }
+      // Moments — the repeatable heartbeat. Same forward-only + idempotent
+      // discipline as achievements; reuses the scorecard already computed above.
+      const funMonthly = funMonthlyResults(dashFunMoney, rawExpenses, now);
+      const mctx: MomentsContext = { scorecard, funMonthly, stashes: dashSinkingFunds, now };
+      let mBaseline = (await getSetting<MomentsBaseline>('moments_baseline')) ?? null;
+      if (!mBaseline) {
+        mBaseline = captureMomentsBaseline(now.toISOString());
+        await saveSetting('moments_baseline', mBaseline);
+      }
+      const priorMoments = (await getSetting<MomentRecord[]>('moments_log')) ?? [];
+      const mres = evaluateMoments(mctx, mBaseline, priorMoments);
+      if (mres.log !== priorMoments) await saveSetting('moments_log', mres.log);
+      const quest = currentMonthQuest(mctx);
+
       if (!live) return;
       setAchievementStates(states);
       // Show every not-yet-acknowledged unlock (waits across reloads until dismissed).
       setCelebrationNudges(pendingCelebrationNudges(merged));
       setMilestoneCelebrations(pendingMilestoneUnlocks(merged));
+      setMomentCelebrations(pendingMomentCelebrations(mres.log));
+      setMomentTallies(mres.tallies);
+      setLiveQuest(quest);
     })(), 500);
     return () => { live = false; clearTimeout(timer); };
   }, [rawExpenses, dashFunMoney, dashSinkingFunds, dashDeployConfirms, dashPaycheck, monthlyInv, totalNetWorth]);
@@ -857,6 +888,13 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     setReplayCelebration({ achievement, unlockedAt });
   }, []);
   const closeReplay = useCallback(() => setReplayCelebration(null), []);
+
+  const dismissMomentCelebration = useCallback(async (nudgeId: string) => {
+    setMomentCelebrations((prev) => prev.filter((n) => n.id !== nudgeId));
+    const key = nudgeId.replace(/^moment:/, '');
+    const log = (await getSetting<MomentRecord[]>('moments_log')) ?? [];
+    await saveSetting('moments_log', log.map((r) => (r.key === key ? { ...r, celebrated: true } : r)));
+  }, []);
 
   // Sound preference — persisted; defaults on (opt-out). Iris's first sound.
   useEffect(() => {
@@ -923,6 +961,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     actionItems, dashBuckets, dashPaycheck, dashSinkingFunds, dashDeployConfirms, dashFunMoney,
     achievementStates, celebrationNudges, dismissCelebration, milestoneCelebrations, dismissMilestone,
     replayCelebration, openReplay, closeReplay, soundEnabled, setSoundEnabled,
+    momentCelebrations, dismissMomentCelebration, momentTallies, liveQuest,
     weeklyBriefing, dismissBriefingItem, whatsNew, dismissWhatsNew,
     spendingSummary, monthComparison, rawExpenses,
     insights, insightsExpanded, setInsightsExpanded,
