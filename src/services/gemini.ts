@@ -27,6 +27,18 @@ export interface BudgetContext {
   actionItems?: ActionItem[];
   spendingSummary?: { avgMonthlyExpenses: number; avgMonthlyIncome: number; topCategories: { label: string; avgMonthly: number }[] };
   insights?: { title: string; description: string; severity: string }[];
+  /** Transaction-grounded monthly actuals vs the guaranteed base — the SAME truth
+   *  the dashboard/scorecard shows. Without this the chat only saw a budget plan +
+   *  averages and couldn't answer "how did I do in <month>". */
+  performance?: {
+    guaranteedBase: number;          // the steady income floor — THE frame ($15,800)
+    monthsUnderBase: number;         // full months lived at/under base
+    fullMonthCount: number;
+    cumulativeBanked: number;
+    trend: string;
+    months: { label: string; totalSpend: number; surplusVsBase: number; banked: number; partial: boolean }[];
+    currentMonth?: { label: string; spentSoFar: number; bufferVsBase: number; safeToSpend: number; daysLeft: number; onTrack: boolean };
+  };
 }
 
 export function buildPortfolioContext(accounts: Account[], equity?: EquityProfile, profile?: UserProfile, budget?: BudgetContext): string {
@@ -147,11 +159,35 @@ export function buildPortfolioContext(accounts: Account[], equity?: EquityProfil
       ctx += `- Net take-home: ${formatCurrency(budget.paycheck.netTakeHome)}\n`;
       ctx += `- 401k contribution: ${formatCurrency(budget.paycheck.retirement401k)}/mo\n`;
     }
+
+    // Transaction-grounded monthly performance — THE answer to "how am I doing".
+    // Emitted before the category budget so the model anchors on the base, not the
+    // bucket sum (which it used to mislabel as "your budget").
+    if (budget.performance) {
+      const p = budget.performance;
+      ctx += `\n## Monthly performance — actuals vs your GUARANTEED BASE of ${formatCurrency(p.guaranteedBase)}/mo\n`;
+      ctx += `The guaranteed base (${formatCurrency(p.guaranteedBase)}/mo) is THE frame for "how am I doing" — it's the steady income floor we measure spending against. Variable/bonus income is surplus on top. (The category-budget total further down is planning detail, NOT the income frame — do not call it "the budget".)\n`;
+      ctx += `- Lived at/under base: ${p.monthsUnderBase} of ${p.fullMonthCount} full months · Cumulative banked: ${formatCurrency(p.cumulativeBanked)} · Trend: ${p.trend}\n`;
+      if (p.currentMonth) {
+        const c = p.currentMonth;
+        ctx += `- THIS MONTH (${c.label}, in progress): spent ${formatCurrency(c.spentSoFar)} so far · ${c.bufferVsBase >= 0 ? `${formatCurrency(c.bufferVsBase)} UNDER base` : `${formatCurrency(-c.bufferVsBase)} OVER base`} · ${formatCurrency(c.safeToSpend)} safe-to-spend · ${c.daysLeft} days left · ${c.onTrack ? 'ON TRACK' : 'OVER BASE'}\n`;
+      }
+      if (p.months.length > 0) {
+        ctx += `\nPer-month actuals (most recent last):\n`;
+        ctx += `| Month | Spent | Vs base | Banked |\n|---|---|---|---|\n`;
+        for (const m of p.months) {
+          const vs = m.surplusVsBase >= 0 ? `+${formatCurrency(m.surplusVsBase)} under` : `${formatCurrency(-m.surplusVsBase)} over`;
+          ctx += `| ${m.label}${m.partial ? ' (in progress)' : ''} | ${formatCurrency(m.totalSpend)} | ${vs} | ${formatCurrency(m.banked)} |\n`;
+        }
+      }
+    }
+
     if (budget.buckets) {
       const totalBudgeted = budget.buckets.reduce((s, b) => s + b.monthlyBudget, 0);
       const totalActual = budget.buckets.reduce((s, b) => s + b.monthlyActual, 0);
       const overBudget = budget.buckets.filter(b => b.monthlyActual > b.monthlyBudget && b.monthlyBudget > 0);
-      ctx += `- Total monthly budget: ${formatCurrency(totalBudgeted)}, Actual: ${formatCurrency(totalActual)}\n`;
+      ctx += `\n## Category budget (planning detail — NOT the income frame)\n`;
+      ctx += `- Total category budget: ${formatCurrency(totalBudgeted)}/mo, recent actual: ${formatCurrency(totalActual)}/mo\n`;
       if (overBudget.length > 0) ctx += `- Over budget in: ${overBudget.map(b => `${b.label} (+${formatCurrency(b.monthlyActual - b.monthlyBudget)})`).join(', ')}\n`;
     }
     if (budget.sinkingFunds) {
