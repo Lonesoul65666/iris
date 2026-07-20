@@ -687,6 +687,30 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
           topCategories: spendingSummary.topCategories.map(c => ({ label: c.label, avgMonthly: c.avgMonthly })),
         } : undefined,
         insights: insights.length > 0 ? insights.map(i => ({ title: i.title, description: i.description, severity: i.severity })) : undefined,
+        // Transaction-grounded monthly actuals — the SAME scorecard the dashboard
+        // shows. Without this the chat only saw a plan + averages and couldn't say
+        // how a given month actually went (it mislabeled the bucket sum as "budget").
+        performance: rawExpenses.length > 0 ? (() => {
+          const sc = computeScorecard(rawExpenses);
+          const quest = currentMonthQuest({ scorecard: sc, funMonthly: [], stashes: [], now: new Date() });
+          const partial = sc.months.find(m => m.partial);
+          return {
+            guaranteedBase: sc.guaranteedBase,
+            monthsUnderBase: sc.monthsUnderBase,
+            fullMonthCount: sc.fullMonthCount,
+            cumulativeBanked: sc.cumulativeBanked,
+            trend: String(sc.trend),
+            months: sc.months.slice(-12).map(m => ({ label: m.label, totalSpend: m.totalSpend, surplusVsBase: m.surplusVsBase, banked: m.banked, partial: m.partial })),
+            currentMonth: quest ? {
+              label: quest.label,
+              spentSoFar: partial?.totalSpend ?? 0,
+              bufferVsBase: quest.buffer,
+              safeToSpend: safeToSpend?.amount ?? 0,
+              daysLeft: quest.daysLeft,
+              onTrack: quest.onTrack,
+            } : undefined,
+          };
+        })() : undefined,
       };
       // Create placeholder message for streaming
       const aiMsgId = (Date.now() + 1).toString();
@@ -716,7 +740,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       setChatMessages(prev => [...prev, errMsg]);
     }
     setChatLoading(false);
-  }, [chatMessages, accounts, equity, profile, actionItems, spendingSummary, insights, setView]);
+  }, [chatMessages, accounts, equity, profile, actionItems, spendingSummary, insights, setView, rawExpenses, safeToSpend]);
 
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
