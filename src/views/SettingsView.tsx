@@ -458,58 +458,16 @@ export default function SettingsView() {
         </div>
       )}
 
-      {/* Monthly Auto-Investment — Editable */}
-      {monthlyInv && (
-        <div className="glass-card p-6">
-          <h3 className="font-semibold text-text-primary mb-2">Monthly Auto-Investment</h3>
-          <div className="flex items-center gap-2 mb-4">
-            <span className="term-label">Amount</span>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">$</span>
-              <input type="number" step="0.01" value={monthlyInv.amount}
-                onChange={async (e) => {
-                  const amt = parseFloat(e.target.value) || 0;
-                  const updated = { ...monthlyInv, amount: amt, lastUpdated: new Date().toISOString().split('T')[0] };
-                  setMonthlyInv(updated);
-                  await saveMonthlyInvestment(updated);
-                  // Mirror the value into profile.monthlyInvestment so the Profile
-                  // field above and downstream calculators see the same number.
-                  if (profile && profile.monthlyInvestment !== amt) {
-                    const updatedProfile = { ...profile, monthlyInvestment: amt };
-                    setProfile(updatedProfile);
-                    await saveUserProfile(updatedProfile);
-                  }
-                }}
-                className="w-32 bg-surface-2 border border-glass-border rounded-lg pl-7 pr-3 py-1.5 text-sm text-text-primary outline-none focus:border-accent/50"
-              />
-            </div>
-            <span className="text-xs text-text-muted">/month</span>
-          </div>
-          <div className="space-y-2">
-            {monthlyInv.allocations.map((a, i) => (
-              <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-white/[0.02]">
-                <span className="text-sm text-text-primary font-mono w-16">{a.ticker}</span>
-                <span className="text-sm text-text-secondary flex-1">{a.name}</span>
-                <input type="number" value={a.percentage} min={0} max={100}
-                  onChange={async (e) => {
-                    const allocs = [...monthlyInv.allocations];
-                    allocs[i] = { ...allocs[i], percentage: Number(e.target.value) };
-                    const updated = { ...monthlyInv, allocations: allocs, lastUpdated: new Date().toISOString().split('T')[0] };
-                    setMonthlyInv(updated);
-                    await saveMonthlyInvestment(updated);
-                  }}
-                  className="w-16 bg-surface-2 border border-glass-border rounded-lg px-2 py-1 text-sm text-accent font-medium text-right outline-none focus:border-accent/50"
-                />
-                <span className="text-xs text-text-muted">%</span>
-              </div>
-            ))}
-          </div>
-          {monthlyInv.allocations.reduce((s, a) => s + a.percentage, 0) !== 100 && (
-            <p className="text-xs text-warning mt-2 flex items-center gap-1">{Icons.alert} Allocations should total 100% (currently {monthlyInv.allocations.reduce((s, a) => s + a.percentage, 0)}%)</p>
-          )}
-          <p className="text-xs text-warning mt-3 flex items-center gap-1">{Icons.alert} Iris recommends diversifying beyond SOXQ + XLK. Use "Ask Iris" for personalized allocation suggestions.</p>
-        </div>
-      )}
+      {/* REMOVED 2026-08-13 (Scott): the "Monthly Auto-Investment" panel — a
+          per-ticker DCA allocation editor (SOXQ/XLK) from Signal's market-
+          intelligence era, plus a "diversify beyond SOXQ + XLK" nag.
+          Safe to delete: `monthlyInv.allocations` was read ONLY by
+          nextDeploymentBrief → IntelligenceView / FirstReportView, both
+          unreachable behind PHASE_1_LOCK. The `amount` IS still live (it feeds
+          GoalTracker, insightsEngine and calculateBudgetSummary), so it stays
+          editable as "Monthly Investment" in Your Profile above — that field
+          already writes BOTH the profile and the monthlyInvestments store, so
+          nothing downstream loses its number. */}
 
       <ConvictionHoldsPanel accounts={accounts} setAccounts={setAccounts} />
 

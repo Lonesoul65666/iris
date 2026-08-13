@@ -27,6 +27,11 @@ export interface StashStatus {
   contributed: number;     // openingBalance + accrued contributions
   drawn: number;           // net linked-category spend since startMonth (refunds netted)
   monthsAccrued: number;
+  /** $ committed to this pot in the CURRENT month (0 = this month's move hasn't
+   *  been made yet). Lets every surface show commit state right next to the
+   *  numbers, instead of splitting "here's the balance" and "here's the button"
+   *  across two cards that can't see each other. */
+  committedThisMonth: number;
   /** Largest single-month draw since startMonth — "the bill this stash exists for". */
   biggestDraw: { month: string; amount: number } | null;
   /** Progress toward targetAmount (0..1), null when no target set. */
@@ -67,6 +72,7 @@ export function computeStashStatus(stash: Stash, expenses: Expense[], confirms: 
       contributed: stash.currentBalance || 0,
       drawn: 0,
       monthsAccrued: 0,
+      committedThisMonth: 0,
       biggestDraw: null,
       targetProgress: stash.targetAmount > 0 ? Math.min(1, (stash.currentBalance || 0) / stash.targetAmount) : null,
     };
@@ -80,6 +86,10 @@ export function computeStashStatus(stash: Stash, expenses: Expense[], confirms: 
   const committed = stashConfirms.reduce((s, c) => s + (c.amount || 0), 0);
   const monthsAccrued = stashConfirms.length;
   const contributed = (stash.openingBalance || 0) + committed;
+  const thisMonth = currentMonthKey(now);
+  const committedThisMonth = stashConfirms
+    .filter((c) => c.month === thisMonth)
+    .reduce((s, c) => s + (c.amount || 0), 0);
 
   let drawn = 0;
   let biggestDraw: { month: string; amount: number } | null = null;
@@ -105,6 +115,7 @@ export function computeStashStatus(stash: Stash, expenses: Expense[], confirms: 
     contributed: Math.round(contributed),
     drawn: Math.round(drawn),
     monthsAccrued,
+    committedThisMonth: Math.round(committedThisMonth),
     biggestDraw,
     targetProgress: stash.targetAmount > 0 ? Math.max(0, Math.min(1, balance / stash.targetAmount)) : null,
   };
@@ -148,6 +159,27 @@ export function nextDueDate(stash: Stash, now: Date = new Date()): Date | null {
   return null;
 }
 
+/** How many monthly moves are LEFT to make before the bill lands — counting this
+ *  month, inclusive. This is the denominator the whole section paces against.
+ *
+ *  ⚠️ This replaced `daysToDue / 30.44` (bug found 2026-08-12). A pot is funded by
+ *  DISCRETE monthly commits, but fractional calendar time shrinks every single
+ *  day while the balance only jumps once a month. So a drip set to exactly hit
+ *  the goal read "behind" the very next morning, and the "bump to $X/mo" number
+ *  climbed daily — all five of Scott's pots were flagged behind with requireds
+ *  inflated 5–30%. Counting MOVES makes the number stable inside a month and
+ *  recalculated only when a month turns (or when you commit).
+ *
+ *  A bill due on the 1st can't be helped by that month's move, so the due month
+ *  only counts when the bill lands after the 1st. Scott's model: "you want to do
+ *  this in four months and it's going to cost $2,000 — I got to split that into
+ *  five pieces" — this month plus the four ahead of it. */
+export function commitMonthsRemaining(due: Date, now: Date = new Date()): number {
+  const whole = (due.getFullYear() - now.getFullYear()) * 12 + (due.getMonth() - now.getMonth());
+  const dueMonthUsable = due.getDate() > 1 ? 1 : 0;
+  return Math.max(0, whole + dueMonthUsable);
+}
+
 /** Chunk D — the shortfall nudge. A lumpy bill can outrun its pot (you set aside
  *  $900, the $1,600 bill lands) → the derived balance goes negative. Surface the
  *  gap so the user makes it up, plus how long the current drip takes to recover.
@@ -170,8 +202,9 @@ export function computeShortfall(status: StashStatus): StashShortfall | null {
 
 /** The $/mo needed to hit a stash's goal by its due date, from where it stands
  *  today — the auto-fill for the contribution field ("don't make me do the
- *  math"). Spreads what's still needed over the months until the next due date.
- *  Semiannual targets the per-cycle payment (half the annual goal). Returns null
+ *  math"). Spreads what's still needed over the monthly MOVES left before the
+ *  due date (see commitMonthsRemaining — NOT fractional calendar time).
+ *  Semiannual targets the per-cycle payment (half the annual total). Returns null
  *  when there's nothing to compute from (no goal, no due date, or already past
  *  due / already funded) — callers leave the existing contribution untouched. */
 export function requiredMonthlyForGoal(stash: Stash, balance: number, now: Date = new Date()): number | null {
@@ -179,12 +212,12 @@ export function requiredMonthlyForGoal(stash: Stash, balance: number, now: Date 
   if (target <= 0) return null;
   const due = nextDueDate(stash, now);
   if (!due) return null;
-  const monthsLeft = (due.getTime() - now.getTime()) / MS_PER_DAY / DAYS_PER_MONTH;
-  if (monthsLeft <= 0) return null;
+  const movesLeft = commitMonthsRemaining(due, now);
+  if (movesLeft <= 0) return null;
   const cycleTarget = stash.cadence === 'semiannual' ? target / 2 : target;
   const needed = Math.max(0, cycleTarget - balance);
   if (needed <= 0) return null;
-  return Math.ceil(needed / monthsLeft);
+  return Math.ceil(needed / movesLeft);
 }
 
 /** Forward look at a stash vs its goal — built on the DERIVED balance, so the
@@ -208,10 +241,34 @@ export interface StashForecast {
   requiredPerMonth: number | null;// $/mo needed to hit the deadline in time
   expectedHit: number | null;     // recurring have-to: size of the next bill (biggest past draw)
   hitRemaining: number | null;    // recurring have-to: $ still needed to cover the NEXT hit (vs the full-year goal in `remaining`)
+  // ── commit layer (2026-08-12) — "here's what you need to do to get there" ──
+  /** Monthly moves left before the bill lands, counting this one. */
+  commitMonthsLeft: number | null;
+  /** $ already committed to this pot THIS month (0 = the move isn't made yet). */
+  committedThisMonth: number;
+  /** ⭐ The headline ask: what to commit THIS month to stay on plan. Recomputed
+   *  from the live balance over the moves left, so overpaying shrinks every
+   *  future ask and underpaying grows them — the pot self-corrects at month
+   *  boundaries instead of drifting upward by the day. 0 once this month's move
+   *  is committed (or the goal is met). */
+  thisMonthAsk: number;
+  /** Recurring have-to: the steady-state $/mo once a full cycle is available
+   *  (annual total ÷ 12). Null for one-time goals — nothing recurs. */
+  steadyStatePerMonth: number | null;
+  /** Recurring have-to that started mid-cycle, so the FIRST hit has fewer months
+   *  to fund it than the steady state assumes. Lets the UI surface BOTH numbers
+   *  instead of scoring the pot "behind" for something the calendar did. */
+  firstCycleCompressed: boolean;
+}
+
+/** First of a 'YYYY-MM' month, as a local Date. */
+function monthStart(ym: string): Date {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, 1);
 }
 
 export function computeStashForecast(status: StashStatus, now: Date = new Date()): StashForecast | null {
-  const { stash, balance, biggestDraw } = status;
+  const { stash, balance, biggestDraw, committedThisMonth } = status;
   const target = stash.targetAmount || 0;
   if (target <= 0) return null;
 
@@ -239,41 +296,125 @@ export function computeStashForecast(status: StashStatus, now: Date = new Date()
   const hitTarget = (isRecurring && expectedHit) ? expectedHit : target;
   const hitRemaining = isRecurring ? Math.max(0, hitTarget - balance) : null;
 
-  const base = { target, remaining, percent, kind, contribution, daysToFill, dueLabel, daysToDue, expectedHit, hitRemaining };
+  // Monthly MOVES left before the bill lands — the pacing denominator. See
+  // commitMonthsRemaining: never fractional calendar time.
+  const commitMonthsLeft = due ? commitMonthsRemaining(due, now) : null;
+
+  // Steady state for a recurring obligation: the annual total spread over 12.
+  // ($3,300/yr insurance paid twice = $275/mo, regardless of cadence.)
+  const steadyStatePerMonth = isRecurring ? Math.ceil(target / 12) : null;
+
+  // Started mid-cycle? Then the first hit has fewer months behind it than the
+  // steady state assumes — an artifact of WHEN you started, not overspending.
+  const cycleMonths = stash.cadence === 'semiannual' ? 6 : 12;
+  const movesSinceStart = (due && stash.startMonth)
+    ? commitMonthsRemaining(due, monthStart(stash.startMonth))
+    : null;
+  const firstCycleCompressed = isRecurring && movesSinceStart !== null && movesSinceStart < cycleMonths;
+
+  const base = {
+    target, remaining, percent, kind, contribution, daysToFill, dueLabel, daysToDue,
+    expectedHit, hitRemaining, commitMonthsLeft, committedThisMonth,
+    steadyStatePerMonth, firstCycleCompressed,
+  };
 
   if (balance >= target) {
-    return { ...base, status: 'met', projectedMonth: null, additionalNeeded: null, monthsToGo: 0, daysToFill: 0, requiredPerMonth: null };
+    return { ...base, status: 'met', projectedMonth: null, additionalNeeded: null, monthsToGo: 0, daysToFill: 0, requiredPerMonth: null, thisMonthAsk: 0 };
   }
 
-  // Anchored to a cadence deadline: are we pacing to make it?
-  if (due && daysToDue !== null) {
+  // Anchored to a cadence deadline: what does this month need?
+  if (due && daysToDue !== null && commitMonthsLeft !== null) {
     // Recurring pots pace against the next payment; one-time goals against the goal.
     const needed = isRecurring ? Math.max(0, hitTarget - balance) : remaining;
-    if (daysToDue <= 0) {
-      return { ...base, status: 'past_due', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo: null, requiredPerMonth: null };
+    if (daysToDue <= 0 || commitMonthsLeft <= 0) {
+      // Nothing left to spread it over — the whole gap is due now.
+      return { ...base, status: 'past_due', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo: null, requiredPerMonth: null, thisMonthAsk: Math.round(needed) };
     }
     if (needed <= 0) {
       // Already hold enough for the next hit — nothing more to do this cycle.
-      return { ...base, status: 'on_track', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo: Math.max(1, Math.round(daysToDue / DAYS_PER_MONTH)), requiredPerMonth: 0 };
+      return { ...base, status: 'on_track', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo: commitMonthsLeft, requiredPerMonth: 0, thisMonthAsk: 0 };
     }
-    const monthsLeft = daysToDue / DAYS_PER_MONTH;
-    const requiredPerMonth = Math.ceil(needed / monthsLeft);
-    const monthsToGo = Math.max(1, Math.round(monthsLeft));
+    const requiredPerMonth = Math.ceil(needed / commitMonthsLeft);
+    // This month's ask. If the move is already committed, `balance` includes it,
+    // so spread what's left over the REMAINING moves (this month's is spent) —
+    // that's what makes an overpayment shrink next month's ask and an
+    // underpayment grow it, exactly once per month rather than daily.
+    const movesForAsk = committedThisMonth > 0 ? commitMonthsLeft - 1 : commitMonthsLeft;
+    const thisMonthAsk = committedThisMonth > 0
+      ? 0
+      : movesForAsk > 0 ? Math.ceil(needed / movesForAsk) : Math.round(needed);
     if (contribution >= requiredPerMonth) {
-      return { ...base, status: 'on_track', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo, requiredPerMonth };
+      return { ...base, status: 'on_track', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo: commitMonthsLeft, requiredPerMonth, thisMonthAsk };
     }
-    return { ...base, status: 'behind', projectedMonth: fmtMonth(due), additionalNeeded: Math.max(1, requiredPerMonth - contribution), monthsToGo, requiredPerMonth };
+    return { ...base, status: 'behind', projectedMonth: fmtMonth(due), additionalNeeded: Math.max(1, requiredPerMonth - contribution), monthsToGo: commitMonthsLeft, requiredPerMonth, thisMonthAsk };
   }
 
   // No deadline: project a fill date from the monthly drip.
   if (contribution > 0) {
     const monthsToGo = Math.ceil(remaining / contribution);
     const projected = new Date(now.getFullYear(), now.getMonth() + monthsToGo, 1);
-    return { ...base, status: 'projecting', projectedMonth: fmtMonth(projected), additionalNeeded: null, monthsToGo, requiredPerMonth: null };
+    return { ...base, status: 'projecting', projectedMonth: fmtMonth(projected), additionalNeeded: null, monthsToGo, requiredPerMonth: null, thisMonthAsk: committedThisMonth > 0 ? 0 : Math.round(contribution) };
   }
 
   // A goal with no funding path — can't project; nudge to set a contribution.
-  return { ...base, status: 'idle', projectedMonth: null, additionalNeeded: null, monthsToGo: null, requiredPerMonth: null };
+  return { ...base, status: 'idle', projectedMonth: null, additionalNeeded: null, monthsToGo: null, requiredPerMonth: null, thisMonthAsk: 0 };
+}
+
+// ── The commit run ────────────────────────────────────────────────────────────
+// Scott's actual workflow: hit commit on each pot, add up the total, then move
+// exactly that from checking into the special savings account. So the total is a
+// LOAD-BEARING number, not a summary — and it has to be the same number wherever
+// it appears (2026-08-12: the Pulse footer summed each pot's PLANNED fill for
+// committed pots, so a $640 move against a $240 plan reported $240 — you'd have
+// transferred the wrong amount). One computation, every surface.
+
+export interface StashCommitRow {
+  stash: Stash;
+  status: StashStatus;
+  forecast: StashForecast | null;
+  /** What to commit this month to stay on plan. Falls back to the planned drip
+   *  for pots with no goal (nothing to pace against). 0 once committed. */
+  ask: number;
+  /** $ ACTUALLY committed this month — what the total must be built from. */
+  committed: number;
+  isCommitted: boolean;
+}
+
+export interface StashCommitRun {
+  rows: StashCommitRow[];
+  /** Σ actually committed this month — the amount to move from checking. */
+  committedTotal: number;
+  /** Σ of what the uncommitted pots are still asking for. */
+  remainingAsk: number;
+  /** Pots still waiting on this month's move. */
+  pendingCount: number;
+}
+
+/** Build the month's commit run: per-pot ask + commit state, and the totals.
+ *  Active pots only — a retired want-to is inert. Pure. */
+export function computeCommitRun(
+  stashes: Stash[],
+  expenses: Expense[],
+  confirms: DeployConfirmation[] = [],
+  now: Date = new Date(),
+): StashCommitRun {
+  const rows: StashCommitRow[] = [];
+  for (const s of stashes) {
+    if (s.achievedAt) continue;
+    const status = computeStashStatus(s, expenses, confirms, now);
+    const forecast = computeStashForecast(status, now);
+    const committed = status.committedThisMonth;
+    // No goal to pace against → the planned drip IS the ask (the Savings pot).
+    const planned = Math.round(s.monthlyFill ?? s.monthlyContribution ?? 0);
+    const ask = committed > 0 ? 0 : forecast ? forecast.thisMonthAsk : planned;
+    rows.push({ stash: s, status, forecast, ask, committed, isCommitted: committed > 0 });
+  }
+  return {
+    rows,
+    committedTotal: rows.reduce((t, r) => t + r.committed, 0),
+    remainingAsk: rows.reduce((t, r) => t + r.ask, 0),
+    pendingCount: rows.filter(r => !r.isCommitted && r.ask > 0).length,
+  };
 }
 
 /** Σ monthly contributions — the PLANNED set-aside (Safe-to-Spend default line).

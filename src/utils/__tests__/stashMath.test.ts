@@ -3,7 +3,7 @@ import {
   monthsElapsedInclusive, computeStashStatus, totalStashContributions,
   stashAllocationsByCategory, stashesConfigured, seedDefaultStashes, applyStashLaneConfig,
   committedReserves, nextDueDate, computeStashForecast, requiredMonthlyForGoal, computeShortfall,
-  stashExistedBy,
+  stashExistedBy, commitMonthsRemaining,
 } from '../stashMath';
 import { formatDuration } from '../format';
 import type { DeployConfirmation } from '../../stores/budgetStore';
@@ -283,6 +283,164 @@ describe('computeStashForecast — gamified ETA + pace', () => {
   });
 });
 
+describe('commitMonthsRemaining — the pacing denominator', () => {
+  const jun11 = new Date(2026, 5, 11);
+
+  it('counts this month plus every month up to the due month', () => {
+    // Scott's model: "four months out and it costs $2,000 — I split it into five."
+    expect(commitMonthsRemaining(new Date(2026, 9, 19), jun11)).toBe(5); // Jun–Oct
+  });
+
+  it('excludes the due month when the bill lands on the 1st', () => {
+    // A move made in October can't cover a bill that hits October 1st.
+    expect(commitMonthsRemaining(new Date(2026, 9, 1), jun11)).toBe(4); // Jun–Sep
+  });
+
+  it('is flat across every day of the same month', () => {
+    const due = new Date(2026, 9, 19);
+    const perDay = [1, 5, 11, 20, 30].map(d => commitMonthsRemaining(due, new Date(2026, 5, d)));
+    expect(new Set(perDay).size).toBe(1);
+  });
+
+  it('is 1 in the due month itself, and 0 once past', () => {
+    expect(commitMonthsRemaining(new Date(2026, 5, 25), jun11)).toBe(1);
+    expect(commitMonthsRemaining(new Date(2026, 4, 25), jun11)).toBe(0);
+  });
+
+  it('spans a year boundary', () => {
+    expect(commitMonthsRemaining(new Date(2027, 3, 9), jun11)).toBe(11); // Jun 2026 – Apr 2027
+  });
+});
+
+describe('thisMonthAsk — "here is what you need to commit"', () => {
+  const dc = (month: string, lane: string, amount: number): DeployConfirmation =>
+    ({ month, lane, amount, confirmedAt: `${month}-05T00:00:00.000Z` });
+
+  // Kitchen Table: $1,200 by Oct 19, tracked from June. Five moves, so $240 each.
+  const table = (partial: Partial<Stash> = {}) => stash({
+    id: 'stash-table', kind: 'want_to', targetAmount: 1200, cadence: 'custom',
+    targetDate: '2026-10-19', monthlyContribution: 240, startMonth: '2026-06',
+    openingBalance: 0, ...partial,
+  });
+  const ask = (confirms: DeployConfirmation[], now = NOW) =>
+    computeStashForecast(computeStashStatus(table(), [], confirms, now), now)!;
+
+  it('asks for the even split before anything is committed', () => {
+    const f = ask([]);
+    expect(f.commitMonthsLeft).toBe(5);
+    expect(f.thisMonthAsk).toBe(240);
+    expect(f.committedThisMonth).toBe(0);
+  });
+
+  it('drops to 0 once this month is committed', () => {
+    const f = ask([dc('2026-06', 'stash-table', 240)]);
+    expect(f.committedThisMonth).toBe(240);
+    expect(f.thisMonthAsk).toBe(0);
+  });
+
+  // ⭐ Scott's rule: "if you only do 300 you're gonna have to do 400 next month,
+  // but if you do 450 it should commit less for that final month."
+  it('UNDERPAYING raises the remaining asks', () => {
+    // June: paid $140 of the $240 ask. July has four moves left for $1,060.
+    const july = new Date(2026, 6, 11);
+    const f = computeStashForecast(
+      computeStashStatus(table(), [], [dc('2026-06', 'stash-table', 140)], july), july)!;
+    expect(f.commitMonthsLeft).toBe(4);
+    expect(f.thisMonthAsk).toBe(265);   // ceil(1060 / 4) — up from 240
+  });
+
+  it('OVERPAYING lowers the remaining asks', () => {
+    // June: dropped $640 (the big-check case). July has four moves for $560.
+    const july = new Date(2026, 6, 11);
+    const f = computeStashForecast(
+      computeStashStatus(table(), [], [dc('2026-06', 'stash-table', 640)], july), july)!;
+    expect(f.thisMonthAsk).toBe(140);   // ceil(560 / 4) — down from 240
+  });
+
+  it('a big enough single move retires the ask entirely', () => {
+    const f = ask([dc('2026-06', 'stash-table', 1200)]);
+    expect(f.status).toBe('met');
+    expect(f.thisMonthAsk).toBe(0);
+  });
+});
+
+// Scott: "if I want to change Scott's Office from November to February it should
+// lower the cost, or if I move it forward it should increase the cost." The date
+// IS the dial — moving it is how you choose the payment size.
+describe('moving the target date re-prices the monthly ask', () => {
+  const office = (targetDate: string) => stash({
+    id: 'stash-office', kind: 'want_to', targetAmount: 2000, cadence: 'custom',
+    targetDate, monthlyContribution: 371, startMonth: '2026-07', openingBalance: 0,
+  });
+  const confirms: DeployConfirmation[] = [
+    { month: '2026-07', lane: 'stash-office', amount: 371, confirmedAt: '2026-07-05T00:00:00.000Z' },
+  ];
+  const aug12 = new Date(2026, 7, 12);
+  const askFor = (targetDate: string) =>
+    computeStashForecast(computeStashStatus(office(targetDate), [], confirms, aug12), aug12)!;
+
+  it('pushing the date OUT lowers the ask', () => {
+    const nov = askFor('2026-11-19');
+    const feb = askFor('2027-02-19');
+    expect(nov.commitMonthsLeft).toBe(4);   // Aug–Nov
+    expect(nov.thisMonthAsk).toBe(408);     // ceil(1629 / 4)
+    expect(feb.commitMonthsLeft).toBe(7);   // Aug–Feb
+    expect(feb.thisMonthAsk).toBe(233);     // ceil(1629 / 7)
+    expect(feb.thisMonthAsk).toBeLessThan(nov.thisMonthAsk);
+  });
+
+  it('pulling the date IN raises the ask', () => {
+    const sep = askFor('2026-09-19');
+    expect(sep.commitMonthsLeft).toBe(2);   // Aug, Sep
+    expect(sep.thisMonthAsk).toBe(815);     // ceil(1629 / 2)
+    expect(sep.thisMonthAsk).toBeGreaterThan(askFor('2026-11-19').thisMonthAsk);
+  });
+
+  it('the auto-fill agrees with the displayed ask', () => {
+    // updateAuto() writes requiredMonthlyForGoal into the drip when the date
+    // changes; it must not disagree with the number on the card.
+    const feb = askFor('2027-02-19');
+    expect(requiredMonthlyForGoal(office('2027-02-19'), 371, aug12)).toBe(feb.thisMonthAsk);
+  });
+});
+
+describe('have-tos started mid-cycle (Insurance, Jul start / Nov 1 hit)', () => {
+  // $3,300/yr paid twice = $1,650 per hit, next Nov 1. Tracking began July, so
+  // the first cycle only gets Jul–Oct instead of a full six months.
+  const insurance = stash({
+    id: 'stash-ins', kind: 'have_to', targetAmount: 3300, cadence: 'semiannual',
+    dueMonth: 5, monthlyContribution: 350, startMonth: '2026-07', openingBalance: 0,
+  });
+  const aug12 = new Date(2026, 7, 12);
+  const confirms: DeployConfirmation[] = [
+    { month: '2026-07', lane: 'stash-ins', amount: 350, confirmedAt: '2026-07-05T00:00:00.000Z' },
+  ];
+  const f = computeStashForecast(computeStashStatus(insurance, [], confirms, aug12), aug12)!;
+
+  it('resolves the sooner semiannual anchor', () => {
+    expect(f.dueLabel).toContain('Nov 1, 2026');
+  });
+
+  it('reports the steady state separately from the compressed first cycle', () => {
+    expect(f.steadyStatePerMonth).toBe(275);   // $3,300 / 12
+    expect(f.firstCycleCompressed).toBe(true); // only 4 moves available, not 6
+  });
+
+  it('asks for the catch-up rate over the three moves left', () => {
+    expect(f.commitMonthsLeft).toBe(3);        // Aug, Sep, Oct
+    expect(f.committedThisMonth).toBe(0);      // August not committed yet
+    expect(f.thisMonthAsk).toBe(434);          // ceil((1650 − 350) / 3)
+  });
+
+  it('is not flagged compressed once a full cycle is available', () => {
+    // Same pot, but tracking started a full six months before the hit.
+    const early = computeStashForecast(
+      computeStashStatus(stash({ ...insurance, startMonth: '2026-05' }), [], [], aug12), aug12)!;
+    expect(early.firstCycleCompressed).toBe(false);
+    expect(early.steadyStatePerMonth).toBe(275);
+  });
+});
+
 describe('computeShortfall — the bill outran the pot (chunk D)', () => {
   it('flags the gap + recovery time when a lumpy bill goes negative', () => {
     // Committed $100 in May + June (opening $0); a $5,000 bill in June → underwater.
@@ -307,19 +465,44 @@ describe('computeShortfall — the bill outran the pot (chunk D)', () => {
 });
 
 describe('requiredMonthlyForGoal — auto-fill the $/mo', () => {
-  it('spreads the goal over the months to a custom date (Kitchen Table $1,200 by Oct 19)', () => {
-    // Jun 11 → Oct 19, 2026 = 130 days ≈ 4.27 mo → ceil(1200 / 4.27) = 281.
-    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 0, NOW)).toBe(281);
+  it('splits the goal across the MOVES left, not fractional calendar time', () => {
+    // Jun 11 → Oct 19, 2026. You get five moves: Jun, Jul, Aug, Sep, Oct (the
+    // 19th is after the 1st, so October's move still lands in time).
+    // ceil(1200 / 5) = 240. The old fractional math said 281 — see
+    // commitMonthsRemaining for why that was wrong.
+    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 0, NOW)).toBe(240);
   });
 
   it('accounts for what is already saved', () => {
-    // Only $600 of the $1,200 still to raise over the same window.
-    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 600, NOW)).toBe(141);
+    // Only $600 of the $1,200 still to raise over the same five moves.
+    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 600, NOW)).toBe(120);
   });
 
   it('semiannual targets the per-cycle payment, not the full-year goal', () => {
-    // $3,300/yr, next hit Oct 1 → raise ~$1,650 over ~3.68 mo = 449, not ~897.
-    expect(requiredMonthlyForGoal(stash({ targetAmount: 3300, cadence: 'semiannual', dueMonth: 10 }), 0, NOW)).toBe(449);
+    // $3,300/yr, next hit Oct 1. A bill due on the 1st can't be helped by that
+    // month's move → four moves (Jun–Sep) for the $1,650 cycle = 413, not ~825.
+    expect(requiredMonthlyForGoal(stash({ targetAmount: 3300, cadence: 'semiannual', dueMonth: 10 }), 0, NOW)).toBe(413);
+  });
+
+  // ⭐ THE REGRESSION. The bug: the denominator was `daysToDue / 30.44`, which
+  // shrinks every day while the balance only moves once a month — so a drip set
+  // to exactly hit the goal read "behind" the next morning and the required
+  // climbed daily. Counting MOVES makes it flat inside a month.
+  it('does NOT drift day to day inside the same month', () => {
+    const s = stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' });
+    const onThe1st = requiredMonthlyForGoal(s, 0, new Date(2026, 5, 1));
+    const onThe11th = requiredMonthlyForGoal(s, 0, new Date(2026, 5, 11));
+    const onThe30th = requiredMonthlyForGoal(s, 0, new Date(2026, 5, 30));
+    expect(onThe1st).toBe(240);
+    expect(onThe11th).toBe(240);
+    expect(onThe30th).toBe(240);
+  });
+
+  it('steps up exactly once when the month turns', () => {
+    const s = stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' });
+    // July: four moves left (Jul–Oct) instead of five → 300.
+    expect(requiredMonthlyForGoal(s, 0, new Date(2026, 6, 1))).toBe(300);
+    expect(requiredMonthlyForGoal(s, 0, new Date(2026, 6, 28))).toBe(300);
   });
 
   it('returns null when there is nothing to compute', () => {

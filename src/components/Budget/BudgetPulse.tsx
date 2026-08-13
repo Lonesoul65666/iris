@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import type { BudgetBucket, Stash } from '../../types/budget';
+import type { BudgetBucket } from '../../types/budget';
 import { formatCurrency } from '../../utils/format';
 import { laneOf, FIXED_OVER_TOLERANCE } from '../../utils/budgetLanes';
+import type { StashCommitRun } from '../../utils/stashMath';
 
 interface Props {
   buckets: BudgetBucket[];
@@ -21,10 +22,10 @@ interface Props {
    *  full-base view so the Pulse reflects the WHOLE watermark ($15,800): free =
    *  base − everyday − investing − committed. Climbs from $0 as pots are funded. */
   reserveSetAside?: number;
-  /** Have-To/Want-To pots, listed at the bottom with a per-month Commit toggle. */
-  stashes?: Stash[];
-  /** Stash ids committed (moved) this month. */
-  committedStashIds?: Set<string>;
+  /** The month's commit run — per-pot ask + commit state + the totals. Computed
+   *  once in stashMath (computeCommitRun) so this footer and the Have-To's /
+   *  Want-To's card can never show different numbers for the same month. */
+  commitRun?: StashCommitRun;
   /** Commit/undo a stash's monthly move. Absent for the 'avg' view. */
   onCommitStash?: (stashId: string, amount: number) => void;
 }
@@ -68,7 +69,7 @@ function classify(b: BudgetBucket, monthFraction: number, complete: boolean): St
   return 'ontrack';
 }
 
-export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick, watermark, complete = false, monthLabel, reserveSetAside = 0, stashes, committedStashIds, onCommitStash }: Props) {
+export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick, watermark, complete = false, monthLabel, reserveSetAside = 0, commitRun, onCommitStash }: Props) {
   const dayOfMonth = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   // A closed month is fully elapsed — fraction 1 so pace logic reads as final.
@@ -263,36 +264,54 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
         )}
       </div>
 
-      {/* Have To's / Want To's — commit this month's move (funds the pot; chunk C
-          flips the $15,800 to count committed moves). */}
-      {stashes && stashes.length > 0 && onCommitStash && (
+      {/* Have To's / Want To's — the commit run. Each row shows what the pot is
+          ASKING for this month (computed from its live balance over the moves it
+          has left), and once committed it shows what was ACTUALLY moved — the two
+          used to be the same field, so a $640 move against a $240 plan reported
+          $240 in the total Scott transfers from checking. */}
+      {commitRun && commitRun.rows.length > 0 && onCommitStash && (
         <div className="mt-4 pt-4 border-t border-glass-border/40">
-          <div className="term-label mb-3">Have To's / Want To's</div>
+          <div className="flex items-baseline justify-between mb-3">
+            <span className="term-label">Have To's / Want To's</span>
+            {commitRun.pendingCount > 0 && (
+              <span className="text-[11px] text-text-muted">
+                {commitRun.pendingCount} still to commit · <span className="mono-num text-accent-light font-semibold">{formatCurrency(commitRun.remainingAsk)}</span>
+              </span>
+            )}
+          </div>
           <div className="space-y-1.5">
-            {stashes.map(s => {
-              const move = Math.round(s.monthlyFill ?? s.monthlyContribution ?? 0);
-              const committed = committedStashIds?.has(s.id) ?? false;
+            {commitRun.rows.map(({ stash: s, ask, committed, isCommitted }) => {
               const isHave = (s.kind ?? 'want_to') === 'have_to';
               const kc = isHave ? '#f59e0b' : '#a855f7';
+              const amount = isCommitted ? committed : ask;
               return (
                 <div key={s.id} className="flex items-center gap-3 py-1">
                   <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: kc + '22', color: kc }}>{isHave ? 'Have' : 'Want'}</span>
                   <span className="text-sm text-text-secondary flex-1 truncate">{s.name}</span>
-                  <span className="mono-num text-sm text-text-primary">{formatCurrency(move)}</span>
+                  <span className={`mono-num text-sm ${isCommitted ? 'text-positive' : 'text-text-primary'}`}>{formatCurrency(amount)}</span>
                   <button
                     type="button"
-                    onClick={() => move > 0 && onCommitStash(s.id, move)}
-                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors flex-shrink-0 ${committed ? 'bg-positive/15 border-positive/40 text-positive hover:bg-negative/10 hover:text-negative hover:border-negative/30' : 'bg-accent/15 border-accent/40 text-accent-light hover:bg-accent/25'} ${move <= 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
-                    title={committed ? 'Committed — click to undo' : 'Mark this month’s move to savings'}>
-                    {committed ? '✓ Committed · undo' : 'Commit'}
+                    onClick={() => amount > 0 && onCommitStash(s.id, amount)}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors flex-shrink-0 ${isCommitted ? 'bg-positive/15 border-positive/40 text-positive hover:bg-negative/10 hover:text-negative hover:border-negative/30' : 'bg-accent/15 border-accent/40 text-accent-light hover:bg-accent/25'} ${amount <= 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    title={isCommitted ? `Committed ${formatCurrency(committed)} — click to undo` : `Mark ${formatCurrency(ask)} moved to savings`}>
+                    {isCommitted ? '✓ Committed · undo' : 'Commit'}
                   </button>
                 </div>
               );
             })}
           </div>
-          <div className="mt-3 text-[11px] text-text-muted">
-            Committed this month: <span className="mono-num font-semibold text-positive">{formatCurrency(stashes.filter(s => committedStashIds?.has(s.id)).reduce((sum, s) => sum + Math.round(s.monthlyFill ?? s.monthlyContribution ?? 0), 0))}</span> — moved to savings, off the top
+          {/* THE number Scott transfers from checking into the special savings. */}
+          <div className="mt-3 pt-2.5 border-t border-glass-border/30 flex items-baseline justify-between gap-3">
+            <span className="text-xs text-text-secondary">
+              Total committed — move this from checking
+            </span>
+            <span className="mono-num text-lg font-black text-positive">{formatCurrency(commitRun.committedTotal)}</span>
           </div>
+          {commitRun.pendingCount > 0 && (
+            <div className="text-[10px] text-text-muted mt-1 text-right">
+              {formatCurrency(commitRun.committedTotal + commitRun.remainingAsk)} if you commit all {commitRun.pendingCount} remaining
+            </div>
+          )}
         </div>
       )}
 

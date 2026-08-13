@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react';
 import type { Expense, Stash } from '../../types/budget';
 import type { DeployConfirmation } from '../../stores/budgetStore';
 import { formatCurrency, formatDuration } from '../../utils/format';
-import { computeAllStashes, computeStashForecast, totalStashContributions, requiredMonthlyForGoal, computeShortfall, monthsElapsedInclusive, type StashForecast } from '../../utils/stashMath';
+import { computeCommitRun, requiredMonthlyForGoal, computeShortfall, monthsElapsedInclusive, type StashForecast, type StashCommitRow } from '../../utils/stashMath';
 import { currentMonthKey } from '../../utils/transactionAnalysis';
 import { defaultBudgetBuckets } from '../../stores/budgetDefaults';
 
@@ -15,6 +15,9 @@ interface Props {
   expenses: Expense[];
   /** Commit ledger — a pot's balance is opening + its committed moves − draws. */
   confirms: DeployConfirmation[];
+  /** Commit/undo this month's move for a pot. Same handler the Pulse uses, so
+   *  committing from either surface updates both. */
+  onCommitStash?: (stashId: string, amount: number) => void;
   onChange: (next: Stash[]) => void;
 }
 
@@ -40,44 +43,82 @@ function monthShort(ym: string): string {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// The forward-looking line under a stash's goal bar: how it's pacing + when it
-// fills. Day-granular + gamified — have-tos frame around "covering the next hit",
-// want-tos around "reaching the goal at your current rate".
+// The forward-looking line under a stash's goal bar — REWRITTEN 2026-08-12 to
+// Scott's model. It used to score every pot as "behind" and tell you to "bump to
+// $X/mo", where $X climbed a little every day (the fractional-calendar bug in
+// stashMath). It's not a grade; it's a payment schedule:
+//
+//   want-to  → "$202/mo × 5 moves left → Dec 15, 2026"
+//   have-to  → "$434/mo over 3 moves to cover Nov 1, 2026"
+//
+// Nobody is behind for having started in July. A pot that needs more per month
+// than its planned drip just says so, and the ask self-corrects each month.
 function forecastLine(f: StashForecast): { text: string; cls: string } {
-  const rate = formatCurrency(f.contribution);
   const eta = f.daysToFill != null ? formatDuration(f.daysToFill) : null;
   const haveTo = f.kind === 'have_to';
+  const moves = f.commitMonthsLeft;
+  const movesLabel = moves === 1 ? '1 move left' : `${moves} moves left`;
 
   switch (f.status) {
     case 'met':
       return { text: haveTo ? 'Fully funded for the next one' : 'Goal met — this money is free to redeploy', cls: 'text-positive' };
-    case 'on_track':
-      return haveTo
-        ? { text: `Next one ~${f.dueLabel} — on pace to cover it ✓`, cls: 'text-positive' }
-        : { text: `On pace to beat ${f.dueLabel} — there in ${eta}`, cls: 'text-positive' };
-    case 'behind':
-      return haveTo
-        ? { text: `Next one ~${f.dueLabel} — short ${formatCurrency(f.hitRemaining ?? f.remaining)}; bump to ${formatCurrency(f.requiredPerMonth || 0)}/mo`, cls: 'text-warning' }
-        : { text: `Behind for ${f.dueLabel} — bump to ${formatCurrency(f.requiredPerMonth || 0)}/mo (${formatCurrency(f.additionalNeeded || 0)} more)`, cls: 'text-warning' };
     case 'past_due':
-      return { text: `Past ${f.dueLabel} — ${formatCurrency(f.remaining)} short`, cls: 'text-negative' };
+      return { text: `${f.dueLabel} has passed — ${formatCurrency(f.hitRemaining ?? f.remaining)} was never set aside`, cls: 'text-negative' };
+    case 'on_track': {
+      // Two very different states land here. requiredPerMonth === 0 means the
+      // money is ALREADY sitting there for the next hit. Anything else means the
+      // planned drip is big enough — but the cash isn't in yet, so saying
+      // "Covered ✓" next to a live "Commit $73" ask contradicts itself.
+      if (!f.requiredPerMonth) {
+        return { text: haveTo ? `Covered for ${f.dueLabel} ✓` : `Funded for ${f.dueLabel} ✓`, cls: 'text-positive' };
+      }
+      const rate = formatCurrency(f.requiredPerMonth);
+      return haveTo
+        ? { text: `${rate}/mo over ${movesLabel} covers ${f.dueLabel} ✓`, cls: 'text-positive' }
+        : { text: `${rate}/mo × ${movesLabel} → ${f.dueLabel} ✓`, cls: 'text-positive' };
+    }
+    case 'behind': {
+      // Not a verdict — the schedule. `requiredPerMonth` is now stable inside a
+      // month (it divides by moves, not days), so this number is quotable.
+      const rate = formatCurrency(f.requiredPerMonth || 0);
+      return haveTo
+        ? { text: `${rate}/mo over ${movesLabel} to cover ${f.dueLabel}`, cls: 'text-text-secondary' }
+        : { text: `${rate}/mo × ${movesLabel} → ${f.dueLabel}`, cls: 'text-text-secondary' };
+    }
     case 'projecting':
       return eta
-        ? { text: haveTo ? `Covered in ${eta} at ${rate}/mo` : `${eta} to go at ${rate}/mo${f.daysToFill! > 730 ? ' — bump it up?' : ''}`, cls: 'text-text-secondary' }
+        ? { text: `${eta} to go at ${formatCurrency(f.contribution)}/mo — set a date to split it evenly`, cls: 'text-text-secondary' }
         : { text: 'Set a $/mo amount to project a fill date', cls: 'text-text-muted' };
     case 'idle':
-      return { text: 'Set a $/mo amount to project a fill date', cls: 'text-text-muted' };
+      return { text: 'Set a date and a goal and I\'ll split it into monthly moves', cls: 'text-text-muted' };
   }
 }
 
-export default function StashesCard({ stashes, expenses, confirms, onChange }: Props) {
+/** Second line, recurring have-tos only: the mid-cycle-start disclosure. You
+ *  can't fund a Nov 1 insurance hit at the steady rate in four months, and that
+ *  is the calendar's fault, not yours — so show BOTH numbers instead of grading
+ *  the pot against a rate it never had time to hit. (Scott's call, 2026-08-12.) */
+function steadyStateLine(f: StashForecast): string | null {
+  if (!f.steadyStatePerMonth || f.status === 'met') return null;
+  // Only disclose the compression when it's actually costing you something. Once
+  // an opening balance covers the first hit the pot is on plan, and "first cycle
+  // is short" becomes noise about a problem that no longer exists.
+  if (!f.firstCycleCompressed || f.status === 'on_track') {
+    return `${formatCurrency(f.steadyStatePerMonth)}/mo is the steady rate`;
+  }
+  return `First cycle is short — settles to ${formatCurrency(f.steadyStatePerMonth)}/mo after ${f.dueLabel}`;
+}
+
+export default function StashesCard({ stashes, expenses, confirms, onCommitStash, onChange }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   // Inline two-click delete confirm — window.confirm() is a native dialog that
   // blocks the whole tab (and froze browser automation mid-session).
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [confirmingRetire, setConfirmingRetire] = useState<string | null>(null);
-  const statuses = useMemo(() => computeAllStashes(stashes, expenses, confirms), [stashes, expenses, confirms]);
-  const totalMonthly = totalStashContributions(stashes);
+  // Same computation the Pulse footer renders from, so the two surfaces can't
+  // disagree about what a pot wants or what's been committed.
+  const run = useMemo(() => computeCommitRun(stashes, expenses, confirms), [stashes, expenses, confirms]);
+  const thisMonthLabel = new Date().toLocaleDateString('en-US', { month: 'long' });
 
   const update = (id: string, patch: Partial<Stash>) => {
     onChange(stashes.map(s => (s.id === id ? { ...s, ...patch } : s)));
@@ -181,17 +222,20 @@ export default function StashesCard({ stashes, expenses, confirms, onChange }: P
       </div>
 
       {(() => {
-        const renderCard = (status: (typeof statuses)[number]) => {
+        const renderCard = (row: StashCommitRow) => {
+          const { status, forecast, ask, committed, isCommitted } = row;
           const { stash: sf, balance, derived, drawn, monthsAccrued, biggestDraw } = status;
           const isOpen = expanded === sf.id;
           const negative = balance < 0;
           const shortfall = computeShortfall(status);
-          const forecast = computeStashForecast(status);
           const fline = forecast ? forecastLine(forecast) : null;
+          const sline = forecast ? steadyStateLine(forecast) : null;
           return (
             <div key={sf.id} className={`p-4 rounded-xl bg-white/[0.05] ${negative ? 'border-l-2 border-negative/50' : ''}`}>
-              {/* Name + contribution */}
-              <div className="flex items-center justify-between mb-1 gap-2">
+              {/* Name gets the whole row. The $/mo box used to share it, which
+                  squeezed longer names to nothing in the 3-up grid ("Credit Card
+                  Membership" rendered as "Credit Car"). */}
+              <div className="flex items-center mb-1 gap-2">
                 <button onClick={() => update(sf.id, { kind: kindOf(sf) === 'have_to' ? 'want_to' : 'have_to' })}
                   className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0"
                   style={{ background: (kindOf(sf) === 'have_to' ? HAVE_COLOR : WANT_COLOR) + '22', color: kindOf(sf) === 'have_to' ? HAVE_COLOR : WANT_COLOR }}
@@ -199,19 +243,25 @@ export default function StashesCard({ stashes, expenses, confirms, onChange }: P
                   {kindOf(sf) === 'have_to' ? 'Have' : 'Want'}
                 </button>
                 <input value={sf.name} onChange={e => update(sf.id, { name: e.target.value })}
+                  title={sf.name}
                   className="text-sm font-medium text-text-primary bg-transparent border border-transparent hover:border-glass-border focus:border-accent/50 rounded px-1 py-0.5 outline-none min-w-0 flex-1" />
+              </div>
+
+              {/* Balance, with the PLANNED drip beside it. Labelled "plan" because
+                  the number that actually matters now is the ask on the commit
+                  button below — this one is just your intended monthly. */}
+              <div className="flex items-baseline justify-between gap-2">
+                <div className={`text-2xl font-black mono-num ${negative ? 'text-negative' : 'text-positive'}`}>
+                  {negative ? '−' : ''}{formatCurrency(Math.abs(balance))}
+                </div>
                 <div className="flex items-center gap-0.5 flex-shrink-0 text-xs text-text-muted">
                   <span>$</span>
                   <input type="number" value={sf.monthlyContribution}
                     onChange={e => update(sf.id, { monthlyContribution: Number(e.target.value) || 0 })}
-                    className="w-16 bg-transparent border border-transparent hover:border-glass-border focus:border-accent/50 rounded px-1 py-0.5 text-right outline-none" />
-                  <span>/mo</span>
+                    title="Your planned monthly move"
+                    className="w-14 bg-transparent border border-transparent hover:border-glass-border focus:border-accent/50 rounded px-1 py-0.5 text-right outline-none" />
+                  <span>/mo plan</span>
                 </div>
-              </div>
-
-              {/* Balance */}
-              <div className={`text-2xl font-black mono-num ${negative ? 'text-negative' : 'text-positive'}`}>
-                {negative ? '−' : ''}{formatCurrency(Math.abs(balance))}
               </div>
               {!shortfall && (
                 <div className="text-[10px] text-text-muted mb-2">
@@ -250,11 +300,31 @@ export default function StashesCard({ stashes, expenses, confirms, onChange }: P
                       style={{ width: `${forecast.percent}%`, background: forecast.status === 'met' ? undefined : sf.color }} />
                   </div>
                   <div className={`text-[10px] ${fline.cls}`}>{fline.text}</div>
+                  {sline && <div className="text-[10px] text-text-muted mt-0.5">{sline}</div>}
                 </div>
               ) : (
                 <button onClick={() => setExpanded(sf.id)}
                   className="text-[10px] text-accent/80 hover:underline mb-2 block">
                   + Set a goal to track progress
+                </button>
+              )}
+
+              {/* ⭐ This month's move, ON the card that shows the numbers. It used
+                  to live only in the Pulse footer, so the surface with the balance
+                  and the goal had no idea whether you'd committed — "commit shows
+                  a change but no indicator, or vice versa" (Scott, 2026-08-12). */}
+              {onCommitStash && (isCommitted || ask > 0) && (
+                <button onClick={() => onCommitStash(sf.id, isCommitted ? committed : ask)}
+                  className={`w-full mb-2 px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
+                    isCommitted
+                      ? 'bg-positive/15 border-positive/40 text-positive hover:bg-negative/10 hover:text-negative hover:border-negative/30'
+                      : 'bg-accent/15 border-accent/40 text-accent-light hover:bg-accent/25'}`}
+                  title={isCommitted
+                    ? `Committed ${formatCurrency(committed)} for ${thisMonthLabel} — click to undo`
+                    : `Mark ${formatCurrency(ask)} moved into savings for ${thisMonthLabel}`}>
+                  {isCommitted
+                    ? `✓ ${formatCurrency(committed)} committed for ${thisMonthLabel} · undo`
+                    : `Commit ${formatCurrency(ask)} for ${thisMonthLabel}`}
                 </button>
               )}
 
@@ -400,8 +470,10 @@ export default function StashesCard({ stashes, expenses, confirms, onChange }: P
             </div>
           );
         };
-        const active = statuses.filter(s => !s.stash.achievedAt);
-        const achieved = statuses.filter(s => s.stash.achievedAt);
+        // computeCommitRun already drops retired pots; the trophy shelf reads
+        // straight off the stash list.
+        const active = run.rows;
+        const achieved = stashes.filter(s => s.achievedAt);
         const groups = [
           { key: 'have', label: "Have to's", color: HAVE_COLOR, hint: 'bills you pre-fund', list: active.filter(s => kindOf(s.stash) === 'have_to') },
           { key: 'want', label: "Want to's", color: WANT_COLOR, hint: "goals you're saving toward", list: active.filter(s => kindOf(s.stash) === 'want_to') },
@@ -430,7 +502,7 @@ export default function StashesCard({ stashes, expenses, confirms, onChange }: P
                   <span className="text-[10px] text-text-muted">· bought &amp; done</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {achieved.map(({ stash: sf }) => (
+                  {achieved.map((sf) => (
                     <div key={sf.id} className="p-3 rounded-xl bg-positive/5 border border-positive/25 flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-text-primary truncate">{sf.name}</div>
@@ -453,9 +525,26 @@ export default function StashesCard({ stashes, expenses, confirms, onChange }: P
         );
       })()}
 
-      <div className="mt-3 text-xs text-text-muted">
-        Total monthly stash contributions: <strong className="text-text-primary">{formatCurrency(totalMonthly)}</strong>
-        <span className="text-text-muted/70"> — set aside off the top of Safe to Spend</span>
+      {/* ⭐ The commit run's bottom line. Scott commits each pot, then moves ONE
+          number from checking into the special savings — so that number gets to
+          be the headline instead of something he adds up by hand. Mirrored in the
+          Pulse footer from the same computeCommitRun call. */}
+      <div className="mt-4 pt-3 border-t border-glass-border/40 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-text-muted font-semibold">
+            Committed in {thisMonthLabel} — move this from checking
+          </div>
+          {run.pendingCount > 0 ? (
+            <div className="text-[11px] text-text-secondary mt-0.5">
+              {run.pendingCount} {run.pendingCount === 1 ? 'pot is' : 'pots are'} still asking for{' '}
+              <strong className="text-accent-light mono-num">{formatCurrency(run.remainingAsk)}</strong>
+              {' '}— <span className="text-text-muted">{formatCurrency(run.committedTotal + run.remainingAsk)} total if you commit them all</span>
+            </div>
+          ) : (
+            <div className="text-[11px] text-positive mt-0.5">Every pot is funded for {thisMonthLabel} ✓</div>
+          )}
+        </div>
+        <div className="mono-num text-2xl font-black text-positive leading-none">{formatCurrency(run.committedTotal)}</div>
       </div>
     </div>
   );

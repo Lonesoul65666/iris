@@ -10,7 +10,7 @@ import { getMonthlyInvestments, getSetting, saveSetting } from '../../stores/por
 import { computeGuaranteedBase } from '../../utils/savingsScorecard';
 import { computeSavingsRate } from '../../utils/savingsRate';
 import { computeSafeToSpend } from '../../utils/safeToSpend';
-import { applyStashLaneConfig, seedDefaultStashes, committedReserves, stashExistedBy } from '../../utils/stashMath';
+import { applyStashLaneConfig, seedDefaultStashes, committedReserves, stashExistedBy, computeCommitRun } from '../../utils/stashMath';
 import StashesCard from './StashesCard';
 import MoneyMap from './MoneyMap';
 import { targetsForMonth, type BudgetTargetSnapshot } from '../../utils/budgetHistory';
@@ -1670,7 +1670,13 @@ export default function BudgetView() {
         // (by startMonth). Paging back the commit run must not offer pots that
         // didn't exist yet. (Scott, 2026-07-06)
         const pulseStashes = sinkingFunds.filter(s => stashExistedBy(s, pulseCommitMonth));
-        const committedStashIds = new Set(deployConfirms.filter(c => c.month === pulseCommitMonth).map(c => c.lane));
+        // Anchor the run to the month being viewed — paging back to July must show
+        // July's asks and July's commit state, not August's. The live month uses
+        // the real clock so day-of-month cues stay honest.
+        const pulseNow = !pulseCommitMonth || pulseCommitMonth === curMonthKey
+          ? new Date()
+          : new Date(Number(pulseCommitMonth.slice(0, 4)), Number(pulseCommitMonth.slice(5, 7)) - 1, 15);
+        const pulseCommitRun = computeCommitRun(pulseStashes, expenses, deployConfirms, pulseNow);
         return (
           <BudgetPulse
             // Operating lanes only — reserve (taxes/travel) is lumpy with a $0 bucket
@@ -1683,8 +1689,7 @@ export default function BudgetView() {
             complete={!overviewIsInProgress}
             monthLabel={pulseMonthLabel}
             onCategoryClick={(cat) => setDrilldownCategory(cat)}
-            stashes={pulseStashes}
-            committedStashIds={committedStashIds}
+            commitRun={pulseCommitRun}
             onCommitStash={pulseCommitMonth ? (id, amt) => toggleStashCommit(pulseCommitMonth, id, amt) : undefined}
           />
         );
@@ -1696,6 +1701,7 @@ export default function BudgetView() {
         stashes={sinkingFunds}
         expenses={expenses}
         confirms={deployConfirms}
+        onCommitStash={(id, amt) => toggleStashCommit(curMonthKey, id, amt)}
         onChange={(next) => {
           setSinkingFunds(next);
           applyStashLaneConfig(next);
