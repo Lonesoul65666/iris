@@ -21,7 +21,7 @@
 // the user re-categorizes in the UI and the classifier refines. Not precious.
 
 import type { TellerTransaction, TellerAccount } from './teller-client.ts'
-import { classifyBankTransaction } from '../src/utils/transactionCategorize.ts'
+import { classifyBankTransaction, isDefiniteSpend } from '../src/utils/transactionCategorize.ts'
 
 // Teller category slug -> Iris ExpenseCategory. Unknowns fall through to 'other'.
 const CATEGORY_MAP: Record<string, string> = {
@@ -221,7 +221,11 @@ export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount):
     // Inflows (interest, transfers in from checking) — visible, never spend.
     if (amt >= 0) return { keep: true, transfer: true, amount: amt }
     // Outflows that are own-account transfers (to checking, etc.) — expected.
-    if (CHECKING_SKIP_TYPES.has(t.type) || isCheckingNonSpend(t.description)) {
+    // Cash-out is checked FIRST: an ATM pull from a savings bucket is exactly the
+    // case the tripwire below exists for, and the feed types it as a transfer,
+    // which would otherwise swallow it silently.
+    if (!isDefiniteSpend((t.description || '').toLowerCase())
+        && (CHECKING_SKIP_TYPES.has(t.type) || isCheckingNonSpend(t.description))) {
       return { keep: true, transfer: true, amount: Math.abs(amt) }
     }
     // A real charge/withdrawal leaving a savings bucket — shouldn't happen.
@@ -245,6 +249,15 @@ export function classifyTellerTxn(t: TellerTransaction, account: TellerAccount):
     // often types these as plain 'transfer'/'ach'.
     if (t.details?.category === 'investment' || isInvestmentTransfer(t.description)) {
       return { keep: true, investment: true, amount: Math.abs(amt), category: 'investing' }
+    }
+    // ⭐ Real bills / cash-out the FEED calls a transfer — checked BEFORE the skip
+    // branch so a feed reclassification can't delete a bill from the budget.
+    // The mortgage did exactly that on its first Plaid-era payment (2026-08):
+    // Plaid reports it TRANSFER_OUT/LOAN_PAYMENTS, so August's biggest bill fell
+    // straight through to `transfer` and Housing read $0 / $3,205 UNTOUCHED.
+    // See isDefiniteSpend — it's an allowlist on purpose.
+    if (isDefiniteSpend((t.description || '').toLowerCase())) {
+      return { keep: true, amount: Math.abs(amt), category: bestCategory(t.description, amt, t.details?.category) }
     }
     // Card payments and account-to-account transfers OUT of checking — the money
     // moves Scott wanted to SEE. Kept as transfers (visible, never spend) instead

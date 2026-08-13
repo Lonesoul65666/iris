@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyBankTransaction, guessCategory } from '../transactionCategorize';
+import { classifyBankTransaction, guessCategory, isCashOut, isDefiniteSpend } from '../transactionCategorize';
 
 // Sign convention: classifyBankTransaction reads the RAW bank amount —
 // positive = inflow, negative = outflow.
@@ -98,5 +98,39 @@ describe('guessCategory', () => {
     expect(guessCategory('PRIMROSE SCHOOL OF KELLER')).toBe('childcare');
     expect(guessCategory('IRS USATAXPYMT')).toBe('taxes');
     expect(guessCategory('SOME RANDO VENDOR')).toBe('other');
+  });
+});
+
+describe('cash out — one concept (2026-08-13)', () => {
+  it('ATM withdrawals and Cash App sends all land in atm_cash', () => {
+    // The SAME PAI ATM withdrawal used to be atm_cash in March, travel_personal
+    // in June, and an uncounted transfer in August. One rule now.
+    for (const d of [
+      'PAI ATM 08/06 #XXXXX9679 WITHDRWL PAI ATM',
+      'PAI ATM 06/14 #XXXXX8567 WITHDRWL PAI ATM NY',
+      'BKOFAMERICA ATM 03/22 WITHDRAWAL',
+      'PMNT SENT 0724 CASH APP*DALLAS XXXXX91940 CA',
+      'CASH APP*DALLAS 06/23 PMNT SENT XXXXX91940 C',
+    ]) {
+      const r = classifyBankTransaction(d, -160);
+      expect(r.category, d).toBe('atm_cash');
+      expect(r.type, d).toBe('expense');
+    }
+  });
+
+  it('isCashOut / isDefiniteSpend flag the right rows', () => {
+    expect(isCashOut('pai atm withdrwl')).toBe(true);
+    expect(isCashOut('cash app*dallas pmnt sent')).toBe(true);
+    expect(isCashOut('amazon.com')).toBe(false);
+    expect(isDefiniteSpend('wf home mtg des:auto pay')).toBe(true);
+    expect(isDefiniteSpend('pai atm withdrwl')).toBe(true);
+    // must stay false or the double-count guard breaks
+    expect(isDefiniteSpend('citi card online des:payment')).toBe(false);
+    expect(isDefiniteSpend('online banking transfer to sav')).toBe(false);
+  });
+
+  it('ATM inflows (rebates, deposits) are NOT cash-out — they never reach the rule', () => {
+    expect(classifyBankTransaction('BofA Rewards-ATM Oper Rebate Refund of $4', 4).flow).toBe('inflow');
+    expect(classifyBankTransaction('BKOFAMERICA ATM 05/01 DEPOSIT', 1538).flow).toBe('inflow');
   });
 });

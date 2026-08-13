@@ -43,8 +43,17 @@ function pfcToType(pfc: PlaidTransaction['personal_finance_category']): string {
   const primary = pfc?.primary ?? ''
   const detailed = pfc?.detailed ?? ''
   if (detailed.includes('INTEREST')) return 'interest'
+  // LOAN_PAYMENTS splits two ways and the distinction is load-bearing. A CREDIT
+  // CARD payment is money moving to pay down a card — never spend (the purchases
+  // were already counted when they posted), so it must stay in the skip set. But
+  // a MORTGAGE / CAR / STUDENT loan payment IS spend, and mapping all of
+  // LOAN_PAYMENTS to 'payment' put it in CHECKING_SKIP_TYPES and deleted it from
+  // the budget. That's how the August mortgage vanished. Fall through to '' so
+  // the description classifier decides.
+  if (primary === 'LOAN_PAYMENTS') {
+    return detailed.includes('CREDIT_CARD') ? 'card_payment' : ''
+  }
   if (primary === 'TRANSFER_IN' || primary === 'TRANSFER_OUT') return 'transfer'
-  if (primary === 'LOAN_PAYMENTS') return 'payment'
   if (primary === 'INCOME') return 'deposit'
   if (primary === 'BANK_FEES') return 'adjustment'
   return ''

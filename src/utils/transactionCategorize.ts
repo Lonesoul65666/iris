@@ -10,6 +10,42 @@ import type { ExpenseCategory, TransactionFlow, TransactionType } from '../types
  * imports) can reuse without pulling in the React component graph.
  */
 
+/** Cash leaving the household with no merchant to attribute it to: ATM
+ *  withdrawals and peer-app sends. Banks/Plaid type these as TRANSFER_OUT, but
+ *  the money is gone — it's spend. Lowercased description in. */
+export function isCashOut(d: string): boolean {
+  if (d.includes('withdrwl') || d.includes('withdrawal')) return true;
+  if (d.includes('cash app') || d.includes('cashapp') || d.includes('cash-app')) return true;
+  return false;
+}
+
+/** ⭐ Real spend that the FEED insists is a transfer. Consulted BEFORE the
+ *  importer's skip-by-type branch, so a feed reclassification can't make a bill
+ *  disappear from the budget.
+ *
+ *  Why this exists (2026-08-13): the mortgage ("WF HOME MTG") came in as
+ *  `transactionType: 'expense'` for 11 straight months under Teller, then landed
+ *  as `'transfer'` on its FIRST payment ingested through Plaid — Plaid reports it
+ *  as TRANSFER_OUT / LOAN_PAYMENTS (bank → lender), both of which the importer
+ *  treats as non-spend. Result: August's single biggest bill vanished from the
+ *  budget (Housing read $0 / $3,205 UNTOUCHED) and the month-end "you saved this
+ *  much" was overstated by ~$3,204. Scott's rule: "WHEN Wells Fargo Mortgage
+ *  payment is seen, THEN add it to the area."
+ *
+ *  ⚠️ Deliberately an ALLOWLIST, not "trust the classifier." classifyBankTransaction
+ *  defaults unmatched descriptions to `expense`, so trusting it wholesale would
+ *  neuter the skip-by-type mechanism entirely and let genuine card payments and
+ *  self-transfers double-count as spend. Only add entries here that are spend
+ *  100% of the time. Lowercased description in. */
+export function isDefiniteSpend(d: string): boolean {
+  // The mortgage servicer. Plaid calls it a transfer; it is the biggest bill.
+  if (d.includes('wf home mtg')) return true;
+  if (d.includes('wells fargo') && (d.includes('mtg') || d.includes('mortgage') || d.includes('home'))) return true;
+  // Cash out — same reasoning, and it's why the ATM row went uncounted.
+  if (isCashOut(d)) return true;
+  return false;
+}
+
 export function classifyBankTransaction(
   desc: string,
   amount: number,
@@ -70,7 +106,15 @@ export function classifyBankTransaction(
 
   if (d.includes('venmo')) return { flow: 'outflow', type: 'expense', category: 'personal' };
   if (d.includes('zelle payment to')) return { flow: 'outflow', type: 'expense', category: 'other' };
-  if (d.includes('withdrwl') || d.includes('withdrawal')) return { flow: 'outflow', type: 'expense', category: 'personal' }; // ATM/cash → personal (was 'other')
+  // CASH OUT — one concept (Scott, 2026-08-13: "those are transfers of money OUT,
+  // they should be able to be classified"). Cash leaving the household is spend
+  // even though the bank calls it a transfer; where it went is unknowable, so it
+  // lands in Scott's own 'atm_cash' ("ATM / Cash") bucket rather than being
+  // guessed into 'personal'/'other' — which is how the same PAI ATM withdrawal
+  // ended up as atm_cash in March, travel_personal in June and an uncounted
+  // transfer in August. Inflows (rebates, fee waivers, ATM deposits) never reach
+  // here — callers branch on flow first.
+  if (isCashOut(d)) return { flow: 'outflow', type: 'expense', category: 'atm_cash' };
 
   if (d.includes('residence inn') || d.includes('marriott') || d.includes('hilton') || d.includes('hyatt') || d.includes('hotel')) {
     const isInternational = d.includes('dubai') || d.includes('abu dhabi') || d.includes('doha') || d.includes('london');

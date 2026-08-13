@@ -77,3 +77,56 @@ describe('classifyTellerTxn — spend vs. visible-but-not-spend (double-count gu
     expect(r.keep).toBe(false)
   })
 })
+
+// ─── Regression: the August 2026 disappearing mortgage ──────────────────────
+// The mortgage came in as transactionType 'expense' for 11 straight months under
+// Teller, then landed as 'transfer' on its FIRST Plaid-era payment (2026-08-03)
+// because Plaid reports it TRANSFER_OUT / LOAN_PAYMENTS -- both of which
+// CHECKING_SKIP_TYPES treats as non-spend. August's biggest bill vanished from the
+// budget (Housing read $0 / $3,205 UNTOUCHED) and the month-end "you saved this
+// much" was overstated by ~$3,204. isDefiniteSpend is now consulted FIRST.
+describe('feed says transfer, budget says bill (isDefiniteSpend guard)', () => {
+  const MTG = 'WF HOME MTG DES:AUTO PAY ID:XXXXX74402 INDN:LI'
+
+  for (const type of ['transfer', 'payment', 'ach'] as const) {
+    it(`mortgage typed '${type}' by the feed is still SPEND, categorized housing`, () => {
+      const r = classifyTellerTxn(txn({ amount: '-3203.84', description: MTG, type }), CHECKING)
+      expect(r.keep).toBe(true)
+      expect(r.transfer).toBeFalsy()
+      expect(r.category).toBe('housing')
+      const mapped = tellerTxnToExpense(txn({ amount: '-3203.84', description: MTG, type }), CHECKING, 'b')
+      expect(mapped?.transactionType).toBe('expense')
+      expect(mapped?.flow).toBe('outflow')
+    })
+  }
+
+  it('ATM withdrawal typed transfer is SPEND in atm_cash (was silently dropped)', () => {
+    const d = 'PAI ATM 08/06 #XXXXX9679 WITHDRWL PAI ATM'
+    const r = classifyTellerTxn(txn({ amount: '-204.00', description: d, type: 'transfer' }), CHECKING)
+    expect(r.transfer).toBeFalsy()
+    expect(r.category).toBe('atm_cash')
+    expect(tellerTxnToExpense(txn({ amount: '-204.00', description: d, type: 'transfer' }), CHECKING, 'b')?.transactionType).toBe('expense')
+  })
+
+  it('Cash App send typed transfer is SPEND in atm_cash (two of these went uncounted)', () => {
+    const d = 'PMNT SENT 0724 CASH APP*DALLAS XXXXX91940 CA'
+    const r = classifyTellerTxn(txn({ amount: '-160.00', description: d, type: 'transfer' }), CHECKING)
+    expect(r.transfer).toBeFalsy()
+    expect(r.category).toBe('atm_cash')
+  })
+
+  // The allowlist must NOT swallow the double-count guard it sits in front of.
+  it('still excludes genuine card payments and self-transfers', () => {
+    for (const d of ['CITI CARD ONLINE DES:PAYMENT', 'ONLINE BANKING TRANSFER TO SAV', 'CAPITAL ONE MOBILE PYMT']) {
+      const r = classifyTellerTxn(txn({ amount: '-500.00', description: d, type: 'transfer' }), CHECKING)
+      expect(r.transfer, d).toBe(true)
+    }
+  })
+
+  it('an ATM pull from a SAVINGS bucket counts and still trips the tripwire', () => {
+    const SAV = acct({ subtype: 'savings', last_four: '3784' })
+    const r = classifyTellerTxn(txn({ amount: '-300.00', description: 'PAI ATM WITHDRWL', type: 'transfer' }), SAV)
+    expect(r.transfer).toBeFalsy()
+    expect(r.unexpectedOutflow).toBe(true)
+  })
+})
