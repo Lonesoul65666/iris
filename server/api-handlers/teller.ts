@@ -526,7 +526,14 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
                    'recurring',           expenses.data->'recurring',
                    'incomeSubtype',       expenses.data->'incomeSubtype',
                    'incomeSourceId',      expenses.data->'incomeSourceId',
-                   'spender',             expenses.data->'spender'
+                   'spender',             expenses.data->'spender',
+                   -- type/flow are mapper-owned UNLESS the user reclassified by hand
+                   -- (typeOverride). See the note in plaid.ts upsertMappedRows.
+                   'typeOverride',        expenses.data->'typeOverride',
+                   'transactionType',     CASE WHEN expenses.data->>'typeOverride' = 'true'
+                                               THEN expenses.data->'transactionType' END,
+                   'flow',                CASE WHEN expenses.data->>'typeOverride' = 'true'
+                                               THEN expenses.data->'flow' END
                  )),
                  updated_at = now()
            RETURNING (xmax = 0) AS inserted`,
@@ -675,7 +682,14 @@ export async function handleTellerImportIncome(req: Req, res: Res): Promise<void
                    'recurring',           expenses.data->'recurring',
                    'incomeSubtype',       expenses.data->'incomeSubtype',
                    'incomeSourceId',      expenses.data->'incomeSourceId',
-                   'spender',             expenses.data->'spender'
+                   'spender',             expenses.data->'spender',
+                   -- type/flow are mapper-owned UNLESS the user reclassified by hand
+                   -- (typeOverride). See the note in plaid.ts upsertMappedRows.
+                   'typeOverride',        expenses.data->'typeOverride',
+                   'transactionType',     CASE WHEN expenses.data->>'typeOverride' = 'true'
+                                               THEN expenses.data->'transactionType' END,
+                   'flow',                CASE WHEN expenses.data->>'typeOverride' = 'true'
+                                               THEN expenses.data->'flow' END
                  )),
                  updated_at = now()
            RETURNING (xmax = 0) AS inserted`,

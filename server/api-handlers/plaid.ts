@@ -288,6 +288,14 @@ async function upsertMappedRows(pool: Pool, userId: string, rows: Array<MappedEx
          ON CONFLICT (user_id, id) DO UPDATE
            SET date = EXCLUDED.date,
                amount = EXCLUDED.amount,
+               -- Refresh bank-sourced fields but PRESERVE the user's manual edits.
+               -- transactionType/flow are preserved ONLY behind typeOverride: they
+               -- are mapper-owned by default (so a classifier fix still re-corrects
+               -- history), but once the user reclassifies a row by hand the bank
+               -- must not take it back. Before this, a Cash App / ATM / Zelle row
+               -- flipped to "counts as spend" would revert on the next sync — the
+               -- one field that decides whether a row counts at all was the one
+               -- field not protected.
                data = EXCLUDED.data || jsonb_strip_nulls(jsonb_build_object(
                  'category',            expenses.data->'category',
                  'isWorkExpense',       expenses.data->'isWorkExpense',
@@ -296,7 +304,12 @@ async function upsertMappedRows(pool: Pool, userId: string, rows: Array<MappedEx
                  'recurring',           expenses.data->'recurring',
                  'incomeSubtype',       expenses.data->'incomeSubtype',
                  'incomeSourceId',      expenses.data->'incomeSourceId',
-                 'spender',             expenses.data->'spender'
+                 'spender',             expenses.data->'spender',
+                 'typeOverride',        expenses.data->'typeOverride',
+                 'transactionType',     CASE WHEN expenses.data->>'typeOverride' = 'true'
+                                             THEN expenses.data->'transactionType' END,
+                 'flow',                CASE WHEN expenses.data->>'typeOverride' = 'true'
+                                             THEN expenses.data->'flow' END
                )),
                updated_at = now()
          RETURNING (xmax = 0) AS inserted`,

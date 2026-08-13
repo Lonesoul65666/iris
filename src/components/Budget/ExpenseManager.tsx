@@ -833,8 +833,39 @@ export default function ExpenseManager({ expenses, onExpensesChanged, customCate
                           <td className="p-3">
                             {e.source && <span className="text-[10px] text-text-muted whitespace-nowrap">{SOURCE_LABELS[e.source] || e.source}</span>}
                           </td>
+                          {/* Type is EDITABLE (2026-08-13, Scott: "IF I need to
+                              re-classify cashapps or ATM or Zelle ... those are not
+                              ignored"). It used to be a read-only badge, and the
+                              category picker below only rendered for expenses — so a
+                              row the feed called a transfer was greyed out and
+                              completely un-reclassifiable. Flipping to Expense makes
+                              it count and reveals the category picker; flipping to
+                              Transfer is the escape hatch for an account-to-account
+                              move or a card payment that got counted as spend.
+                              Setting typeOverride is what stops the next sync from
+                              taking the change back. */}
                           <td className="p-3">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${badge.color} whitespace-nowrap`}>{flow === 'inflow' ? '↑ ' : '↓ '}{badge.label}</span>
+                            <select value={txType}
+                              onChange={async (ev) => {
+                                const nextType = ev.target.value as TransactionType;
+                                if (nextType === txType) return;
+                                const updated = { ...e, transactionType: nextType, typeOverride: true };
+                                await saveExpense(updated);
+                                onExpensesChanged();
+                              }}
+                              title={isTransferOrInvestment
+                                ? 'Not counted as spend — switch to Expense to count it'
+                                : 'Counted as spend'}
+                              className={`text-[10px] px-1.5 py-0.5 rounded ${badge.color} whitespace-nowrap border border-transparent group-hover:border-glass-border outline-none focus:border-accent/50 cursor-pointer`}>
+                              {(['expense', 'transfer', 'investment', 'refund'] as const).map(t => (
+                                <option key={t} value={t}>
+                                  {flow === 'inflow' ? '↑ ' : '↓ '}{TYPE_BADGES[t]?.label ?? t}
+                                </option>
+                              ))}
+                            </select>
+                            {e.typeOverride && (
+                              <span className="ml-1 text-[9px] text-accent-light" title="You set this by hand — syncs won't overwrite it">✎</span>
+                            )}
                           </td>
                           <td className="p-3">
                             {txType === 'expense' && (

@@ -88,6 +88,17 @@ export interface Expense {
   /** Who spent it (couples model): an Earner.id or 'ours'. Absent = inherit
    *  the account's owner (sourceOwners collection), falling back to 'ours'. */
   spender?: string;
+  /** The user changed `transactionType` / `flow` by hand — so a re-sync must NOT
+   *  overwrite them. Every other manual edit (category, work flag, spender…) was
+   *  already preserved on re-import, but type/flow were not: the one field that
+   *  decides whether a row COUNTS AT ALL was the one the bank could silently take
+   *  back. Set by the Type control in ExpenseManager; read by the upsert
+   *  ON CONFLICT clauses (plaid.ts / teller.ts).
+   *
+   *  Only set when the user acts. Untouched rows stay mapper-owned on purpose, so
+   *  improving the classifier still re-corrects history (that's how the August
+   *  mortgage got fixed) — an unconditional preserve would freeze old mistakes. */
+  typeOverride?: boolean;
 }
 
 /** Account-owner mapping for attribution: which person a transaction source
