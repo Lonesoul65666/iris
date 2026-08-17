@@ -29,8 +29,23 @@ export function parseLocalDate(dateStr: string): Date {
 
 // ─── Canonical "what counts" predicates ───
 
-/** A real spending transaction: outflow, expense-typed (not transfer/investment/refund). */
+/** A charge held out of spend by an active dispute. `open` = contested, you don't
+ *  believe you owe it; `won` = they gave it back. `lost` = normal spend again. */
+export function isDisputeExcluded(e: Expense): boolean {
+  return e.disputeStatus === 'open' || e.disputeStatus === 'won';
+}
+
+/** The credit that came back for a WON dispute. It must NOT net against its
+ *  category: the charge it offsets is already excluded, so netting it too would
+ *  credit the money twice and invent savings. */
+export function isSuppressedDisputeCredit(e: Expense): boolean {
+  return !!e.disputeCreditFor;
+}
+
+/** A real spending transaction: outflow, expense-typed (not transfer/investment/refund),
+ *  and not held out by a dispute. */
 export function isRealExpense(e: Expense): boolean {
+  if (isDisputeExcluded(e)) return false;
   return (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense';
 }
 
@@ -53,6 +68,9 @@ export interface MonthlySpending {
   totalReimbursement: number; // work-expense payback (e.g. Coupa) — offsets totalWork, NOT income
   totalTransfers: number;
   totalInvestments: number;
+  /** Charges held out of spend by a dispute, minus any suppressed credits that
+   *  came back for them. Surfaced so contested money is visible, never hidden. */
+  totalDisputed: number;
   transactionCount: number;
 }
 
@@ -64,7 +82,7 @@ export function emptyMonthlySpending(month: string): MonthlySpending {
     month, monthLabel: getMonthLabel(month), byCategory: {},
     totalExpenses: 0, totalOperating: 0, totalReserve: 0, totalWork: 0,
     totalIncome: 0, totalReimbursement: 0, totalTransfers: 0, totalInvestments: 0,
-    transactionCount: 0,
+    totalDisputed: 0, transactionCount: 0,
   };
 }
 
@@ -114,6 +132,7 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
         totalReimbursement: 0,
         totalTransfers: 0,
         totalInvestments: 0,
+        totalDisputed: 0,
         transactionCount: 0,
       });
     }
@@ -122,6 +141,14 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
 
     const flow = e.flow || 'outflow';
     const txType = e.transactionType || 'expense';
+
+    // DISPUTED charges leave spend but are NOT hidden — they're totalled so the
+    // month can say "$34.99 of this is contested" instead of the money silently
+    // vanishing. Same honesty rule as a negative stash balance.
+    if (isDisputeExcluded(e)) { m.totalDisputed += e.amount; continue; }
+    // The credit for a WON dispute: skipped entirely. Netting it while the charge
+    // is already excluded would credit the money twice.
+    if (isSuppressedDisputeCredit(e)) { m.totalDisputed -= e.amount; continue; }
 
     if (txType === 'transfer') { m.totalTransfers += e.amount; continue; }
     if (txType === 'investment') { m.totalInvestments += e.amount; continue; }

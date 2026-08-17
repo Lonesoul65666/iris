@@ -12,6 +12,7 @@ import { computeSavingsRate } from '../../utils/savingsRate';
 import { computeSafeToSpend } from '../../utils/safeToSpend';
 import { applyStashLaneConfig, seedDefaultStashes, committedReserves, stashExistedBy, computeCommitRun } from '../../utils/stashMath';
 import StashesCard from './StashesCard';
+import NeedsYourCall from './NeedsYourCall';
 import MoneyMap from './MoneyMap';
 import { targetsForMonth, type BudgetTargetSnapshot } from '../../utils/budgetHistory';
 import { isGeminiInitialized } from '../../services/gemini';
@@ -379,6 +380,16 @@ export default function BudgetView() {
     setReclassify(null);
     await loadExpenses();
   }, [reclassify, expenses, loadExpenses]);
+
+  // Patch one transaction from the "Needs your call" queue (dispute resolution,
+  // cash attribution). Deliberately generic: the queue owns its own state
+  // transitions (utils/disputes) and this only persists them + refreshes.
+  const patchExpense = useCallback(async (id: string, patch: Partial<Expense>) => {
+    const target = expenses.find(x => x.id === id);
+    if (!target) return;
+    await saveExpense({ ...target, ...patch });
+    await loadExpenses();
+  }, [expenses, loadExpenses]);
 
   useEffect(() => {
     async function load() {
@@ -1694,6 +1705,11 @@ export default function BudgetView() {
           />
         );
       })()}
+
+      {/* Needs your call — open disputes + unattributed cash. Renders nothing
+          when the queue is empty, so it never sits there as a dead box. Placed
+          ABOVE the pots: these are decisions that change the numbers below. */}
+      <NeedsYourCall expenses={expenses} onPatch={patchExpense} />
 
       {/* Stashes — daily-visible saving pots with DERIVED balances. Edits save
           directly and reconfigure the reserve lanes live. */}

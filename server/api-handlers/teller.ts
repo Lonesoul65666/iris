@@ -530,6 +530,13 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
                    -- type/flow are mapper-owned UNLESS the user reclassified by hand
                    -- (typeOverride). See the note in plaid.ts upsertMappedRows.
                    'typeOverride',        expenses.data->'typeOverride',
+                   -- Dispute lifecycle is 100% user-owned — a sync must never clear it.
+                   'disputeStatus',       expenses.data->'disputeStatus',
+                   'disputedAt',          expenses.data->'disputedAt',
+                   'disputeResolvedAt',   expenses.data->'disputeResolvedAt',
+                   'disputeCreditId',     expenses.data->'disputeCreditId',
+                   'disputeCreditFor',    expenses.data->'disputeCreditFor',
+                   'cashOutReviewed',     expenses.data->'cashOutReviewed',
                    'transactionType',     CASE WHEN expenses.data->>'typeOverride' = 'true'
                                                THEN expenses.data->'transactionType' END,
                    'flow',                CASE WHEN expenses.data->>'typeOverride' = 'true'
@@ -686,6 +693,13 @@ export async function handleTellerImportIncome(req: Req, res: Res): Promise<void
                    -- type/flow are mapper-owned UNLESS the user reclassified by hand
                    -- (typeOverride). See the note in plaid.ts upsertMappedRows.
                    'typeOverride',        expenses.data->'typeOverride',
+                   -- Dispute lifecycle is 100% user-owned — a sync must never clear it.
+                   'disputeStatus',       expenses.data->'disputeStatus',
+                   'disputedAt',          expenses.data->'disputedAt',
+                   'disputeResolvedAt',   expenses.data->'disputeResolvedAt',
+                   'disputeCreditId',     expenses.data->'disputeCreditId',
+                   'disputeCreditFor',    expenses.data->'disputeCreditFor',
+                   'cashOutReviewed',     expenses.data->'cashOutReviewed',
                    'transactionType',     CASE WHEN expenses.data->>'typeOverride' = 'true'
                                                THEN expenses.data->'transactionType' END,
                    'flow',                CASE WHEN expenses.data->>'typeOverride' = 'true'

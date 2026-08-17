@@ -5,6 +5,7 @@ import { getMerchantMappings, saveMerchantMapping, type MerchantMapping } from '
 import { registerCustomCategories } from '../../utils/transactionAnalysis';
 import { classifyBankTransaction, guessCategory } from '../../utils/transactionCategorize';
 import { formatCurrency } from '../../utils/format';
+import { markDisputed } from '../../utils/disputes';
 import { JOINT, buildOwnerMap, effectiveSpender, spenderName, nextSpender } from '../../utils/attribution';
 
 const DEFAULT_CATEGORY_OPTIONS: { value: ExpenseCategory; label: string; icon: string }[] = [
@@ -865,6 +866,31 @@ export default function ExpenseManager({ expenses, onExpensesChanged, customCate
                             </select>
                             {e.typeOverride && (
                               <span className="ml-1 text-[9px] text-accent-light" title="You set this by hand — syncs won't overwrite it">✎</span>
+                            )}
+                            {/* Dispute state + the entry point for starting one.
+                                An open dispute is held OUT of spend, so the badge
+                                has to be visible right where the money is. */}
+                            {e.disputeStatus ? (
+                              <span
+                                className={`ml-1 text-[9px] px-1 py-0.5 rounded font-bold ${
+                                  e.disputeStatus === 'open' ? 'bg-warning/20 text-warning'
+                                  : e.disputeStatus === 'won' ? 'bg-positive/20 text-positive'
+                                  : 'bg-negative/20 text-negative'}`}
+                                title={e.disputeStatus === 'open' ? 'Disputed — held out of your budget until it resolves'
+                                  : e.disputeStatus === 'won' ? 'Refunded — the credit is linked and suppressed so it only counts once'
+                                  : 'Dispute lost — counted as normal spend'}>
+                                {e.disputeStatus === 'open' ? '⚖ DISPUTED' : e.disputeStatus === 'won' ? '⚖ REFUNDED' : '⚖ LOST'}
+                              </span>
+                            ) : txType === 'expense' && (
+                              <button
+                                onClick={async () => {
+                                  await saveExpense({ ...e, ...markDisputed() });
+                                  onExpensesChanged();
+                                }}
+                                className="ml-1 text-[9px] text-text-muted hover:text-warning opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="I'm fighting this charge — hold it out of the budget and remind me until it's resolved">
+                                ⚖ dispute
+                              </button>
                             )}
                           </td>
                           {/* Category is editable for REFUNDS too (2026-08-13). A

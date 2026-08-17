@@ -39,7 +39,12 @@ export function buildSubscriptionNudges(radar: SubscriptionRadar, baseline: stri
       category: 'budget',
       icon: '',
       title: 'A canceled subscription charged again',
-      body: `You marked ${it.merchant} canceled, but it billed about ${fmt(it.chargeAmount)} on ${it.lastDate}. The cancellation may not have gone through — worth a look.`,
+      // Points at the action, not just the problem. Fighting a resurrected charge
+      // is the whole reason the dispute lifecycle exists — marking it disputed
+      // holds it out of the budget and keeps reminding you until it resolves,
+      // instead of the charge quietly eating a category for weeks.
+      body: `You marked ${it.merchant} canceled, but it billed about ${fmt(it.chargeAmount)} on ${it.lastDate}. The cancellation may not have gone through. If you're fighting it, mark the charge disputed in Transactions — Iris will hold it out of your budget and chase it until it's resolved.`,
+      primary: { label: 'Find the charge', view: 'budget' },
     });
   }
 

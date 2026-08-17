@@ -19,6 +19,9 @@ export interface CustomCategory {
 
 export type ReimbursementStatus = 'not_reimbursable' | 'pending' | 'submitted' | 'reimbursed';
 
+/** A charge being contested with the card company. See Expense.disputeStatus. */
+export type DisputeStatus = 'open' | 'won' | 'lost';
+
 // Flow direction: money in or money out
 export type TransactionFlow = 'inflow' | 'outflow';
 
@@ -99,6 +102,32 @@ export interface Expense {
    *  improving the classifier still re-corrects history (that's how the August
    *  mortgage got fixed) — an unconditional preserve would freeze old mistakes. */
   typeOverride?: boolean;
+
+  // ─── Dispute lifecycle (2026-08-13) ───────────────────────────────────────
+  // A charge you're fighting with the card company. Scott's real case: a
+  // subscription that shouldn't have billed (Links Car Wash after cancelling,
+  // Alivemoment repeatedly). Before this there was no way to say "I'm
+  // contesting this", so a charge he didn't believe he owed sat in the budget
+  // eating a category — Claire's fun money, in the Links case.
+  //
+  //   open → excluded from spend, badged, surfaced until resolved
+  //   won  → stays excluded, AND the offsetting credit is suppressed
+  //   lost → back to normal spend
+  //
+  // ⚠️ The suppression is the load-bearing part. Excluding the charge AND
+  // letting the credit net would hand you the money twice.
+  /** Absent = not disputed. */
+  disputeStatus?: DisputeStatus;
+  disputedAt?: string;          // ISO — drives "disputed N days ago" nudges
+  disputeResolvedAt?: string;   // ISO
+  /** On the CHARGE: the refund row that came back for it (set on 'won'). */
+  disputeCreditId?: string;
+  /** On the CREDIT: the charge id it offsets. Presence means "do not net me" —
+   *  the charge I offset is already out of spend. */
+  disputeCreditFor?: string;
+  /** Cash-out (ATM / Cash App) the user has consciously left in the ATM/Cash
+   *  bucket, so the "needs your call" queue stops asking about it. */
+  cashOutReviewed?: boolean;
 }
 
 /** Account-owner mapping for attribution: which person a transaction source

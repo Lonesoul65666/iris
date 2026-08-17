@@ -306,6 +306,14 @@ async function upsertMappedRows(pool: Pool, userId: string, rows: Array<MappedEx
                  'incomeSourceId',      expenses.data->'incomeSourceId',
                  'spender',             expenses.data->'spender',
                  'typeOverride',        expenses.data->'typeOverride',
+                 -- Dispute lifecycle is 100% user-owned: the bank has no idea you're
+                 -- fighting a charge, so a sync must never clear it.
+                 'disputeStatus',       expenses.data->'disputeStatus',
+                 'disputedAt',          expenses.data->'disputedAt',
+                 'disputeResolvedAt',   expenses.data->'disputeResolvedAt',
+                 'disputeCreditId',     expenses.data->'disputeCreditId',
+                 'disputeCreditFor',    expenses.data->'disputeCreditFor',
+                 'cashOutReviewed',     expenses.data->'cashOutReviewed',
                  'transactionType',     CASE WHEN expenses.data->>'typeOverride' = 'true'
                                              THEN expenses.data->'transactionType' END,
                  'flow',                CASE WHEN expenses.data->>'typeOverride' = 'true'
