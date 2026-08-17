@@ -334,15 +334,19 @@ export function computeStashForecast(status: StashStatus, now: Date = new Date()
       // Already hold enough for the next hit — nothing more to do this cycle.
       return { ...base, status: 'on_track', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo: commitMonthsLeft, requiredPerMonth: 0, thisMonthAsk: 0 };
     }
-    const requiredPerMonth = Math.ceil(needed / commitMonthsLeft);
-    // This month's ask. If the move is already committed, `balance` includes it,
-    // so spread what's left over the REMAINING moves (this month's is spent) —
-    // that's what makes an overpayment shrink next month's ask and an
-    // underpayment grow it, exactly once per month rather than daily.
-    const movesForAsk = committedThisMonth > 0 ? commitMonthsLeft - 1 : commitMonthsLeft;
-    const thisMonthAsk = committedThisMonth > 0
-      ? 0
-      : movesForAsk > 0 ? Math.ceil(needed / movesForAsk) : Math.round(needed);
+    // Pace against what this month needed BEFORE any of it was committed.
+    // `balance` (and therefore `needed`) already includes this month's commits,
+    // so pacing off `needed` alone would shrink the month's own target the
+    // moment you part-funded it — the pot would congratulate itself for a
+    // partial move. Adding the commits back makes `requiredPerMonth` stable for
+    // the whole month, which is what StashesCard already promises the user.
+    const monthNeeded = needed + committedThisMonth;
+    const requiredPerMonth = Math.ceil(monthNeeded / commitMonthsLeft);
+    // The ask is the RESIDUAL, not a boolean. A partial commit used to zero this
+    // out, so a $436 move against a $1,082 month read "fully funded" (Scott's
+    // August 2026 taxes pot did exactly that). Overpaying clamps to 0 and shrinks
+    // future months via the smaller `needed`; underpaying leaves the gap visible.
+    const thisMonthAsk = Math.max(0, requiredPerMonth - committedThisMonth);
     if (contribution >= requiredPerMonth) {
       return { ...base, status: 'on_track', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo: commitMonthsLeft, requiredPerMonth, thisMonthAsk };
     }
@@ -353,7 +357,8 @@ export function computeStashForecast(status: StashStatus, now: Date = new Date()
   if (contribution > 0) {
     const monthsToGo = Math.ceil(remaining / contribution);
     const projected = new Date(now.getFullYear(), now.getMonth() + monthsToGo, 1);
-    return { ...base, status: 'projecting', projectedMonth: fmtMonth(projected), additionalNeeded: null, monthsToGo, requiredPerMonth: null, thisMonthAsk: committedThisMonth > 0 ? 0 : Math.round(contribution) };
+    // No deadline, so the drip IS the month's target — residual, same as above.
+    return { ...base, status: 'projecting', projectedMonth: fmtMonth(projected), additionalNeeded: null, monthsToGo, requiredPerMonth: null, thisMonthAsk: Math.max(0, Math.round(contribution) - committedThisMonth) };
   }
 
   // A goal with no funding path — can't project; nudge to set a contribution.
@@ -372,22 +377,29 @@ export interface StashCommitRow {
   stash: Stash;
   status: StashStatus;
   forecast: StashForecast | null;
-  /** What to commit this month to stay on plan. Falls back to the planned drip
-   *  for pots with no goal (nothing to pace against). 0 once committed. */
+  /** What's STILL owed this month to stay on plan. Falls back to the planned drip
+   *  for pots with no goal (nothing to pace against). 0 once the month's target
+   *  is met — which a partial commit does NOT do. */
   ask: number;
   /** $ ACTUALLY committed this month — what the total must be built from. */
   committed: number;
+  /** A confirm exists for this month. NOT the same as "done" — check `ask === 0`
+   *  for that, since a partial commit is committed AND still owing. */
   isCommitted: boolean;
+  /** This month's target is fully met (nothing left to move). */
+  isFullyFunded: boolean;
 }
 
 export interface StashCommitRun {
   rows: StashCommitRow[];
   /** Σ actually committed this month — the amount to move from checking. */
   committedTotal: number;
-  /** Σ of what the uncommitted pots are still asking for. */
+  /** Σ of what every pot is still asking for — including part-funded ones. */
   remainingAsk: number;
-  /** Pots still waiting on this month's move. */
+  /** Pots that still owe something this month, part-funded ones included. */
   pendingCount: number;
+  /** Pots carrying a confirm that doesn't cover the month's target. */
+  partialCount: number;
 }
 
 /** Build the month's commit run: per-pot ask + commit state, and the totals.
@@ -404,16 +416,23 @@ export function computeCommitRun(
     const status = computeStashStatus(s, expenses, confirms, now);
     const forecast = computeStashForecast(status, now);
     const committed = status.committedThisMonth;
-    // No goal to pace against → the planned drip IS the ask (the Savings pot).
+    // No goal to pace against → the planned drip IS the target (the Savings pot).
     const planned = Math.round(s.monthlyFill ?? s.monthlyContribution ?? 0);
-    const ask = committed > 0 ? 0 : forecast ? forecast.thisMonthAsk : planned;
-    rows.push({ stash: s, status, forecast, ask, committed, isCommitted: committed > 0 });
+    // Residual, never a boolean — `committed > 0 ? 0 : …` was the bug: any commit,
+    // however small, reported the pot done for the month.
+    const ask = forecast ? forecast.thisMonthAsk : Math.max(0, planned - committed);
+    rows.push({
+      stash: s, status, forecast, ask, committed,
+      isCommitted: committed > 0,
+      isFullyFunded: ask === 0,
+    });
   }
   return {
     rows,
     committedTotal: rows.reduce((t, r) => t + r.committed, 0),
     remainingAsk: rows.reduce((t, r) => t + r.ask, 0),
-    pendingCount: rows.filter(r => !r.isCommitted && r.ask > 0).length,
+    pendingCount: rows.filter(r => r.ask > 0).length,
+    partialCount: rows.filter(r => r.committed > 0 && r.ask > 0).length,
   };
 }
 

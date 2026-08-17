@@ -37,6 +37,16 @@ export interface UpdateEntry {
 
 export const UPDATES: UpdateEntry[] = [
   {
+    version: '2026.08.17.v2',
+    date: '2026-08-17',
+    title: 'Move part of a pot and Iris keeps count',
+    notes: [
+      'You can now move less than a pot asks for. Iris shows what’s still left for the month instead of calling the pot done, and a "Top up" button adds the rest whenever you get to it.',
+      'Before this, committing any amount at all marked the month complete — so a small move would have quietly hidden the rest of what that pot needed.',
+      'A part-funded pot now shows both numbers: what you’ve already moved, and what’s still to go.',
+    ],
+  },
+  {
     version: '2026.08.17.v1',
     date: '2026-08-17',
     title: 'Every dollar accounted for',

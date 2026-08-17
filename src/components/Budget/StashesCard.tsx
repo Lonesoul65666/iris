@@ -17,7 +17,8 @@ interface Props {
   confirms: DeployConfirmation[];
   /** Commit/undo this month's move for a pot. Same handler the Pulse uses, so
    *  committing from either surface updates both. */
-  onCommitStash?: (stashId: string, amount: number) => void;
+  /** `topUp` raises an existing partial commit instead of undoing it. */
+  onCommitStash?: (stashId: string, amount: number, topUp?: boolean) => void;
   onChange: (next: Stash[]) => void;
 }
 
@@ -223,7 +224,9 @@ export default function StashesCard({ stashes, expenses, confirms, onCommitStash
 
       {(() => {
         const renderCard = (row: StashCommitRow) => {
-          const { status, forecast, ask, committed, isCommitted } = row;
+          const { status, forecast, ask, committed, isCommitted, isFullyFunded } = row;
+          // Committed but still owing = part-funded. Three states, not two.
+          const isPartial = isCommitted && !isFullyFunded;
           const { stash: sf, balance, derived, drawn, monthsAccrued, biggestDraw } = status;
           const isOpen = expanded === sf.id;
           const negative = balance < 0;
@@ -314,18 +317,36 @@ export default function StashesCard({ stashes, expenses, confirms, onCommitStash
                   and the goal had no idea whether you'd committed — "commit shows
                   a change but no indicator, or vice versa" (Scott, 2026-08-12). */}
               {onCommitStash && (isCommitted || ask > 0) && (
-                <button onClick={() => onCommitStash(sf.id, isCommitted ? committed : ask)}
-                  className={`w-full mb-2 px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
-                    isCommitted
-                      ? 'bg-positive/15 border-positive/40 text-positive hover:bg-negative/10 hover:text-negative hover:border-negative/30'
-                      : 'bg-accent/15 border-accent/40 text-accent-light hover:bg-accent/25'}`}
-                  title={isCommitted
-                    ? `Committed ${formatCurrency(committed)} for ${thisMonthLabel} — click to undo`
-                    : `Mark ${formatCurrency(ask)} moved into savings for ${thisMonthLabel}`}>
-                  {isCommitted
-                    ? `✓ ${formatCurrency(committed)} committed for ${thisMonthLabel} · undo`
-                    : `Commit ${formatCurrency(ask)} for ${thisMonthLabel}`}
-                </button>
+                <>
+                  <button onClick={() => onCommitStash(sf.id, isPartial ? ask : isFullyFunded ? committed : ask, isPartial)}
+                    className={`w-full px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
+                      isPartial
+                        ? 'bg-warning/15 border-warning/40 text-warning hover:bg-warning/25'
+                        : isFullyFunded
+                          ? 'bg-positive/15 border-positive/40 text-positive hover:bg-negative/10 hover:text-negative hover:border-negative/30'
+                          : 'bg-accent/15 border-accent/40 text-accent-light hover:bg-accent/25'}`}
+                    title={isPartial
+                      ? `${formatCurrency(committed)} moved, ${formatCurrency(ask)} still to go — click to top up the rest`
+                      : isFullyFunded
+                        ? `Committed ${formatCurrency(committed)} for ${thisMonthLabel} — click to undo`
+                        : `Mark ${formatCurrency(ask)} moved into savings for ${thisMonthLabel}`}>
+                    {isPartial
+                      ? `Top up ${formatCurrency(ask)} — ${formatCurrency(committed)} in so far`
+                      : isFullyFunded
+                        ? `✓ ${formatCurrency(committed)} committed for ${thisMonthLabel} · undo`
+                        : `Commit ${formatCurrency(ask)} for ${thisMonthLabel}`}
+                  </button>
+                  {/* Part-funded pots need an escape hatch too — the top-up button
+                      took over the tap that used to undo. */}
+                  {isPartial && (
+                    <button onClick={() => onCommitStash(sf.id, committed, false)}
+                      className="w-full mt-1 text-[10px] text-text-muted hover:text-negative transition-colors"
+                      title={`Clear the ${formatCurrency(committed)} committed for ${thisMonthLabel}`}>
+                      undo the {formatCurrency(committed)}
+                    </button>
+                  )}
+                  <div className="mb-2" />
+                </>
               )}
 
               {/* Crushed a want-to → confirm the purchase and retire it. */}

@@ -23,11 +23,19 @@ interface Props {
    *  base − everyday − investing − committed. Climbs from $0 as pots are funded. */
   reserveSetAside?: number;
   /** The month's commit run — per-pot ask + commit state + the totals. Computed
-   *  once in stashMath (computeCommitRun) so this footer and the Have-To's /
-   *  Want-To's card can never show different numbers for the same month. */
+   *  once in stashMath (computeCommitRun) so one function owns the math.
+   *
+   *  ⚠️ It does NOT follow that the two surfaces always agree: this footer is
+   *  built for the VIEWED month (`pulseCommitMonth`) while StashesCard is built
+   *  for the LIVE month (`curMonthKey`) — see BudgetView where both are passed.
+   *  Same function, different `now`, so while you're viewing July the card below
+   *  is still talking about August. A previous version of this comment claimed
+   *  they "can never show different numbers"; they can, and the differing
+   *  argument is what decides it. */
   commitRun?: StashCommitRun;
   /** Commit/undo a stash's monthly move. Absent for the 'avg' view. */
-  onCommitStash?: (stashId: string, amount: number) => void;
+  /** `topUp` raises an existing partial commit instead of undoing it. */
+  onCommitStash?: (stashId: string, amount: number, topUp?: boolean) => void;
 }
 
 type Status = 'over' | 'pacing' | 'ontrack' | 'untouched' | 'nobudget';
@@ -299,26 +307,38 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
             <span className="term-label">Have To's / Want To's</span>
             {commitRun.pendingCount > 0 && (
               <span className="text-[11px] text-text-muted">
-                {commitRun.pendingCount} still to commit · <span className="mono-num text-accent-light font-semibold">{formatCurrency(commitRun.remainingAsk)}</span>
+                {commitRun.pendingCount} still to commit
+                {commitRun.partialCount > 0 && ` (${commitRun.partialCount} part-funded)`}
+                {' · '}<span className="mono-num text-accent-light font-semibold">{formatCurrency(commitRun.remainingAsk)}</span>
               </span>
             )}
           </div>
           <div className="space-y-1.5">
-            {commitRun.rows.map(({ stash: s, ask, committed, isCommitted }) => {
+            {commitRun.rows.map(({ stash: s, ask, committed, isCommitted, isFullyFunded }) => {
               const isHave = (s.kind ?? 'want_to') === 'have_to';
               const kc = isHave ? '#f59e0b' : '#a855f7';
-              const amount = isCommitted ? committed : ask;
+              // Part-funded: committed, but the month's target isn't met. Showing
+              // only `committed` here read as done — the gap has to be visible.
+              const isPartial = isCommitted && !isFullyFunded;
+              const amount = isPartial ? ask : isFullyFunded ? committed : ask;
               return (
                 <div key={s.id} className="flex items-center gap-3 py-1">
                   <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: kc + '22', color: kc }}>{isHave ? 'Have' : 'Want'}</span>
                   <span className="text-sm text-text-secondary flex-1 truncate">{s.name}</span>
-                  <span className={`mono-num text-sm ${isCommitted ? 'text-positive' : 'text-text-primary'}`}>{formatCurrency(amount)}</span>
+                  {isPartial && (
+                    <span className="mono-num text-[11px] text-positive/70 flex-shrink-0" title={`${formatCurrency(committed)} already committed`}>
+                      {formatCurrency(committed)} in
+                    </span>
+                  )}
+                  <span className={`mono-num text-sm ${isFullyFunded ? 'text-positive' : isPartial ? 'text-warning' : 'text-text-primary'}`}>{formatCurrency(amount)}</span>
                   <button
                     type="button"
-                    onClick={() => amount > 0 && onCommitStash(s.id, amount)}
-                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors flex-shrink-0 ${isCommitted ? 'bg-positive/15 border-positive/40 text-positive hover:bg-negative/10 hover:text-negative hover:border-negative/30' : 'bg-accent/15 border-accent/40 text-accent-light hover:bg-accent/25'} ${amount <= 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
-                    title={isCommitted ? `Committed ${formatCurrency(committed)} — click to undo` : `Mark ${formatCurrency(ask)} moved to savings`}>
-                    {isCommitted ? '✓ Committed · undo' : 'Commit'}
+                    onClick={() => amount > 0 && onCommitStash(s.id, amount, isPartial)}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors flex-shrink-0 ${isPartial ? 'bg-warning/15 border-warning/40 text-warning hover:bg-warning/25' : isFullyFunded ? 'bg-positive/15 border-positive/40 text-positive hover:bg-negative/10 hover:text-negative hover:border-negative/30' : 'bg-accent/15 border-accent/40 text-accent-light hover:bg-accent/25'} ${amount <= 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    title={isPartial
+                      ? `${formatCurrency(committed)} moved, ${formatCurrency(ask)} still to go — click to top up`
+                      : isFullyFunded ? `Committed ${formatCurrency(committed)} — click to undo` : `Mark ${formatCurrency(ask)} moved to savings`}>
+                    {isPartial ? 'Top up' : isFullyFunded ? '✓ Committed · undo' : 'Commit'}
                   </button>
                 </div>
               );

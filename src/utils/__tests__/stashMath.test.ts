@@ -3,7 +3,7 @@ import {
   monthsElapsedInclusive, computeStashStatus, totalStashContributions,
   stashAllocationsByCategory, stashesConfigured, seedDefaultStashes, applyStashLaneConfig,
   committedReserves, nextDueDate, computeStashForecast, requiredMonthlyForGoal, computeShortfall,
-  stashExistedBy, commitMonthsRemaining,
+  stashExistedBy, commitMonthsRemaining, computeCommitRun,
 } from '../stashMath';
 import { formatDuration } from '../format';
 import type { DeployConfirmation } from '../../stores/budgetStore';
@@ -280,6 +280,87 @@ describe('computeStashForecast — gamified ETA + pace', () => {
     expect(f.expectedHit).toBe(1650);
     expect(f.hitRemaining).toBe(1650);      // half the annual goal, not the full $3,300
     expect(f.remaining).toBe(3300);          // the goal bar still tracks the full year
+  });
+});
+
+// A partial commit used to report the pot fully funded for the month: the ask was
+// `committedThisMonth > 0 ? 0 : …`, a boolean where money belonged. Scott's August
+// 2026 taxes pot committed $436 against a $1,082 month and read done. These cover
+// the residual behaviour end to end, including the totals the UI moves money from.
+describe('partial commits — the ask is a residual, not a flag', () => {
+  // $12,000 by Dec 2026, nothing saved. From Jun 11 that's 7 moves (Jun–Dec).
+  // `startMonth` is required: computeStashStatus only reads confirms for a
+  // commit-derived pot, so without it committedThisMonth is always 0 and none of
+  // this exercises the real path. (All six of Scott's live pots are derived.)
+  const goal = (extra: Partial<Stash> = {}) => stash({
+    id: 'pot', kind: 'want_to', targetAmount: 12000, currentBalance: 0, startMonth: '2026-01',
+    monthlyContribution: 500, cadence: 'custom', targetDate: '2026-12-20', ...extra,
+  });
+  const forecastWith = (confirms: DeployConfirmation[]) =>
+    computeStashForecast(computeStashStatus(goal(), [], confirms, NOW), NOW)!;
+
+  it('asks for the full month target when nothing is committed', () => {
+    const f = forecastWith([]);
+    expect(f.commitMonthsLeft).toBe(7);
+    expect(f.requiredPerMonth).toBe(Math.ceil(12000 / 7)); // 1715
+    expect(f.thisMonthAsk).toBe(f.requiredPerMonth);
+    expect(f.committedThisMonth).toBe(0);
+  });
+
+  it('a PARTIAL commit leaves the remainder asked for — not zero', () => {
+    const f = forecastWith([commit('2026-06', 'pot', 700)]);
+    expect(f.committedThisMonth).toBe(700);
+    // The month's target must not shrink just because it was part-funded.
+    expect(f.requiredPerMonth).toBe(Math.ceil(12000 / 7));
+    expect(f.thisMonthAsk).toBe(Math.ceil(12000 / 7) - 700); // 1015, NOT 0
+  });
+
+  it('reaches zero only once the month target is actually met', () => {
+    const target = Math.ceil(12000 / 7);
+    expect(forecastWith([commit('2026-06', 'pot', target)]).thisMonthAsk).toBe(0);
+  });
+
+  it('clamps to zero when overcommitted, and never goes negative', () => {
+    const f = forecastWith([commit('2026-06', 'pot', 5000)]);
+    expect(f.thisMonthAsk).toBe(0);
+    expect(f.thisMonthAsk).toBeGreaterThanOrEqual(0);
+  });
+
+  it('overpaying shrinks LATER months (the pot self-corrects)', () => {
+    const plain = forecastWith([]);
+    const over = forecastWith([commit('2026-06', 'pot', 5000)]);
+    // Same 7 moves, but $5k of the $12k is banked → the go-forward need is lower.
+    expect(over.remaining).toBe(7000);
+    expect(over.remaining).toBeLessThan(plain.remaining);
+  });
+
+  it('a no-goal pot (the Savings pot) also asks for the residual drip', () => {
+    const savings = stash({ id: 'sv', name: 'Savings', targetAmount: 0, monthlyContribution: 336, startMonth: '2026-01' });
+    const run = computeCommitRun([savings], [], [commit('2026-06', 'sv', 100)], NOW);
+    expect(run.rows[0].committed).toBe(100);
+    expect(run.rows[0].ask).toBe(236);          // was 0 — reported done at $100 of $336
+    expect(run.rows[0].isFullyFunded).toBe(false);
+  });
+
+  it('commit run: partial pots stay pending and are counted as part-funded', () => {
+    const run = computeCommitRun([goal()], [], [commit('2026-06', 'pot', 700)], NOW);
+    const [row] = run.rows;
+    expect(row.isCommitted).toBe(true);          // a confirm DOES exist…
+    expect(row.isFullyFunded).toBe(false);       // …but the month isn't done
+    expect(run.pendingCount).toBe(1);
+    expect(run.partialCount).toBe(1);
+    expect(run.committedTotal).toBe(700);
+    expect(run.remainingAsk).toBe(row.ask);
+    // The load-bearing number: what's left to move out of checking this month.
+    expect(run.committedTotal + run.remainingAsk).toBe(Math.ceil(12000 / 7));
+  });
+
+  it('commit run: a fully funded pot is not pending and not partial', () => {
+    const run = computeCommitRun([goal()], [], [commit('2026-06', 'pot', Math.ceil(12000 / 7))], NOW);
+    expect(run.rows[0].isFullyFunded).toBe(true);
+    expect(run.pendingCount).toBe(0);
+    expect(run.partialCount).toBe(0);
+    expect(run.remainingAsk).toBe(0);
   });
 });
 

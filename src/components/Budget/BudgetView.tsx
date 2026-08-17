@@ -342,9 +342,19 @@ export default function BudgetView() {
   // Commit / un-commit a stash's monthly move (Have-To's / Want-To's). Same
   // confirmation store as investing, lane = stash id. First tap = "I moved it to
   // savings"; tap again undoes. (Chunk C flips the $15,800 to count these.)
-  const toggleStashCommit = useCallback(async (month: string, stashId: string, amount: number) => {
+  //
+  // `topUp` breaks the strict toggle for the one case it got wrong: a PARTIAL
+  // commit. Moving $436 against a $1,082 month left no way to add the rest —
+  // tapping again just wiped the $436. With topUp the confirm is raised to
+  // `existing + amount` instead, so part-funding a pot is a real workflow rather
+  // than something you have to undo and redo at the full number.
+  const toggleStashCommit = useCallback(async (month: string, stashId: string, amount: number, topUp = false) => {
     const existing = deployConfirms.find(c => c.month === month && c.lane === stashId);
-    if (existing) {
+    if (existing && topUp) {
+      const raised: DeployConfirmation = { ...existing, amount: existing.amount + amount, confirmedAt: new Date().toISOString() };
+      setDeployConfirms(prev => prev.map(c => (c.month === month && c.lane === stashId ? raised : c)));
+      await saveDeployConfirmation(raised);
+    } else if (existing) {
       setDeployConfirms(prev => prev.filter(c => !(c.month === month && c.lane === stashId)));
       await clearDeployConfirmation(month, stashId);
     } else {
@@ -1758,7 +1768,7 @@ export default function BudgetView() {
             monthLabel={pulseMonthLabel}
             onCategoryClick={(cat) => setDrilldownCategory(cat)}
             commitRun={pulseCommitRun}
-            onCommitStash={pulseCommitMonth ? (id, amt) => toggleStashCommit(pulseCommitMonth, id, amt) : undefined}
+            onCommitStash={pulseCommitMonth ? (id, amt, topUp) => toggleStashCommit(pulseCommitMonth, id, amt, topUp) : undefined}
           />
         );
       })()}
@@ -1774,7 +1784,7 @@ export default function BudgetView() {
         stashes={sinkingFunds}
         expenses={expenses}
         confirms={deployConfirms}
-        onCommitStash={(id, amt) => toggleStashCommit(curMonthKey, id, amt)}
+        onCommitStash={(id, amt, topUp) => toggleStashCommit(curMonthKey, id, amt, topUp)}
         onChange={(next) => {
           setSinkingFunds(next);
           applyStashLaneConfig(next);
