@@ -133,13 +133,29 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
   const clearFilters = () => setActiveFilters(new Set());
 
   const totalBudget = buckets.reduce((s, b) => s + b.monthlyBudget, 0);
+  // Headline "spent" = EVERY dollar, reserve included. That's the honest number.
   const totalActual = buckets.reduce((s, b) => s + b.monthlyActual, 0);
+  // ⚠️ But HEADROOM must exclude reserve spend, or the same dollar is charged
+  // twice: once as the committed set-aside (reserveSetAside) and again as the
+  // payment. safeToSpend.ts is the canonical model —
+  //   takeHome − fixedCommitment − reserveSetAside − flexSpent
+  // — and its flexSpent counts only flexible-lane categories. Including reserve
+  // actual here made April read "$0 still free" and "~$13k OVER" while
+  // Safe-to-Spend on the same page said something else entirely.
+  // So: reserve money is VISIBLE (its own row, and in the headline) but is not
+  // subtracted from what's free. Including bucket-less FLEXIBLE spend, which
+  // safeToSpend already counted, was the genuine half of that fix and stays.
+  const reserveActual = buckets.reduce((s, b) => s + (laneOf(b.category) === 'reserve' ? b.monthlyActual : 0), 0);
+  const nonReserveActual = totalActual - reserveActual;
   // Reflect the WHOLE base ($15,800), not just operating caps. Everyday spend +
   // reserves set-aside + what's still free = the full watermark. Falls back to
   // the operating-cap total only when no watermark is supplied.
   const hasBase = !!watermark && watermark > 0;
   const base = hasBase ? watermark! : totalBudget;
-  const freeOfBase = hasBase ? Math.max(0, watermark! - totalActual - reserveSetAside) : 0;
+  // NOT clamped at zero any more. The clamp meant a busted month could only ever
+  // say "$0 still free" — and for a CLOSED month the projection line is suppressed
+  // by design, so that was the only headline a $14k overrun got. Say it plainly.
+  const freeOfBase = hasBase ? watermark! - nonReserveActual - reserveSetAside : 0;
   const totalOver = buckets
     .filter(b => b.monthlyBudget > 0 && b.monthlyActual > b.monthlyBudget)
     .reduce((s, b) => s + (b.monthlyActual - b.monthlyBudget), 0);
@@ -163,7 +179,11 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
           </div>
           {hasBase && (
             <div className="mono-num text-[11px] text-text-muted mt-0.5">
-              {reserveSetAside > 0 && <>{formatCurrency(reserveSetAside)} committed · </>}{formatCurrency(freeOfBase)} still free
+              {reserveSetAside > 0 && <>{formatCurrency(reserveSetAside)} committed · </>}
+              {reserveActual > 0 && <>{formatCurrency(reserveActual)} lumpy · </>}
+              {freeOfBase >= 0
+                ? <>{formatCurrency(freeOfBase)} still free</>
+                : <span className="text-negative font-semibold">{formatCurrency(Math.abs(freeOfBase))} OVER base</span>}
             </div>
           )}
           {projection && (

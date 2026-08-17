@@ -578,9 +578,18 @@ export default function BudgetView() {
   const unbudgetedRows: BudgetBucket[] = (() => {
     const known = new Set(overviewBuckets.map(b => b.category));
     const totals: Record<string, number> = {};
-    const single = (resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest')
+    // ⚠️ Gate on the MODE, not on the lookup succeeding. Original version used
+    // `monthlyData.find(...)` and fell into the 'avg' branch whenever it returned
+    // undefined — which is exactly a brand-new month before its first transaction
+    // lands. Result on Sep 1: buckets correctly showed $0 while these synthesized
+    // rows appeared at their 12-month AVERAGES and lowered "still free". That's the
+    // clean-slate rollover bug this file already fixed once for buckets
+    // (see overviewBucketsRaw's emptyMonthlySpending fallback). Deterministic,
+    // every single month turn.
+    const isAvg = resolvedOverviewMonth === 'avg';
+    const single = isAvg
       ? null
-      : monthlyData.find(m => m.month === resolvedOverviewMonth);
+      : (monthlyData.find(m => m.month === resolvedOverviewMonth) ?? emptyMonthlySpending(resolvedOverviewMonth));
     if (single) {
       for (const [cat, amt] of Object.entries(single.byCategory)) totals[cat] = amt;
     } else {
