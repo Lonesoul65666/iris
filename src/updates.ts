@@ -12,6 +12,17 @@ import type { Nudge } from './utils/nudgeEngine';
  *
  * Versioning is owned here (package.json stays 0.0.0 — unused). Bump the newest
  * entry's version whenever you want the card to re-appear for everyone.
+ *
+ * FORMAT: `YYYY.MM.DD.vN` — the ship date plus a counter (Scott, 2026-08-17:
+ * "every time we do an update and it lands, I'd like to see a different
+ * version"). N starts at 1 each day and increments for a SECOND update that
+ * lands the same day, so two same-day deploys can never share a version — which
+ * matters because `whatsNewNudge` gates on exact string equality, so a reused
+ * version silently swallows the card. Entries before 2026.08 predate the
+ * suffix and are left as-is; nothing compares versions for ordering.
+ *
+ * ONE ENTRY PER SHIP DAY, written even if the host deploy lags behind — the
+ * array is the record of what was cut, not of what's running.
  */
 export interface UpdateEntry {
   /** Monotonic version string. The newest entry's version gates the card. */
@@ -25,6 +36,44 @@ export interface UpdateEntry {
 }
 
 export const UPDATES: UpdateEntry[] = [
+  {
+    version: '2026.08.17.v1',
+    date: '2026-08-17',
+    title: 'Every dollar accounted for',
+    notes: [
+      'Your Monthly Pulse now shows every dollar you spent. Travel, taxes, cash withdrawals and a few others had no budget line, so they were being left off the card entirely — and left out of its total.',
+      'Because of that, "still free this month" was too generous. It now counts everything, so it tells you the truth even when the news is worse.',
+      'Your mortgage payment went missing from August. The bank started labeling it a transfer instead of a payment, so Iris stopped counting it — Housing read "untouched" while $3,204 had already gone out. Fixed, backfilled, and guarded so no future relabeling can delete a bill.',
+      'Every paycheck was displaying as "Expense" in the Type column. Nothing was actually miscounted, but one click would have made it real — that control is now read-only for income.',
+      'You can now correct a transaction Iris got wrong: change its type, change its category, and your correction survives the next bank sync instead of being overwritten.',
+      'Fighting a charge? Mark it disputed and it steps out of your spending while you wait — no more a disputed charge quietly eating someone’s fun money. When the credit lands, Iris spots it and asks you to confirm the win.',
+      'New "Needs your call" list gathers the handful of transactions only you can settle, so they stop hiding in the transaction log.',
+      'Refunds can now be filed under the right category. A refund cancels out spending in whatever category it lands in, so putting it in the right one is what makes your buckets add up.',
+      'Your Have-To and Want-To pots were all reporting "behind" with a number that crept up every single day. They now count the months you actually have left, so a pot you’re on top of says so.',
+    ],
+  },
+  {
+    version: '2026.08.13.v1',
+    date: '2026-08-13',
+    title: 'Pots that pace honestly',
+    notes: [
+      'Have-To and Want-To pots stopped drifting: each one now shows what to set aside this month based on the months remaining, not on a fraction of a calendar day.',
+      'Both the budget page and the pots card now show one running total of what to move out of checking.',
+      'Cash is money out again. ATM withdrawals and Cash App sends now land in one "ATM / Cash" category and count as spending — two $160 sends had never been counted at all.',
+    ],
+  },
+  {
+    version: '2026.07.20.v1',
+    date: '2026-07-20',
+    title: 'Milestones, Moments, and an Ask Iris that knows your numbers',
+    notes: [
+      'Net-worth milestones now get a proper celebration — a full-screen moment when you cross a level, and every trophy on your wall is clickable to relive it (with the date you earned it), so whoever missed it live still gets to see it.',
+      'Iris has a voice now, literally: a short chime on a milestone. Turn it off any time under Settings → Preferences.',
+      'New Moments layer tracks the wins you can repeat every month — coming in under base, both of you staying inside your fun money, retiring a Want-To — and shows this month’s as a live goal with days left.',
+      'Your investment and retirement accounts are now part of net worth, counted as investments rather than cash.',
+      'Ask Iris was answering from your plan instead of your actual spending, which is how it invented numbers you didn’t recognize. It now sees every month’s real totals against your $15,800 base, plus where the current month stands.',
+    ],
+  },
   {
     version: '2026.07.13',
     date: '2026-07-13',
