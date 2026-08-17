@@ -867,9 +867,21 @@ export default function ExpenseManager({ expenses, onExpensesChanged, customCate
                               <span className="ml-1 text-[9px] text-accent-light" title="You set this by hand — syncs won't overwrite it">✎</span>
                             )}
                           </td>
+                          {/* Category is editable for REFUNDS too (2026-08-13). A
+                              refund nets against its category, so its category is
+                              the whole mechanism — but the picker was gated on
+                              'expense', leaving refunds uneditable. Scott's Citi
+                              dispute credits arrive described only as "CITIBANK
+                              CONDITIONAL CREDIT FOR DISPUTE", so the classifier
+                              can't tell which merchant they refund and drops them
+                              in 'other': the charge inflated `subscriptions` while
+                              the credit nets out of `other`. Totals were right,
+                              every bucket was wrong, and there was no way to fix it
+                              in the UI. */}
                           <td className="p-3">
-                            {txType === 'expense' && (
+                            {(txType === 'expense' || txType === 'refund') && (
                               <select value={e.category}
+                                title={txType === 'refund' ? 'Set this to the category of the charge it refunds, so it nets out of the right bucket' : undefined}
                                 onChange={async (ev) => {
                                   if (ev.target.value === '__new__') {
                                     setPendingCategoryTarget({ type: 'expense', id: e.id });
@@ -884,8 +896,14 @@ export default function ExpenseManager({ expenses, onExpensesChanged, customCate
                                   const nextWork = newCat === 'travel_work';
                                   const updated = { ...e, category: newCat, isWorkExpense: nextWork, reimbursementStatus: nextWork ? 'pending' : (e.isWorkExpense ? 'not_reimbursable' : e.reimbursementStatus) };
                                   await saveExpense(updated);
-                                  // Remember this category for future imports of same merchant
-                                  await saveMerchantMapping({ original: e.description, displayName: e.description, category: newCat as ExpenseCategory, isWorkExpense: nextWork });
+                                  // Remember this category for future imports of same merchant —
+                                  // but NEVER for a refund. A dispute credit's descriptor is
+                                  // generic ("CITIBANK CONDITIONAL CREDIT FOR DISPUTE"), so
+                                  // learning it would tag every future dispute with whatever
+                                  // merchant this one happened to refund. One-off edit only.
+                                  if (txType !== 'refund') {
+                                    await saveMerchantMapping({ original: e.description, displayName: e.description, category: newCat as ExpenseCategory, isWorkExpense: nextWork });
+                                  }
                                   onExpensesChanged();
                                 }}
                                 className="bg-transparent border border-transparent group-hover:border-glass-border rounded px-1 py-0.5 text-xs text-text-secondary outline-none focus:border-accent/50">
