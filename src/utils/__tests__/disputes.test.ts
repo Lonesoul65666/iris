@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findCandidateCredit, listOpenDisputes, listCashOutNeedingCall,
   markDisputed, resolveDisputeWon, resolveDisputeLost, clearDispute,
-  STALE_DISPUTE_DAYS, MATCH_WINDOW_DAYS,
+  STALE_DISPUTE_DAYS, MATCH_WINDOW_DAYS, CASH_OUT_LOOKBACK_DAYS, isBankFee,
 } from '../disputes';
 import { computeMonthlySpending, isRealExpense } from '../transactionAnalysis';
 import type { Expense } from '../../types/budget';
@@ -141,20 +141,47 @@ describe('listCashOutNeedingCall — ~10 a year, each wants a human', () => {
   const cashapp = ex({ id: 'ca', date: '2026-07-24', amount: 160, category: 'atm_cash', description: 'CASH APP*DALLAS' });
 
   it('queues unattributed cash-out, newest first', () => {
-    expect(listCashOutNeedingCall([cashapp, atm]).map(e => e.id)).toEqual(['atm', 'ca']);
+    expect(listCashOutNeedingCall([cashapp, atm], NOW).map(e => e.id)).toEqual(['atm', 'ca']);
   });
 
   it('leaves the queue once categorized to where the cash actually went', () => {
-    expect(listCashOutNeedingCall([{ ...atm, category: 'entertainment' }])).toHaveLength(0);
+    expect(listCashOutNeedingCall([{ ...atm, category: 'entertainment' }], NOW)).toHaveLength(0);
   });
 
   it('"keep it as ATM/Cash" also clears it', () => {
-    expect(listCashOutNeedingCall([{ ...atm, cashOutReviewed: true }])).toHaveLength(0);
+    expect(listCashOutNeedingCall([{ ...atm, cashOutReviewed: true }], NOW)).toHaveLength(0);
+  });
+
+  it('does NOT ask about bank FEES — nothing to attribute', () => {
+    // Found in visual review: the queue was asking what a $5 Dubai ATM fee
+    // "was for". Fees are real spend but there's no answer to give.
+    const fees = [
+      ex({ id: 'f1', date: '2026-08-05', amount: 5, category: 'atm_cash', description: '10014413 WITHDRWL Dubai AE FEE' }),
+      ex({ id: 'f2', date: '2026-08-05', amount: 8, category: 'atm_cash', description: 'MashreqBank WITHDRWL DUBAI INTERNATIONAL TRANSACTION FEE' }),
+    ];
+    expect(listCashOutNeedingCall([...fees, atm], NOW).map(e => e.id)).toEqual(['atm']);
+  });
+
+  it('only asks about cash recent enough to remember', () => {
+    // 11 months of history is a wall of guilt, not a queue.
+    const ancient = ex({ id: 'old', date: '2025-09-08', amount: 204, category: 'atm_cash', description: '7ELEVEN-FCTI WITHDRWL' });
+    expect(listCashOutNeedingCall([ancient, atm], NOW).map(e => e.id)).toEqual(['atm']);
+    expect(CASH_OUT_LOOKBACK_DAYS).toBe(90);
   });
 
   it('ignores refunds and disputed rows', () => {
-    expect(listCashOutNeedingCall([credit({ id: 'r', category: 'atm_cash' })])).toHaveLength(0);
-    expect(listCashOutNeedingCall([{ ...atm, disputeStatus: 'open' }])).toHaveLength(0);
+    expect(listCashOutNeedingCall([credit({ id: 'r', category: 'atm_cash' })], NOW)).toHaveLength(0);
+    expect(listCashOutNeedingCall([{ ...atm, disputeStatus: 'open' }], NOW)).toHaveLength(0);
+  });
+});
+
+describe('isBankFee', () => {
+  it('spots the fee riders, not the withdrawal itself', () => {
+    expect(isBankFee('10014413 02/07 WITHDRWL Dubai AE FEE')).toBe(true);
+    expect(isBankFee('MashreqBank WITHDRWL DUBAI INTERNATIONAL TRANSACTION FEE')).toBe(true);
+    expect(isBankFee('BofA Rewards-ATM Wthdrwl Fee Waiver of $2.50')).toBe(true);
+    expect(isBankFee('PAI ATM 08/06 #XXXXX9679 WITHDRWL PAI ATM')).toBe(false);
+    expect(isBankFee('CASH APP*DALLAS PMNT SENT')).toBe(false);
   });
 });
 

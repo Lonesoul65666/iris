@@ -5,7 +5,7 @@ import { getMerchantMappings, saveMerchantMapping, type MerchantMapping } from '
 import { registerCustomCategories } from '../../utils/transactionAnalysis';
 import { classifyBankTransaction, guessCategory } from '../../utils/transactionCategorize';
 import { formatCurrency } from '../../utils/format';
-import { markDisputed } from '../../utils/disputes';
+import { markDisputed, clearDispute } from '../../utils/disputes';
 import { JOINT, buildOwnerMap, effectiveSpender, spenderName, nextSpender } from '../../utils/attribution';
 
 const DEFAULT_CATEGORY_OPTIONS: { value: ExpenseCategory; label: string; icon: string }[] = [
@@ -871,16 +871,33 @@ export default function ExpenseManager({ expenses, onExpensesChanged, customCate
                                 An open dispute is held OUT of spend, so the badge
                                 has to be visible right where the money is. */}
                             {e.disputeStatus ? (
-                              <span
+                              // Clickable so a RESOLVED dispute can still be undone.
+                              // Found in review 2026-08-13: the badge replaced the
+                              // button, so once you marked something won or lost there
+                              // was no way back from the transaction row — a mis-click
+                              // was permanent unless you went to SQL. Clearing also
+                              // releases the linked credit, or it stays suppressed
+                              // forever and the money never nets.
+                              <button
+                                onClick={async () => {
+                                  const { charge, releaseCreditId } = clearDispute(e);
+                                  await saveExpense({ ...e, ...charge });
+                                  if (releaseCreditId) {
+                                    const linked = expenses.find(x => x.id === releaseCreditId);
+                                    if (linked) await saveExpense({ ...linked, disputeCreditFor: undefined });
+                                  }
+                                  onExpensesChanged();
+                                }}
                                 className={`ml-1 text-[9px] px-1 py-0.5 rounded font-bold ${
-                                  e.disputeStatus === 'open' ? 'bg-warning/20 text-warning'
-                                  : e.disputeStatus === 'won' ? 'bg-positive/20 text-positive'
-                                  : 'bg-negative/20 text-negative'}`}
-                                title={e.disputeStatus === 'open' ? 'Disputed — held out of your budget until it resolves'
+                                  e.disputeStatus === 'open' ? 'bg-warning/20 text-warning hover:bg-warning/35'
+                                  : e.disputeStatus === 'won' ? 'bg-positive/20 text-positive hover:bg-positive/35'
+                                  : 'bg-negative/20 text-negative hover:bg-negative/35'}`}
+                                title={(e.disputeStatus === 'open' ? 'Disputed — held out of your budget until it resolves'
                                   : e.disputeStatus === 'won' ? 'Refunded — the credit is linked and suppressed so it only counts once'
-                                  : 'Dispute lost — counted as normal spend'}>
+                                  : 'Dispute lost — counted as normal spend')
+                                  + '. Click to clear the dispute entirely.'}>
                                 {e.disputeStatus === 'open' ? '⚖ DISPUTED' : e.disputeStatus === 'won' ? '⚖ REFUNDED' : '⚖ LOST'}
-                              </span>
+                              </button>
                             ) : txType === 'expense' && (
                               <button
                                 onClick={async () => {

@@ -39,6 +39,23 @@ export const STALE_DISPUTE_DAYS = 14;
 /** The bucket cash-out lands in before anyone says where it went. */
 export const CASH_OUT_CATEGORY = 'atm_cash';
 
+/** How far back the cash queue asks. Beyond this you cannot honestly remember
+ *  what a $204 withdrawal was for, so asking is just guilt with a dropdown.
+ *  (Found in review 2026-08-13: the first build reached back 11 months and
+ *  produced a 23-row wall of history.) */
+export const CASH_OUT_LOOKBACK_DAYS = 90;
+
+/** An ATM/bank FEE, not cash you spent on something. These ride along with a
+ *  withdrawal ("...WITHDRWL ... FEE", "INTERNATIONAL TRANSACTION FEE") and are
+ *  real money out — they stay counted as spend — but there's nothing to
+ *  attribute, so the queue must not ask. Nobody can answer "what was this $5
+ *  international transaction fee for?" */
+export function isBankFee(description: string): boolean {
+  const d = (description || '').toLowerCase();
+  if (!d.includes('fee')) return false;
+  return /\bfee\b|fee waiver|transaction fee|atm fee|surcharge/.test(d);
+}
+
 const daysBetween = (from: string, to: Date): number =>
   Math.floor((to.getTime() - parseLocalDate(from).getTime()) / MS_PER_DAY);
 
@@ -116,14 +133,18 @@ export function listOpenDisputes(expenses: Expense[], now: Date = new Date()): O
  *  year... Cash App three or four times a year" — which is exactly why it wants
  *  a queue rather than pattern matching. Newest first: recent cash is the cash
  *  you can still remember. */
-export function listCashOutNeedingCall(expenses: Expense[]): Expense[] {
+export function listCashOutNeedingCall(expenses: Expense[], now: Date = new Date()): Expense[] {
+  const cutoff = now.getTime() - CASH_OUT_LOOKBACK_DAYS * MS_PER_DAY;
   return expenses
     .filter((e) =>
       (e.transactionType || 'expense') === 'expense' &&
       (e.flow || 'outflow') === 'outflow' &&
       e.category === CASH_OUT_CATEGORY &&
       !e.cashOutReviewed &&
-      !e.disputeStatus)
+      !e.disputeStatus &&
+      // Recent enough to actually remember, and not a bank fee.
+      parseLocalDate(e.date).getTime() >= cutoff &&
+      !isBankFee(e.description))
     .sort((a, b) => parseLocalDate(b.date).getTime() - parseLocalDate(a.date).getTime());
 }
 
