@@ -20,6 +20,11 @@ dist-ssr
 # Throwaway scratch — verification harnesses, one-off launchers, etc.
 public/teller-connect.html
 
+# One-off DB probes, migrations and data backups. Never tracked by convention —
+# they contain real transaction data and are specific to one machine's .env.local.
+# (Accidentally committed in 1fbbcaa and untracked immediately after.)
+scripts/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
