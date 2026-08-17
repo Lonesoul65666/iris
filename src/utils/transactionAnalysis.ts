@@ -329,6 +329,12 @@ export function getCategoryLabel(cat: string): string {
   return cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+/** Display icon for a category id, with a neutral fallback so a bucket-less
+ *  category still renders something sensible. */
+export function getCategoryIcon(cat: string): string {
+  return CATEGORY_INFO[cat]?.icon ?? '📦';
+}
+
 /** Merge user-created custom categories into the lookup table so trends/comparisons show proper labels */
 export function registerCustomCategories(cats: CustomCategory[]): void {
   for (const c of cats) {

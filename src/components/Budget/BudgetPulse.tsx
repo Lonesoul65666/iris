@@ -86,8 +86,12 @@ export default function BudgetPulse({ buckets, now = new Date(), onCategoryClick
     let flexActual = 0;
     for (const b of buckets) {
       const lane = laneOf(b.category);
-      if (lane === 'reserve') continue;
-      if (lane === 'fixed') fixed += Math.max(b.monthlyBudget, b.monthlyActual);
+      // Lumpy (reserve) and uncapped (no-budget) money counts at what ALREADY
+      // happened — never extrapolated (a $13k April tax payment would project
+      // x2.7) and never skipped either, which is what used to make "trending to"
+      // understate the month by everything unbudgeted.
+      if (lane === 'reserve' || b.monthlyBudget <= 0) fixed += Math.max(0, b.monthlyActual);
+      else if (lane === 'fixed') fixed += Math.max(b.monthlyBudget, b.monthlyActual);
       else flexActual += Math.max(0, b.monthlyActual);
     }
     const projected = fixed + flexActual / Math.max(monthFraction, 0.03);

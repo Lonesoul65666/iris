@@ -31,7 +31,7 @@ import { computeBudgetComparison } from '../../utils/budgetComparison';
 import { computeFunMoneySpent } from '../../utils/funMoney';
 import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, saveMerchantMapping } from '../../stores/actionStore';
-import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, getCategoryLabel, isRealExpense, isCompleteMonth, currentMonthKey, emptyMonthlySpending, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
+import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, getCategoryLabel, getCategoryIcon, isRealExpense, isCompleteMonth, currentMonthKey, emptyMonthlySpending, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
 import { formatCurrency } from '../../utils/format';
 import { laneOf, isOverBudget, RESERVE_ALLOCATIONS, FLEX_APPROACHING, type BudgetLane } from '../../utils/budgetLanes';
 import ScoreRing from '../ui/ScoreRing';
@@ -566,6 +566,53 @@ export default function BudgetView() {
   // Spending. The "Include work expenses" toggle was removed (option A in the
   // simplification pass) since the concept was duplicated across 5 surfaces.
   const filteredBuckets = overviewBuckets.filter(b => b.category !== 'travel_work');
+
+  // ── Spend with NO budget bucket — previously invisible everywhere ──────────
+  // Real personal spend in a category nobody ever created a bucket for
+  // (travel_personal, atm_cash, car_insurance, credi_card_memberships…) was
+  // dropped on the floor by applyMonthToBuckets, so it never rendered a row.
+  // Over 12 months that hid $60k+ — travel_personal alone was $50,558. Synthesize
+  // a row per category at budget 0 so it shows as NO BUDGET: visible, uncapped,
+  // never judged as "over". These are real spend, so they also belong in the
+  // Pulse total (see pulseRows).
+  const unbudgetedRows: BudgetBucket[] = (() => {
+    const known = new Set(overviewBuckets.map(b => b.category));
+    const totals: Record<string, number> = {};
+    const single = (resolvedOverviewMonth === 'avg' || resolvedOverviewMonth === 'latest')
+      ? null
+      : monthlyData.find(m => m.month === resolvedOverviewMonth);
+    if (single) {
+      for (const [cat, amt] of Object.entries(single.byCategory)) totals[cat] = amt;
+    } else {
+      // 'avg' — mean across complete months, matching how the bucket blend reads.
+      const src = fullMonths.length > 0 ? fullMonths : monthlyData;
+      for (const m of src) for (const [cat, amt] of Object.entries(m.byCategory)) totals[cat] = (totals[cat] ?? 0) + amt;
+      for (const k of Object.keys(totals)) totals[k] = totals[k] / Math.max(1, src.length);
+    }
+    return Object.entries(totals)
+      .filter(([cat, amt]) => !known.has(cat) && cat !== 'travel_work' && amt > 0.5)
+      .map(([cat, amt]) => ({
+        category: cat as ExpenseCategory,
+        label: getCategoryLabel(cat),
+        icon: getCategoryIcon(cat),
+        monthlyBudget: 0,
+        monthlyActual: Math.round(amt),
+        color: '#64748b',
+        guideline: 'No budget set — tracked so the spend is visible.',
+        guidelinePercent: 0,
+      }))
+      .sort((a, b) => b.monthlyActual - a.monthlyActual);
+  })();
+
+  // What the Pulse renders. Reserve lanes keep their row but with budget forced
+  // to 0 so a lumpy $14k tax payment reads NO BUDGET instead of a false "OVER"
+  // (the reason they used to be filtered out entirely) — while still COUNTING in
+  // the total. That double omission is what let the card claim headroom it didn't
+  // have: Jan 2026 read ~$2.1k "still free" while the month was $14.1k over base.
+  const pulseRows: BudgetBucket[] = [
+    ...filteredBuckets.map(b => (laneOf(b.category) === 'reserve' ? { ...b, monthlyBudget: 0 } : b)),
+    ...unbudgetedRows,
+  ].filter(b => b.monthlyActual > 0 || b.monthlyBudget > 0);
   // "Over" is lane-aware: reserves (taxes/travel) are never over (lumpy by design),
   // fixed bills only count once past their tolerance band, flex counts the moment
   // it exceeds budget. Kills the false "10 categories over" alarm.
@@ -1672,7 +1719,7 @@ export default function BudgetView() {
           the month is going" live, "How the month went" (locked, no pace/trend)
           for closed months, so you can page back and see how each month landed
           against the targets in effect then — without leaving the overview. */}
-      {filteredBuckets.filter(b => (b.monthlyActual > 0 || b.monthlyBudget > 0) && laneOf(b.category) !== 'reserve').length > 0 && (() => {
+      {pulseRows.length > 0 && (() => {
         const pulseMonthLabel = resolvedOverviewMonth === 'avg'
           ? `${fullMonths.length}-mo average`
           : (() => { const [y, mo] = resolvedOverviewMonth.split('-'); return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); })();
@@ -1690,11 +1737,12 @@ export default function BudgetView() {
         const pulseCommitRun = computeCommitRun(pulseStashes, expenses, deployConfirms, pulseNow);
         return (
           <BudgetPulse
-            // Operating lanes only — reserve (taxes/travel) is lumpy with a $0 bucket
-            // budget, so counting its spend here made a tax/travel payment look like a
-            // budget bust (the opposite of the lane model). Now the Pulse "spent /
-            // budgeted" matches the Monthly Spend tile and the rest of the page.
-            buckets={filteredBuckets.filter(b => (b.monthlyActual > 0 || b.monthlyBudget > 0) && laneOf(b.category) !== 'reserve')}
+            // EVERY dollar of personal spend now reaches the Pulse (see pulseRows).
+            // Lumpy + bucket-less money shows as NO BUDGET — visible and uncapped, so
+            // a tax/travel payment still never reads as a budget bust, but it does
+            // count toward the total. Dropping it from the total was what made
+            // "still free" lie.
+            buckets={pulseRows}
             watermark={paycheck.netTakeHome}
             reserveSetAside={reserveSetAside}
             complete={!overviewIsInProgress}
