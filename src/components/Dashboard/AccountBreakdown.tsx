@@ -4,6 +4,7 @@ import {
   ACCOUNT_ORDER, accountMeta,
   categoryEmoji, formatRelDate, monthKey, monthLabel,
 } from '../../utils/txDisplay';
+import { isDisputeExcluded } from '../../utils/transactionAnalysis';
 
 // How many recent transactions to list per account.
 const RECENT_PER_ACCOUNT = 4;
@@ -35,6 +36,8 @@ interface RawTx {
   flow?: string;
   transactionType?: string;
   isWorkExpense?: boolean;
+  /** Present so the dispute guard below can see it. */
+  disputeStatus?: string;
 }
 
 /**
@@ -70,7 +73,8 @@ export default function AccountBreakdown({ bare = false }: { bare?: boolean } = 
 
   const { stats, cycle, cycleTotalAll } = useMemo(() => {
     const outflows: RawTx[] = (rawExpenses || []).filter(
-      (e: RawTx) => (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense',
+      (e: RawTx) => (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense'
+        && !isDisputeExcluded(e),
     );
     if (outflows.length === 0) return { stats: [] as AccountStat[], cycle: '', cycleTotalAll: 0 };
 
@@ -171,7 +175,8 @@ function AccountActivityModal({ source, rawExpenses, onClose }: { source: string
     [rawExpenses, source],
   );
   const spend = txns
-    .filter(t => (t.flow || 'outflow') === 'outflow' && (t.transactionType || 'expense') === 'expense')
+    .filter(t => (t.flow || 'outflow') === 'outflow' && (t.transactionType || 'expense') === 'expense'
+      && !isDisputeExcluded(t))
     .reduce((s, t) => s + Math.abs(t.amount), 0);
 
   return (

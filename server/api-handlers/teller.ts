@@ -536,6 +536,7 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
                    'disputeResolvedAt',   expenses.data->'disputeResolvedAt',
                    'disputeCreditId',     expenses.data->'disputeCreditId',
                    'disputeCreditFor',    expenses.data->'disputeCreditFor',
+                   'disputeRejectedCreditIds', expenses.data->'disputeRejectedCreditIds',
                    'cashOutReviewed',     expenses.data->'cashOutReviewed',
                    'transactionType',     CASE WHEN expenses.data->>'typeOverride' = 'true'
                                                THEN expenses.data->'transactionType' END,
@@ -699,6 +700,7 @@ export async function handleTellerImportIncome(req: Req, res: Res): Promise<void
                    'disputeResolvedAt',   expenses.data->'disputeResolvedAt',
                    'disputeCreditId',     expenses.data->'disputeCreditId',
                    'disputeCreditFor',    expenses.data->'disputeCreditFor',
+                   'disputeRejectedCreditIds', expenses.data->'disputeRejectedCreditIds',
                    'cashOutReviewed',     expenses.data->'cashOutReviewed',
                    'transactionType',     CASE WHEN expenses.data->>'typeOverride' = 'true'
                                                THEN expenses.data->'transactionType' END,

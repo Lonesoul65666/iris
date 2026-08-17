@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, type Dispatch, type SetStateA
 import type { Expense, ExpenseCategory, TransactionFlow, TransactionType, TransactionSource, CustomCategory, Earner } from '../../types/budget';
 import { saveExpense, deleteExpense, saveCustomCategory, saveBudgetBuckets, getBudgetBuckets, getEarners, getSourceOwners } from '../../stores/budgetStore';
 import { getMerchantMappings, saveMerchantMapping, type MerchantMapping } from '../../stores/actionStore';
-import { registerCustomCategories } from '../../utils/transactionAnalysis';
+import { registerCustomCategories, isRealExpense } from '../../utils/transactionAnalysis';
 import { classifyBankTransaction, guessCategory } from '../../utils/transactionCategorize';
 import { formatCurrency } from '../../utils/format';
 import { markDisputed, clearDispute } from '../../utils/disputes';
@@ -572,7 +572,7 @@ export default function ExpenseManager({ expenses, onExpensesChanged, customCate
 
   // Group and summarize transactions
   const sortedExpenses = [...expenses].sort((a, b) => b.date.localeCompare(a.date));
-  const realExpenses = expenses.filter(e => (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense');
+  const realExpenses = expenses.filter(isRealExpense);
   // Work expenses match EITHER the explicit isWorkExpense flag OR the
   // travel_work category — both signals count. Personal spend excludes both.
   const isWorkExp = (e: Expense) => e.isWorkExpense || e.category === 'travel_work';
@@ -641,6 +641,11 @@ export default function ExpenseManager({ expenses, onExpensesChanged, customCate
     investment: { label: 'Invest', color: 'text-accent-light bg-accent/10' },
     refund: { label: 'Refund', color: 'text-positive bg-positive/10' },
   };
+  // The ONLY types the row-level Type control may offer. `income` and
+  // `reimbursement` are deliberately absent — see the comment at the control.
+  // A value outside this set renders as a read-only badge, so the select's value
+  // can never fail to match one of its options.
+  const EDITABLE_TX_TYPES = ['expense', 'transfer', 'investment', 'refund'] as const;
 
   return (
     <div className="space-y-4">
@@ -846,24 +851,49 @@ export default function ExpenseManager({ expenses, onExpensesChanged, customCate
                               Setting typeOverride is what stops the next sync from
                               taking the change back. */}
                           <td className="p-3">
-                            <select value={txType}
-                              onChange={async (ev) => {
-                                const nextType = ev.target.value as TransactionType;
-                                if (nextType === txType) return;
-                                const updated = { ...e, transactionType: nextType, typeOverride: true };
-                                await saveExpense(updated);
-                                onExpensesChanged();
-                              }}
-                              title={isTransferOrInvestment
-                                ? 'Not counted as spend — switch to Expense to count it'
-                                : 'Counted as spend'}
-                              className={`text-[10px] px-1.5 py-0.5 rounded ${badge.color} whitespace-nowrap border border-transparent group-hover:border-glass-border outline-none focus:border-accent/50 cursor-pointer`}>
-                              {(['expense', 'transfer', 'investment', 'refund'] as const).map(t => (
-                                <option key={t} value={t}>
-                                  {flow === 'inflow' ? '↑ ' : '↓ '}{TYPE_BADGES[t]?.label ?? t}
-                                </option>
-                              ))}
-                            </select>
+                            {/* ⚠️ The select renders ONLY for the four types it can
+                                actually offer. `income` and `reimbursement` get a
+                                read-only badge.
+                                Why (regression found in review, 2026-08-13): the first
+                                version always rendered the select with options
+                                expense/transfer/investment/refund. On an `income` row the
+                                value matched NO option, so the browser fell back to
+                                selectedIndex 0 and every paycheck displayed "Expense" —
+                                23 income rows ($233,516) and 7 reimbursements ($21,106)
+                                in this dataset. Worse, one click wrote
+                                transactionType:'expense' + typeOverride:true, making a
+                                $7,918 paycheck count as spend PERMANENTLY, protected by
+                                the very override mechanism added to make edits stick.
+                                Gating on the editable set means value can never mismatch
+                                its options. Inflow classification has its own surface
+                                (InflowQuestions); it does not belong on this row. */}
+                            {(EDITABLE_TX_TYPES as readonly string[]).includes(txType) ? (
+                              <select value={txType}
+                                onChange={async (ev) => {
+                                  const nextType = ev.target.value as TransactionType;
+                                  if (nextType === txType) return;
+                                  const updated = { ...e, transactionType: nextType, typeOverride: true };
+                                  await saveExpense(updated);
+                                  onExpensesChanged();
+                                }}
+                                title={flow === 'inflow'
+                                  ? 'An inflow never counts as spend whatever its type — this only changes how it is labelled'
+                                  : isTransferOrInvestment
+                                    ? 'Not counted as spend — switch to Expense to count it'
+                                    : 'Counted as spend'}
+                                className={`text-[10px] px-1.5 py-0.5 rounded ${badge.color} whitespace-nowrap border border-transparent group-hover:border-glass-border outline-none focus:border-accent/50 cursor-pointer`}>
+                                {EDITABLE_TX_TYPES.map(t => (
+                                  <option key={t} value={t}>
+                                    {flow === 'inflow' ? '↑ ' : '↓ '}{TYPE_BADGES[t]?.label ?? t}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded ${badge.color} whitespace-nowrap`}
+                                title={`${badge.label} — classified by the income importer, not editable here`}>
+                                {flow === 'inflow' ? '↑ ' : '↓ '}{badge.label}
+                              </span>
+                            )}
                             {e.typeOverride && (
                               <span className="ml-1 text-[9px] text-accent-light" title="You set this by hand — syncs won't overwrite it">✎</span>
                             )}

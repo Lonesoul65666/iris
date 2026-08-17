@@ -3,6 +3,7 @@ import {
   findCandidateCredit, listOpenDisputes, listCashOutNeedingCall,
   markDisputed, resolveDisputeWon, resolveDisputeLost, clearDispute,
   STALE_DISPUTE_DAYS, MATCH_WINDOW_DAYS, CASH_OUT_LOOKBACK_DAYS, isBankFee,
+  rejectCandidateCredit,
 } from '../disputes';
 import { computeMonthlySpending, isRealExpense } from '../transactionAnalysis';
 import type { Expense } from '../../types/budget';
@@ -197,5 +198,107 @@ describe('clearDispute / release', () => {
   it('losing releases the linked credit so it nets normally again', () => {
     const won = { ...CHARGE, ...resolveDisputeWon(CHARGE, CREDIT, NOW).charge };
     expect(resolveDisputeLost(won, NOW).releaseCreditId).toBe('crd');
+  });
+});
+
+// ─── Regressions from the 2026-08-13 review ─────────────────────────────────
+// Every one of these is a defect that shipped to origin/master and was caught by
+// review, not by the suite. They exist so the same holes can't reopen.
+
+describe('rejecting a candidate credit keeps the dispute alive', () => {
+  it('"not this credit" does NOT concede the dispute', () => {
+    // The button was labelled "Not related" but called resolveDisputeLost, which
+    // returned the charge to spend and dropped it off the queue permanently.
+    const open = { ...CHARGE, ...markDisputed(NOW) };
+    const patch = rejectCandidateCredit(open, CREDIT.id);
+    expect(patch.disputeRejectedCreditIds).toEqual([CREDIT.id]);
+    expect((patch as Partial<Expense>).disputeStatus).toBeUndefined(); // status untouched
+    const after = { ...open, ...patch };
+    expect(listOpenDisputes([after, CREDIT], NOW)).toHaveLength(1);   // still being chased
+    expect(computeMonthlySpending([after]).find(m => m.month === '2026-08')!.totalExpenses).toBe(0); // still excluded
+  });
+
+  it('a rejected credit is never offered again', () => {
+    const open = { ...CHARGE, ...markDisputed(NOW), ...rejectCandidateCredit(CHARGE, CREDIT.id) };
+    expect(findCandidateCredit(open, [open, CREDIT])).toBeNull();
+    expect(listOpenDisputes([open, CREDIT], NOW)[0].candidateCredit).toBeNull();
+  });
+
+  it('rejecting twice does not duplicate the id', () => {
+    const once = { ...CHARGE, ...rejectCandidateCredit(CHARGE, 'crd') };
+    expect(rejectCandidateCredit(once, 'crd').disputeRejectedCreditIds).toEqual(['crd']);
+  });
+});
+
+describe('a dispute won BEFORE the credit posts stays matchable', () => {
+  it('stays on the queue as awaitingCredit', () => {
+    // Previously this dropped off forever: the credit then arrived and netted
+    // against an already-excluded charge = the phantom-savings double count.
+    const won = { ...CHARGE, ...resolveDisputeWon(CHARGE, null, NOW).charge };
+    const list = listOpenDisputes([won], NOW);
+    expect(list).toHaveLength(1);
+    expect(list[0].awaitingCredit).toBe(true);
+  });
+
+  it('the late credit is offered, and linking it nets to zero', () => {
+    const won = { ...CHARGE, ...resolveDisputeWon(CHARGE, null, NOW).charge };
+    const offered = listOpenDisputes([won, CREDIT], NOW)[0].candidateCredit;
+    expect(offered?.id).toBe('crd');
+    // Without the link the credit still nets — the bug:
+    expect(computeMonthlySpending([won, CREDIT]).find(m => m.month === '2026-08')!.totalExpenses)
+      .toBeCloseTo(-34.99);
+    // With it, square:
+    const r = resolveDisputeWon(won, offered!, NOW);
+    const fixed = [{ ...won, ...r.charge }, { ...CREDIT, ...r.credit! }];
+    expect(computeMonthlySpending(fixed).find(m => m.month === '2026-08')!.totalExpenses).toBe(0);
+  });
+
+  it('drops off once the credit IS linked', () => {
+    const r = resolveDisputeWon(CHARGE, CREDIT, NOW);
+    expect(listOpenDisputes([{ ...CHARGE, ...r.charge }, { ...CREDIT, ...r.credit! }], NOW)).toHaveLength(0);
+  });
+});
+
+describe('two same-amount disputes never share one credit', () => {
+  it('the second gets no offer', () => {
+    // `claimed` was a snapshot that never updated as candidates were handed out,
+    // so both were offered the SAME credit in one render. Marking both won
+    // understated spend by a full charge.
+    const a = { ...ex({ id: 'a', date: '2026-08-01', amount: 34.99 }), ...markDisputed(NOW) };
+    const b = { ...ex({ id: 'b', date: '2026-08-02', amount: 34.99 }), ...markDisputed(NOW) };
+    const offers = listOpenDisputes([a, b, CREDIT], NOW).map(d => d.candidateCredit?.id ?? null);
+    expect(offers.filter(x => x === 'crd')).toHaveLength(1);
+    expect(offers.filter(x => x === null)).toHaveLength(1);
+  });
+});
+
+describe('the release actually re-nets the credit (both halves applied)', () => {
+  const won = { ...CHARGE, ...resolveDisputeWon(CHARGE, CREDIT, NOW).charge };
+  const linked = { ...CREDIT, disputeCreditFor: CHARGE.id };
+  const month = (l: Expense[]) => computeMonthlySpending(l).find(m => m.month === '2026-08')!;
+
+  it('clearDispute + release returns both rows to normal', () => {
+    const { charge, releaseCreditId } = clearDispute(won);
+    expect(releaseCreditId).toBe('crd');
+    const after = [{ ...won, ...charge }, { ...linked, disputeCreditFor: undefined }];
+    // charge $34.99 in, credit $34.99 out -> net zero, and BOTH now visible
+    expect(month(after).totalExpenses).toBe(0);
+    expect(month(after).byCategory.fun_wife).toBeCloseTo(34.99);
+    expect(month(after).byCategory.other).toBeCloseTo(-34.99);
+    expect(month(after).totalDisputed).toBe(0);
+  });
+
+  it('LOST + release does the same', () => {
+    const { charge, releaseCreditId } = resolveDisputeLost(won, NOW);
+    const after = [{ ...won, ...charge }, { ...linked, disputeCreditFor: undefined }];
+    expect(releaseCreditId).toBe('crd');
+    expect(month(after).totalExpenses).toBe(0);
+    expect(month(after).totalDisputed).toBe(0);
+  });
+
+  it('forgetting the release leaves the credit suppressed — the reason releaseCreditId exists', () => {
+    const { charge } = clearDispute(won);
+    const half = [{ ...won, ...charge }, linked]; // release NOT applied
+    expect(month(half).totalExpenses).toBeCloseTo(34.99); // credit never nets
   });
 });

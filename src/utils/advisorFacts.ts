@@ -5,6 +5,7 @@
 import type { Expense, BudgetBucket, PaycheckBreakdown } from '../types/budget';
 import { computeBudgetComparison } from './budgetComparison';
 import { computeScorecard } from './savingsScorecard';
+import { isRealExpense } from './transactionAnalysis';
 
 function money(n: number): string {
   return `$${Math.round(n).toLocaleString()}`;
@@ -16,7 +17,7 @@ function mysteryCharges(expenses: Expense[], month: string, limit = 6): Expense[
   if (!month) return [];
   return expenses
     .filter((e) => (e.date || '').slice(0, 7) === month)
-    .filter((e) => (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense')
+    .filter(isRealExpense)
     .filter((e) => !e.category || e.category === 'other')
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
     .slice(0, limit);

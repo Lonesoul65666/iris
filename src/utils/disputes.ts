@@ -16,8 +16,14 @@
 //    I owe this"), not counted-until-proven.
 //  • Iris OFFERS the matching credit and he confirms. Never silent — he
 //    explicitly did not want pattern matching doing this behind his back.
-//  • The recall is event-driven: the credit landing is the real signal. A
-//    staleness nudge is only the backstop for a dispute that never resolves.
+//  • The recall is event-driven: the credit landing is the real signal.
+//
+// ⚠️ SCOPE, stated honestly (corrected 2026-08-13 after review): the staleness
+// backstop is a FLAG IN THIS QUEUE, not a push notification. `stale` turns the
+// row amber and changes its copy — nothing here produces a Nudge, so a dispute
+// you never revisit will not chase you on the Dashboard. Wiring a real
+// disputeNudges() builder into the nudge engine is outstanding work; until then
+// do not describe this as a nudge.
 //
 // Pure functions — no React, no IO. The plot is computed here; prose lives in
 // the components.
@@ -85,9 +91,11 @@ export function findCandidateCredit(
   const cents = (n: number) => Math.round(n * 100);
   const want = cents(charge.amount);
 
+  const rejected = new Set(charge.disputeRejectedCreditIds ?? []);
   const matches = expenses.filter((e) => {
     if (!isRefund(e) || e.id === charge.id) return false;
     if (claimed.has(e.id)) return false;
+    if (rejected.has(e.id)) return false;   // "not related" — never offer it again
     if (e.disputeCreditFor) return false;
     if (cents(e.amount) !== want) return false;
     const gap = (parseLocalDate(e.date).getTime() - chargeDay) / MS_PER_DAY;
@@ -101,31 +109,64 @@ export function findCandidateCredit(
 export interface OpenDispute {
   charge: Expense;
   daysOpen: number;
-  /** True once the dispute has gone quiet for too long — the backstop nudge. */
+  /** Gone quiet too long. Turns the row amber — NOT a push notification. */
   stale: boolean;
   /** A credit Iris found that looks like the resolution. Confirm to close it. */
   candidateCredit: Expense | null;
+  /** Already marked won, but no credit was ever linked — so the refund is still
+   *  outstanding and MUST keep being matched. See the note below. */
+  awaitingCredit: boolean;
 }
 
-/** Every dispute still awaiting a verdict, worst (oldest) first. This is the
- *  answer to "what's my reminder recourse outside of digging through
- *  transactions" — nothing open ever drops off this list. */
+/** Everything still needing a verdict, worst (oldest) first. The answer to
+ *  "what's my reminder recourse outside of digging through my transactions."
+ *
+ *  ⚠️ Includes `won` charges with no linked credit, not just `open` ones. Found in
+ *  review 2026-08-13: marking a dispute won BEFORE the credit posts (a legitimate
+ *  path — resolveDisputeWon explicitly allows a null credit, and the queue offers
+ *  a "Refunded" button for it) used to drop the charge off this list forever. The
+ *  credit then arrived and netted against its category while the charge was
+ *  ALREADY excluded — the exact phantom-savings double count the whole feature
+ *  exists to prevent, reachable in one click. Keeping them listed means the match
+ *  offer runs until the link is actually made. */
 export function listOpenDisputes(expenses: Expense[], now: Date = new Date()): OpenDispute[] {
   const claimed = linkedCreditIds(expenses);
-  const open = expenses.filter((e) => e.disputeStatus === 'open');
-  return open
+  const pending = expenses.filter((e) =>
+    e.disputeStatus === 'open' ||
+    (e.disputeStatus === 'won' && !e.disputeCreditId));
+  return pending
     .map((charge) => {
-      const daysOpen = charge.disputedAt
-        ? Math.max(0, Math.floor((now.getTime() - new Date(charge.disputedAt).getTime()) / MS_PER_DAY))
+      const since = charge.disputedAt ?? charge.disputeResolvedAt;
+      const daysOpen = since
+        ? Math.max(0, Math.floor((now.getTime() - new Date(since).getTime()) / MS_PER_DAY))
         : daysBetween(charge.date, now);
+      // Reserve as we go: `claimed` starts as a snapshot, so without mutating it
+      // two same-amount disputes inside the window were offered the SAME credit
+      // simultaneously. Marking both won suppressed one credit against two
+      // excluded charges and understated spend by a full charge.
+      const candidateCredit = findCandidateCredit(charge, expenses, claimed);
+      if (candidateCredit) claimed.add(candidateCredit.id);
       return {
         charge,
         daysOpen,
         stale: daysOpen >= STALE_DISPUTE_DAYS,
-        candidateCredit: findCandidateCredit(charge, expenses, claimed),
+        candidateCredit,
+        awaitingCredit: charge.disputeStatus === 'won',
       };
     })
     .sort((a, b) => b.daysOpen - a.daysOpen);
+}
+
+/** "That credit isn't the one." Keeps the dispute OPEN and remembers the
+ *  rejection so the same coincidence is never offered again. Before this, the
+ *  decline button called resolveDisputeLost — labelled "not related" but it
+ *  conceded the dispute, returned the charge to spend, and dropped it off the
+ *  queue permanently. */
+export function rejectCandidateCredit(charge: Expense, creditId: string): Partial<Expense> {
+  const seen = charge.disputeRejectedCreditIds ?? [];
+  return {
+    disputeRejectedCreditIds: seen.includes(creditId) ? seen : [...seen, creditId],
+  };
 }
 
 /** Cash-out still sitting in the ATM/Cash bucket with nobody having said what it

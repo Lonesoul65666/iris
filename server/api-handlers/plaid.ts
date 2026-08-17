@@ -313,6 +313,7 @@ async function upsertMappedRows(pool: Pool, userId: string, rows: Array<MappedEx
                  'disputeResolvedAt',   expenses.data->'disputeResolvedAt',
                  'disputeCreditId',     expenses.data->'disputeCreditId',
                  'disputeCreditFor',    expenses.data->'disputeCreditFor',
+                 'disputeRejectedCreditIds', expenses.data->'disputeRejectedCreditIds',
                  'cashOutReviewed',     expenses.data->'cashOutReviewed',
                  'transactionType',     CASE WHEN expenses.data->>'typeOverride' = 'true'
                                              THEN expenses.data->'transactionType' END,

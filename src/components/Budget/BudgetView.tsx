@@ -1116,7 +1116,7 @@ export default function BudgetView() {
           {(() => {
             // Cumulative across all imported data
             const allWorkExpenses = expenses.filter(e =>
-              e.isWorkExpense && (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense'
+              e.isWorkExpense && isRealExpense(e)
             );
             const allReimbursements = expenses.filter(e => e.transactionType === 'reimbursement');
             const totalWorkSpent = allWorkExpenses.reduce((s, e) => s + e.amount, 0);

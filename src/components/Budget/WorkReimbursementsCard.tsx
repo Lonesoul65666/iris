@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Expense, IncomeSource } from '../../types/budget';
 import { formatCurrency } from '../../utils/format';
 import { getIncomeSources } from '../../stores/budgetStore';
-import { parseLocalDate } from '../../utils/transactionAnalysis';
+import { parseLocalDate, isRealExpense } from '../../utils/transactionAnalysis';
 
 interface Props {
   expenses: Expense[];
@@ -55,11 +55,7 @@ export default function WorkReimbursementsCard({ expenses, now = new Date(), onV
   const reimbIds = useMemo(() => buildReimbursementIds(sources), [sources]);
 
   const stats = useMemo(() => {
-    const allWork = expenses.filter(e =>
-      (e.flow || 'outflow') === 'outflow' &&
-      (e.transactionType || 'expense') === 'expense' &&
-      isWorkExpense(e),
-    );
+    const allWork = expenses.filter(e => isRealExpense(e) && isWorkExpense(e));
     const allReimb = expenses.filter(e => isReimbursementInflow(e, reimbIds));
     if (allWork.length === 0 && allReimb.length === 0) return null;
 

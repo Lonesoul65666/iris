@@ -31,7 +31,7 @@ export function parseLocalDate(dateStr: string): Date {
 
 /** A charge held out of spend by an active dispute. `open` = contested, you don't
  *  believe you owe it; `won` = they gave it back. `lost` = normal spend again. */
-export function isDisputeExcluded(e: Expense): boolean {
+export function isDisputeExcluded(e: { disputeStatus?: string }): boolean {
   return e.disputeStatus === 'open' || e.disputeStatus === 'won';
 }
 

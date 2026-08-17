@@ -125,6 +125,12 @@ export interface Expense {
   /** On the CREDIT: the charge id it offsets. Presence means "do not net me" —
    *  the charge I offset is already out of spend. */
   disputeCreditFor?: string;
+  /** Credits the user has explicitly said are NOT the refund for this charge.
+   *  Without this, "not related" had nowhere to record itself: the same
+   *  coincidental same-amount refund was re-offered on every render, and the
+   *  only exits from a bad offer were to accept a wrong link or concede the
+   *  dispute. Filtered out of findCandidateCredit. */
+  disputeRejectedCreditIds?: string[];
   /** Cash-out (ATM / Cash App) the user has consciously left in the ATM/Cash
    *  bucket, so the "needs your call" queue stops asking about it. */
   cashOutReviewed?: boolean;

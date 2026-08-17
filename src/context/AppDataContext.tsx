@@ -39,7 +39,7 @@ import {
 } from '../utils/moments';
 import type { Nudge } from '../utils/nudgeEngine';
 import { setAuditActor } from '../stores/auditLogStore';
-import { applyTransactionsToBuckets, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, registerEarnerFunLabels, currentMonthKey } from '../utils/transactionAnalysis';
+import { applyTransactionsToBuckets, computeMonthlySpending, computeSpendingSummary, computeMonthComparison, registerCustomCategories, registerEarnerFunLabels, currentMonthKey, isRealExpense } from '../utils/transactionAnalysis';
 import type { SpendingSummary, MonthComparison, MonthlySpending } from '../utils/transactionAnalysis';
 import { computeSafeToSpend, type SafeToSpend } from '../utils/safeToSpend';
 import { applyStashLaneConfig, committedReserves } from '../utils/stashMath';
@@ -441,7 +441,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       if (allExpenses.length > 0) {
         setRawExpenses(allExpenses);
         const realExpenses = allExpenses.filter((e: any) =>
-          (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense'
+          isRealExpense(e)
         );
         const baseBuckets = loadedBuckets.length > 0 ? loadedBuckets : defaultBudgetBuckets;
         const updatedBuckets = syncInvestingBucket(applyTransactionsToBuckets(baseBuckets, realExpenses));
@@ -561,7 +561,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       if (allExpenses.length > 0) {
         setRawExpenses(allExpenses);
         const realExpenses = allExpenses.filter((e: any) =>
-          (e.flow || 'outflow') === 'outflow' && (e.transactionType || 'expense') === 'expense'
+          isRealExpense(e)
         );
         const baseBuckets = b.length > 0 ? b : defaultBudgetBuckets;
         const updatedBuckets = syncInv(applyTransactionsToBuckets(baseBuckets, realExpenses));
