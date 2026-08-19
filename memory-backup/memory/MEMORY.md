@@ -1,0 +1,79 @@
+## User and general
+
+- [Scott's profile](user_scott_profile.md) — Role, investing background, financial knowledge level
+- [Scott's preferences](feedback_communication_style.md) — How Scott wants to interact with tools and dashboards
+- [Uber work rule](feedback_uber_work_rule.md) — Uber rides are work except international + FLL trip
+- [No "sinking fund" naming](feedback_no_sinking_fund_naming.md) — Use "Stashes"; concept wanted, the name is not
+- [Signal project](project_signal.md) — Personal market intelligence platform build (separate from Iris)
+- [Tequila tasting deck](project_tequila_tasting_deck.md) — Funny customer-event deck; themes-only roadmap, SVG bottle gags
+- [7-Eleven deck pipeline](project_7eleven_deck_pipeline.md) — Re-runnable PPTX brand-fix pipeline + Abnormal deck conventions
+- [Product roadmap v4 design](project_roadmap_v4_design.md) — Customer roadmap; "semi on-brand"; timeline/search/grouped/drawer
+- [Q2FY27 interactive roadmap](project_roadmap_q2fy27_interactive.md) — Navigate-don't-scroll HTML from the PMM Q2FY27 PPTX
+- [Iris trophy room (future)](project_iris_trophy_room.md) — Archive EVERYTHING; future scaling achievements + trophy wall
+- [Iris dynamic action items (future)](project_iris_dynamic_action_items.md) — Prescriptive, regenerating Action Items; piping DEFERRED
+- [Iris product roadmap (LOCKED 2026-07-06)](project_iris_gamification_roadmap.md) — **North-star priority order.** T1 deepen moat; T2 THE BIG SWING = adult gamification + Proactive Iris as ONE project; T3 catch up to big apps last.
+
+## Iris — current operational (read first)
+
+- **📍 REPO: `C:\Claude\projects\signal\signal-app`** — Iris is the PRODUCT; repo/project is **`signal`** (app dir `signal-app`). No folder named "iris". Dev server port 5173 (`npm run dev`) OR standalone `npm run server` (Node 24). Storage = user-owned Supabase Postgres; `DATABASE_URL` in `.env.local` (server auto-connects since 2026-06-10). ALL data in Postgres.
+- **[Iris release flow](feedback_iris_release_flow.md) — ⚠️ STANDING CONVENTION: every change ships push-to-GitHub → then update the SERVER to a new version. State this in EVERY markdown note, incl. where the change sits (pushed? host updated?). Host = separate machine, Claude can't update it. Shared Postgres = data goes live instantly, code doesn't. ⚠️ ALSO: bump `src/updates.ts` to a new `YYYY.MM.DD.vN` with Claire-readable notes on EVERY landing update — the What's New card is her only changelog.**
+- [Iris partnership / operating model](feedback_iris_partnership_model.md) — **The operating contract.** Engineering style, sessions-not-weeks, sarcastic accountability, reckless-after-feasibility. Validate in Scott's REAL Chrome via the Claude-in-Chrome extension — drive it myself.
+- [Iris backlog (3-bucket priorities)](project_iris_backlog.md) — **SURFACE whenever Scott says "continue Iris."** **B0 = NEW data-integrity queue (jumps the line)**; B1 do-next (milestone-celebrations✅, Coinbase, Robinhood, multi-line chart, Ask-Iris-soul✅); B2 future (holdings, mobile, snapshots, **the big-swing gamification + AI Quest Engine**); B3 pie-in-sky. Also holds the Quest-Engine design + security/host operational facts.
+- [Iris handoff (2026-08-17)](project_iris_handoff_2026-08-17.md) — **MOST RECENT. READ FIRST** (with backlog). 10 commits pushed (`f2a1470→2661e20`), **host update pending, safe to deploy**. Stash pacing rewrite · vanishing-mortgage ingest fix · dispute lifecycle + "Needs your call" queue · Pulse visibility. Then a **5-agent review found ~35 defects (~10 money-corrupting)** — 8 fixed incl. *paycheck→spend in one click*; **the rest are enumerated as the next session's queue.** ⚠️ `npx tsc --noEmit` checks NOTHING here — use `tsc -b`. ⚠️ `scripts/` data backups are still in git history (Scott's call).
+- [Iris handoff (2026-08-13)](project_iris_handoff_2026-08-13.md) — (superseded as read-first 2026-08-17.) Have-To's/Want-To's pacing bug FIXED (calendar-fraction → discrete commit months); commit-run layer + "move this from checking" total on both surfaces; **Scott's stash model locked in his words**; the $336 Savings mystery solved. 357 tests, verified live. 2 holes left: no category links (pots never draw down), inflated "free to deploy".
+- [Iris handoff (2026-08-12)](project_iris_handoff_2026-08-12.md) — (superseded as read-first 2026-08-13; design locks still valid.) Design+review session, no code. Mission sentence locked; **Iris voice-RAIL** (not a chat box); **3-rung ladder**, no mode switcher; **build order REVISED: rail+persona → quests → backbone**; narrative + hard-time + "no good excuse" mechanics; Iris needs memory. Review found: chat unreachable behind `PHASE_1_LOCK`, SYSTEM_PROMPT still the old market-intelligence persona, two-HUD has rails but no product, ~7,400 dead lines. Plus the rollover bug list (early-firing achievements, no dispute state, cash-out categorization).
+- [Iris handoff (2026-07-20/21)](project_iris_handoff_2026-07-20.md) — (superseded 2026-08-12; content still valid.) Shipped: milestone celebrations + trophy replay + Iris's first sound (`e246936`); Moments engine phases 1-3 + live quest card (`f568c76`); fixed **Ask Iris "soul"** (chat was blind to data → now fed per-month actuals vs $15,800 base, `f2a1470`); disabled Supabase Data API (closed 12 security findings); fixed host env-load/LAN-bind gotcha. 341 tests. **NOW designing the AI Quest Engine** — locked "money is the mechanic not the message" + "same board, two games (saver vs spender; saving buys the fun)". Docs `docs/{iris-project-state,gamification-vision,quest-engine-ideas}.md` (also `Documents\Iris-Context\`). Next = triage ideas + tool-calling backbone.
+- [Iris handoff (2026-07-18)](project_iris_handoff_2026-07-18.md) — (superseded 2026-07-20.) Plaid fully live incl. 3 Fidelity accts → net worth; **Scott crossed $1M**; fixed account-id collision; flat-backfilled trend. 316 tests.
+- [Iris handoff (2026-07-13)](project_iris_handoff_2026-07-13.md) — (superseded.) **Teller shut down → full PLAID migration** (dedup floor `PLAID_CUTOVER=2026-07-07`); **Tailscale Funnel LIVE** (`iris.tailb5491b.ts.net`); subscription watchdog + auto-refresh (host 12h timer + on-open) shipped; webhooks decided-AGAINST.
+- [Iris handoff (2026-07-08)](project_iris_handoff_2026-07-08.md) — (superseded.) Always-on HOST up (`C:\ProjectIris\iris`); **auth hardening shipped** (lockout, 10-char pw, change-pw, session expiry, `start-iris.bat` + Startup auto-start, migration 0006). Shared-DB → dev laptop also needs login.
+- [Iris handoff (2026-07-06 v2)](project_iris_handoff_2026-07-06_v2.md) — (superseded.) 5-big-rocks budget program; Achievements system + coop achievements + Gemini design polish + tutorial shipped (274 tests); **self-hosted pivot + real auth** (3 slices) + "Update Iris" button. Repo on GitHub (Lonesoul65666/iris, private).
+- [Iris handoff (2026-07-06)](project_iris_handoff_2026-07-06.md) — (superseded by v2.) Merged to master (221 tests): zero-AI streak engine + announcer; creation-forward stashes; **the full ACHIEVEMENTS SYSTEM** (forward-only, 39-item tiered, Trophy Room).
+- [Iris handoff (2026-07-05)](project_iris_handoff_2026-07-05.md) — (superseded.) 4 money-math fixes; per-account activity drawer; commit-driven stash balances; ⭐ **THE AI ADVISOR** (meet-in-the-middle planner + "Iris's Take" coach voice); **fun money = 70/30 accrual ledger** (banks+skims to savings, gamified head-to-head). 190/190.
+- [Iris handoff (2026-07-04 v3)](project_iris_handoff_2026-07-04_v3.md) — (superseded.) Dashboard/budget polish + **53-agent swarm audit** (`docs/audits/2026-07-04-swarm-audit.md`) + security hardening (loopback-default bind, DB TLS, token-leak fix). 161/161.
+- [Iris handoff (2026-07-04 v2)](project_iris_handoff_2026-07-04_v2.md) — Make-Every-Dolla functional + design overhaul: cyberpunk RETIRED → Inter + "Card-E" chrome ([[project_iris_design_direction]]).
+- [Iris handoff (2026-07-04)](project_iris_handoff_2026-07-04.md) — Make-Every-Dolla-Holla spec; committed moves via DeployConfirmation lane=stash.id; Stashes → Have-To/Want-To; net-worth chart.
+- [Iris handoff (2026-07-03)](project_iris_handoff_2026-07-03.md) — UI repaint (cyan→violet); coat-of-paint only.
+- [Iris handoff (2026-07-01)](project_iris_handoff_2026-07-01.md) — **Budget-engine MODEL DECISIONS (valid):** base=guaranteed-base; investing from Fidelity feed; work OUT of $15,800 (Work In/Out ledger); $15,800 is THE frame.
+- [Iris handoff (2026-06-30)](project_iris_handoff_2026-06-30.md) — audit fix queue (12) + Money Map v1; `docs/money-map-design.md` + `BUDGET_QA.md` durable.
+- [Iris handoff (2026-06-14)](project_iris_handoff_2026-06-14.md) — DATA-HONESTY marathon: `server/teller-map.ts` rewrite + full re-pull + taxes/travel double-count collapse.
+- [Iris handoff (2026-06-12)](project_iris_handoff_2026-06-12.md) — COUPLES DATA MODEL shipped (spender attribution, account owners, earners).
+- [Iris handoff (2026-06-11 evening)](project_iris_handoff_2026-06-11_v2.md) — Budget engine complete: Safe-to-Spend, trending, Stashes, paycheck editor, refunds.
+- [Iris handoff (2026-06-11 morning)](project_iris_handoff_2026-06-11.md) — three-lane budget (`src/utils/budgetLanes.ts`), on-demand Teller sync UI.
+- [Iris handoff (2026-06-10)](project_iris_handoff_2026-06-10.md) — de-browser complete (standalone Node server; stores → Postgres `collections`); net worth real; base $15,800/mo.
+- [Iris handoff (2026-06-08)](project_iris_handoff_2026-06-08.md) — Teller connector T1–T3 (mTLS + enrollment + import). Certs at `C:\Claude\projects\Teller\`; dev tier rate-limited.
+- [Iris handoff (2026-05-10)](project_iris_handoff_2026-05-10.md) — Phase 1 Foundation done (device-agnostic; SimpleFIN removed). Commit `3aa7759`.
+- Foundation sessions (2026-05-03→05): [D1 migration](project_iris_handoff_2026-05-05_v3.md), [Build-C schema+endpoints](project_iris_handoff_2026-05-05_v2.md), [decision/audit](project_iris_handoff_2026-05-05.md), [Build-B API+pg pool](project_iris_handoff_2026-05-04_v3.md), [ADR-0002 storage](project_iris_handoff_2026-05-04.md), [first Phase 1 ships](project_iris_handoff_2026-05-03.md).
+- [Port 5173 rule](feedback_port_5173.md) — Always run Iris on port 5173
+- [Iris grading delivered (closed)](project_iris_grading_request.md) — Closed 2026-05-02. Don't re-offer.
+
+## Iris — architecture and operational decisions (still valid)
+
+- [Iris design direction (2026-07-04)](project_iris_design_direction.md) — **Cyberpunk RETIRED** (Claire dislikes; "make it ours"). Unified Inter incl. numbers; Card-E chrome; de-glassed. P2 hygiene pending.
+- [Teller account → source map](reference_iris_teller_accounts.md) — Which card/bank each `source` is; joint acct low-activity-not-broken; tolls prepaid.
+- [Iris offline/data architecture (decided 2026-06-14, NOT built)](project_iris_offline_architecture.md) — Supabase cloud CANONICAL + a local CACHE layer (SWR + optimistic writes + sync queue) at the collectionsClient seam; last-write-wins. Additive; formalize as ADR later.
+- [Iris distribution target](project_iris_target.md) — Local-first downloadable app, NOT SaaS. Tauri + SQLite direction. No SaaS plumbing.
+- [Iris deployment model](feedback_iris_deployment_model.md) — Desktop-hosted + LAN-accessible; partner-mode makes it load-bearing.
+- [Iris budget architecture (locked 2026-04-24)](project_iris_budget_architecture.md) — 8 locked decisions: net-up engine, detection over data-entry, variable=surplus, reimbursement loop, tiered notifications.
+- [Iris budget is primary](feedback_iris_budget_is_primary.md) — Budget is the original point. "Blame the budget."
+- [Iris product vision (partial)](feedback_iris_product_vision.md) — Local-first ZIP + BYOK operative. SimpleFIN section SUPERSEDED (2026-05-01 RESET).
+
+## Iris — Phase 2/3 product feedback (still valid)
+
+- [Iris explain-the-why](feedback_iris_explain_why.md) — Every movement nudge needs a one-sentence "why" from grounding. Phase 3.
+- [Iris conviction holds](feedback_conviction_holds.md) — Let users flag "don't rebalance this" holdings (BTC etc.). Phase 2.
+- [Market tab feedback](feedback_market_intelligence.md) — Suggest opportunities + recommend monthly allocation changes. Phase 3.
+
+## Iris — superseded / historical context only
+
+- [Iris real goal — SUPERSEDED](project_iris_direction.md) — Old "investment intelligence engine" framing; new mission is couples-first money-as-hobby.
+- [Iris three-phase journey — SUPERSEDED](feedback_iris_product_journey.md) — Old Revelation→Steady→Ambient framing; now Phase 1 (Budget) → 2 → 3.
+- [Iris llm-router handoff (2026-04-20)](project_iris_llm_router_handoff.md) — Router, onboarding, nudges, X-Ray, conviction, explain-the-why shipped.
+- [Iris handoff (2026-04-27)](project_iris_handoff_2026-04-27.md) — Tier 1+2 (minus packaging) shipped; hardcodes stripped; onboarding + PIN auth.
+- [Iris handoff (2026-04-27 evening)](project_iris_handoff_2026-04-27_v2.md) — Wizard rebuilt (10 steps); dashboard rewritten; cyber visual language on 8 views.
+- [Iris handoff (2026-05-01) — RESET](project_iris_handoff_2026-05-01.md) — **Hard reset.** Scope locked at 6 features; Teller dev + Fidelity OFX + Coinbase API; SimpleFIN deprecated.
+- [Iris handoff (2026-05-02) — Phase 0](project_iris_handoff_2026-05-02.md) — Git init; pre-commit hook; 33 TS errors fixed; three governing docs.
+- [Iris handoff (2026-05-02 evening) — vision lock](project_iris_handoff_2026-05-02_v2.md) — Mission widened to couples-first; partnership agreement formalized.
+- [Iris handoff (2026-05-03) — first Phase 1 ships](project_iris_handoff_2026-05-03.md) — Sidebar trimmed (PHASE_1_LOCK); variable-pay band-detection fix; income-classifier bug found.
+- [Iris handoff (2026-05-04) — ADR-0002](project_iris_handoff_2026-05-04.md) — Storage: per-browser IndexedDB → user-owned cloud DB; Working Principle #1 revised.
+- [Iris handoff (2026-05-04 evening) — Build-B](project_iris_handoff_2026-05-04_v3.md) — Vite middleware API + pg pool; `/api/connect` + `/api/health` smoke-verified.
+- [Iris handoff (2026-05-05 — Build-C](project_iris_handoff_2026-05-05_v2.md) — Migration runner + first typed endpoints; all 9 round-trip clean.
