@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Expense, IncomeSource } from '../../types/budget';
+import type { DeployConfirmation } from '../../stores/budgetStore';
 import { formatCurrency } from '../../utils/format';
 import { getIncomeSources } from '../../stores/budgetStore';
 import { getSetting, saveSetting } from '../../stores/portfolioStore';
 import { parseLocalDate, isRealExpense } from '../../utils/transactionAnalysis';
 import { computeRecurringPaycheckFloor } from '../../utils/savingsScorecard';
-import { laneOf, totalReserveSetAside } from '../../utils/budgetLanes';
+import { laneOf } from '../../utils/budgetLanes';
+import { committedReservesForYear } from '../../utils/stashMath';
 
 interface Props {
   expenses: Expense[];
+  /** The commit ledger. Needed because the YTD set-aside must be what actually
+   *  MOVED into pots, not a planned monthly constant — see `deploy` below. */
+  deployConfirms?: DeployConfirmation[];
   now?: Date;
 }
 
@@ -32,7 +37,7 @@ const SETTING_FLOOR_OVERRIDE = 'variable_pay_floor_override';
 const SETTING_SWEEP_DEST = 'variable_pay_sweep_dest';
 const SETTING_SWEEP_DEST_CUSTOM = 'variable_pay_sweep_dest_custom_label';
 
-export default function VariableSurplusCard({ expenses, now = new Date() }: Props) {
+export default function VariableSurplusCard({ expenses, deployConfirms = [], now = new Date() }: Props) {
   const [sources, setSources] = useState<IncomeSource[]>([]);
   const [floorOverride, setFloorOverride] = useState<number | null>(null);
   const [sweepDest, setSweepDest] = useState<SweepDest>('hysa');
@@ -108,18 +113,26 @@ export default function VariableSurplusCard({ expenses, now = new Date() }: Prop
   // beyond what the monthly set-aside (stashes) put away. Free to deploy =
   // overage YTD − max(0, lumpy spend YTD − set-aside accrued YTD). This is the
   // honest "fast-forward the vacation / the reno / invest it" number.
+  //
+  // The set-aside is Σ COMMITTED pot moves this year, not
+  // `totalReserveSetAside() × monthsElapsed`. That planned-constant version read
+  // the hardcoded legacy defaults ($1,000 taxes + $1,000 travel = $2,000/mo, so
+  // $16,000 by August) rather than the ~$2,403/mo actually being moved — and it
+  // credited every month as fully funded whether or not a single dollar had left
+  // checking. Overstating the set-aside understates `lumpyBeyondSetAside`, which
+  // overstates "free to deploy" — the number most likely to make you spend money
+  // you don't have. Committed-only matches Safe-to-Spend's existing rule.
   const deploy = useMemo(() => {
     const yearStart = new Date(now.getFullYear(), 0, 1);
-    const monthsElapsed = now.getMonth() + 1; // Jan → 1
     const lumpyYtd = expenses
       .filter(e => isRealExpense(e) && e.category !== 'travel_work'
         && laneOf(e.category) === 'reserve' && parseLocalDate(e.date) >= yearStart)
       .reduce((s, e) => s + Math.abs(e.amount), 0);
-    const setAsideYtd = totalReserveSetAside() * monthsElapsed;
+    const setAsideYtd = committedReservesForYear(deployConfirms, String(now.getFullYear()));
     const lumpyBeyondSetAside = Math.max(0, lumpyYtd - setAsideYtd);
     const free = Math.max(0, surplus.ytd - lumpyBeyondSetAside);
-    return { lumpyBeyondSetAside, free };
-  }, [expenses, surplus.ytd, now]);
+    return { lumpyBeyondSetAside, free, setAsideYtd };
+  }, [expenses, deployConfirms, surplus.ytd, now]);
 
   if (!baseSource || effectiveFloor <= 0) return null;
 

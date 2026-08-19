@@ -6,7 +6,17 @@
 //
 //   balance(now) = openingBalance
 //                + Σ committed moves for this stash (DeployConfirmations, all months)
-//                − net spend in linked categories since startMonth
+//                − Σ EXPLICIT draws recorded against this stash (PotDraws)
+//
+// DRAW-DOWN IS EXPLICIT, NEVER INFERRED (Scott, 2026-08-13: "we definitely don't
+// want to draw down"; 2026-08-17: "one explicit button, no inference"). The
+// balance used to subtract net spend in `stash.categories`, which meant linking a
+// category silently armed auto-draw-down. Because that was unwanted, every pot
+// was left with `categories: []` — which ALSO disabled the stash-driven reserve
+// lane (applyStashLaneConfig no-ops without categories), so the app fell back to
+// hardcoded legacy constants that no longer matched the real plan. Splitting the
+// two concerns fixes both: `categories` now only classifies the reserve LANE, and
+// money leaves a pot only when a human says it did.
 //
 // A month only adds to the balance once you hit "commit" (a DeployConfirmation on
 // the stash's lane) — matching the "a dollar only moves once it's committed"
@@ -15,8 +25,8 @@
 // but user intent + the commit ledger. Pure functions, no React/IO.
 
 import type { Expense, Stash } from '../types/budget';
-import type { DeployConfirmation } from '../stores/budgetStore';
-import { currentMonthKey, computeMonthlySpending } from './transactionAnalysis';
+import type { DeployConfirmation, PotDraw } from '../stores/budgetStore';
+import { currentMonthKey } from './transactionAnalysis';
 import { configureStashLanes, RESERVE_ALLOCATIONS } from './budgetLanes';
 
 export interface StashStatus {
@@ -25,7 +35,8 @@ export interface StashStatus {
   balance: number;
   derived: boolean;
   contributed: number;     // openingBalance + accrued contributions
-  drawn: number;           // net linked-category spend since startMonth (refunds netted)
+  /** Σ EXPLICIT draws recorded against this pot (never inferred from spend). */
+  drawn: number;
   monthsAccrued: number;
   /** $ committed to this pot in the CURRENT month (0 = this month's move hasn't
    *  been made yet). Lets every surface show commit state right next to the
@@ -62,7 +73,12 @@ export function stashExistedBy(stash: Stash, month: string): boolean {
   return stash.startMonth <= month;
 }
 
-export function computeStashStatus(stash: Stash, expenses: Expense[], confirms: DeployConfirmation[] = [], now: Date = new Date()): StashStatus {
+/** ⚠️ `_expenses` is UNUSED and kept only so the 29 existing call sites don't all
+ *  have to change in the same commit as the balance-model switch. The balance no
+ *  longer reads transactions at all — draws are explicit. Drop the parameter in a
+ *  follow-up (the compiler will find every site; the types don't line up if one
+ *  is missed). Do not add logic that depends on it. */
+export function computeStashStatus(stash: Stash, _expenses: Expense[], confirms: DeployConfirmation[] = [], now: Date = new Date(), draws: PotDraw[] = []): StashStatus {
   const derived = Boolean(stash.startMonth);
   if (!derived) {
     return {
@@ -91,20 +107,29 @@ export function computeStashStatus(stash: Stash, expenses: Expense[], confirms: 
     .filter((c) => c.month === thisMonth)
     .reduce((s, c) => s + (c.amount || 0), 0);
 
+  // EXPLICIT draws only. `stash.categories` deliberately plays no part here —
+  // it classifies the reserve lane, nothing more. Draws after the current month
+  // are ignored so paging back to an earlier month can't show future withdrawals
+  // (same guard the commit side needs).
+  const thisMonthKey = currentMonthKey(now);
+  const potDraws = draws.filter(d => d.potId === stash.id && d.month >= start && d.month <= thisMonthKey);
   let drawn = 0;
   let biggestDraw: { month: string; amount: number } | null = null;
-  const cats = new Set(stash.categories ?? []);
-  if (cats.size > 0) {
-    // computeMonthlySpending already nets refunds inside byCategory.
-    const monthly = computeMonthlySpending(expenses).filter(m => m.month >= start && m.month <= currentMonthKey(now));
-    for (const m of monthly) {
-      let monthDraw = 0;
-      for (const c of cats) monthDraw += m.byCategory[c] || 0;
-      drawn += monthDraw;
-      if (monthDraw > 0 && (!biggestDraw || monthDraw > biggestDraw.amount)) {
-        biggestDraw = { month: m.month, amount: Math.round(monthDraw) };
-      }
-    }
+  const byMonth = new Map<string, number>();
+  // Amounts are SIGNED: positive = money left the pot, negative = money came back
+  // (the bill was refunded, or the draw was recorded too high). The old inferred
+  // model got this free by netting refunds inside the category; with explicit
+  // draws it has to be expressible, so `drawn` is a NET figure.
+  for (const d of potDraws) {
+    const amt = d.amount || 0;
+    if (!Number.isFinite(amt) || amt === 0) continue;
+    drawn += amt;
+    byMonth.set(d.month, (byMonth.get(d.month) || 0) + amt);
+  }
+  // "The bill this pot exists for" = the biggest single month of withdrawals,
+  // which is what the recurring-have-to forecast paces against.
+  for (const [month, amount] of byMonth) {
+    if (!biggestDraw || amount > biggestDraw.amount) biggestDraw = { month, amount: Math.round(amount) };
   }
 
   const balance = Math.round(contributed - drawn);
@@ -121,8 +146,8 @@ export function computeStashStatus(stash: Stash, expenses: Expense[], confirms: 
   };
 }
 
-export function computeAllStashes(stashes: Stash[], expenses: Expense[], confirms: DeployConfirmation[] = [], now: Date = new Date()): StashStatus[] {
-  return stashes.map(s => computeStashStatus(s, expenses, confirms, now));
+export function computeAllStashes(stashes: Stash[], expenses: Expense[], confirms: DeployConfirmation[] = [], now: Date = new Date(), draws: PotDraw[] = []): StashStatus[] {
+  return stashes.map(s => computeStashStatus(s, expenses, confirms, now, draws));
 }
 
 const DAYS_PER_MONTH = 30.44;
@@ -409,11 +434,12 @@ export function computeCommitRun(
   expenses: Expense[],
   confirms: DeployConfirmation[] = [],
   now: Date = new Date(),
+  draws: PotDraw[] = [],
 ): StashCommitRun {
   const rows: StashCommitRow[] = [];
   for (const s of stashes) {
     if (s.achievedAt) continue;
-    const status = computeStashStatus(s, expenses, confirms, now);
+    const status = computeStashStatus(s, expenses, confirms, now, draws);
     const forecast = computeStashForecast(status, now);
     const committed = status.committedThisMonth;
     // No goal to pace against → the planned drip IS the target (the Savings pot).
@@ -449,6 +475,19 @@ export function totalStashContributions(stashes: Stash[]): number {
  *  (all stash ids are `stash-…`); 'investing' and other lanes are excluded. A
  *  dollar only leaves the $15,800 once it's committed, so this starts at $0 and
  *  climbs as pots are funded. Pure — feeds Money Map / Pulse / Safe-to-Spend. */
+/** Σ committed stash moves across every month of `year` ('YYYY') — the honest
+ *  year-to-date set-aside. Replaces `totalReserveSetAside() × monthsElapsed` in
+ *  the "free to deploy" reconciliation, which credited a PLANNED constant
+ *  ($2,000/mo of legacy defaults = $16,000 by August) against the ~$2,403 actually
+ *  moved, overstating free cash by the difference. Same principle Safe-to-Spend
+ *  already uses: a dollar only counts as set aside once it's been moved. */
+export function committedReservesForYear(confirms: DeployConfirmation[], year: string): number {
+  if (!year) return 0;
+  return confirms
+    .filter(c => c.lane.startsWith('stash-') && c.month.startsWith(`${year}-`))
+    .reduce((s, c) => s + (c.amount || 0), 0);
+}
+
 export function committedReserves(confirms: DeployConfirmation[], month: string): number {
   if (!month) return 0;
   return confirms
@@ -497,8 +536,22 @@ export function seedDefaultStashes(stashes: Stash[], now: Date = new Date()): St
   // Also skip by id — a Taxes/Trips stash that exists but hasn't linked its
   // category must NOT be duplicated (dup ids collapse on save = data loss).
   const existingIds = new Set(stashes.map(s => s.id));
+  // …and skip by NAME. Both guards above miss the now-normal case: a
+  // user-created pot called "Income Taxes" with no linked category and a
+  // generated `stash-<timestamp>` id. `covered` is empty (no categories anywhere
+  // — the default since draw-down went explicit) and the id isn't 'stash-taxes',
+  // so seeding would happily add a SECOND taxes pot beside the real one, and the
+  // new pot's `categories` would flip the whole reserve lane on its way in.
+  // Scott only escaped this because `stashes_seeded_v1` was already set.
+  const nameMatches = (needles: string[]) =>
+    stashes.some(s => {
+      const n = (s.name ?? '').toLowerCase();
+      return needles.some(w => n.includes(w));
+    });
+  const hasTaxesPot = nameMatches(['tax']);
+  const hasTravelPot = nameMatches(['travel', 'trip', 'vacation']);
   const additions: Stash[] = [];
-  if (!covered.has('taxes') && !existingIds.has('stash-taxes')) {
+  if (!covered.has('taxes') && !existingIds.has('stash-taxes') && !hasTaxesPot) {
     additions.push({
       id: 'stash-taxes', name: 'Taxes', targetAmount: 0, currentBalance: 0,
       monthlyContribution: RESERVE_ALLOCATIONS.taxes ?? 0, color: '#dc2626',
@@ -506,7 +559,7 @@ export function seedDefaultStashes(stashes: Stash[], now: Date = new Date()): St
       kind: 'have_to',
     });
   }
-  if (!covered.has('travel_personal') && !existingIds.has('stash-travel')) {
+  if (!covered.has('travel_personal') && !existingIds.has('stash-travel') && !hasTravelPot) {
     additions.push({
       id: 'stash-travel', name: 'Trips & Travel', targetAmount: 0, currentBalance: 0,
       monthlyContribution: RESERVE_ALLOCATIONS.travel_personal ?? 0, color: '#0ea5e9',

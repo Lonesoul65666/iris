@@ -65,7 +65,7 @@ export default function DashboardView() {
     actionItems,
     insights,
     netWorthSnapshots,
-    dashBuckets, dashSinkingFunds, dashDeployConfirms, monthlyInv,
+    dashBuckets, dashSinkingFunds, dashDeployConfirms, dashPotDraws, monthlyInv,
     rawExpenses,
     dashFunMoney,
     celebrationNudges, dismissCelebration, achievementStates,
@@ -778,7 +778,7 @@ export default function DashboardView() {
         // with balances DERIVED from transactions (stashMath) — the stored
         // currentBalance is legacy/manual. Targetless pots stay on the
         // Budget Overview's StashesCard; duplicating them here is noise.
-        const statuses = computeAllStashes(dashSinkingFunds, rawExpenses, dashDeployConfirms);
+        const statuses = computeAllStashes(dashSinkingFunds, rawExpenses, dashDeployConfirms, new Date(), dashPotDraws);
         const goalFunds = statuses
           .filter(s => !s.stash.achievedAt && (s.stash.targetAmount > 0 || s.stash.targetDate))
           .map(s => ({ ...s.stash, currentBalance: s.balance }));

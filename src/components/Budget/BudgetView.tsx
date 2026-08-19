@@ -5,7 +5,7 @@ import { ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import type { BudgetBucket, SinkingFund, FunMoney, PaycheckBreakdown, CustomCategory } from '../../types/budget';
 import type { Expense, ExpenseCategory } from '../../types/budget';
 import { defaultBudgetBuckets, defaultSinkingFunds, defaultFunMoney, defaultPaycheck, calculateBudgetSummary } from '../../stores/budgetDefaults';
-import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, saveExpense, getCustomCategories, saveCustomCategory, getBudgetTargetHistory, snapshotBudgetTargets, getDeployConfirmations, saveDeployConfirmation, clearDeployConfirmation, type DeployConfirmation } from '../../stores/budgetStore';
+import { saveBudgetBuckets, getBudgetBuckets, saveSinkingFunds, getSinkingFunds, saveFunMoney, getFunMoney, savePaycheck, getPaycheck, getExpenses, saveExpense, getCustomCategories, saveCustomCategory, getBudgetTargetHistory, snapshotBudgetTargets, getDeployConfirmations, saveDeployConfirmation, clearDeployConfirmation, getPotDraws, savePotDraw, deletePotDraw, type DeployConfirmation, type PotDraw } from '../../stores/budgetStore';
 import { getMonthlyInvestments, getSetting, saveSetting } from '../../stores/portfolioStore';
 import { computeGuaranteedBase } from '../../utils/savingsScorecard';
 import { computeSavingsRate } from '../../utils/savingsRate';
@@ -144,6 +144,8 @@ export default function BudgetView() {
   // Planned→confirmed deploys (Money Map honesty layer) — manual confirm of the
   // monthly investment so the lane reads as real, not an inferred Settings guess.
   const [deployConfirms, setDeployConfirms] = useState<DeployConfirmation[]>([]);
+  // Explicit pot withdrawals — "I paid that bill out of this pot".
+  const [potDraws, setPotDraws] = useState<PotDraw[]>([]);
   // Fraction of unspent fun money that promotes to savings each settled month
   // (the rest banks). User-tunable via the Fun Money slider; default 30%.
   const [funSavingsRate, setFunSavingsRate] = useState(0.30);
@@ -364,6 +366,32 @@ export default function BudgetView() {
     }
   }, [deployConfirms]);
 
+  // Record an explicit withdrawal from a pot — "I paid that bill out of this."
+  // The deliberate counterpart to inference (Scott: "one explicit button, no
+  // inference"): a $3k charge in `taxes` might be the annual bill this pot exists
+  // for, or a surprise that shouldn't quietly empty a pot still being filled.
+  // Only the human knows, so only the human records it. Signed amount — negative
+  // puts money back after a refund.
+  const recordPotDraw = useCallback(async (potId: string, amount: number, note?: string) => {
+    if (!Number.isFinite(amount) || amount === 0) return;
+    const today = new Date();
+    const month = currentMonthKey(today);
+    const d: PotDraw = {
+      id: `draw-${potId}-${today.getTime()}`,
+      potId, month, amount,
+      date: today.toISOString().slice(0, 10),
+      note: note?.trim() || undefined,
+      recordedAt: today.toISOString(),
+    };
+    setPotDraws(prev => [...prev, d]);
+    await savePotDraw(d);
+  }, []);
+
+  const undoPotDraw = useCallback(async (id: string) => {
+    setPotDraws(prev => prev.filter(d => d.id !== id));
+    await deletePotDraw(id);
+  }, []);
+
   // Inline reclassify from the category drilldown. One-off by default (just this
   // txn); "apply to all" also moves every same-merchant txn AND writes a merchant
   // mapping so future imports follow. Work toggle moves it into the work lane
@@ -460,6 +488,7 @@ export default function BudgetView() {
       setActionItems(actions);
 
       setDeployConfirms(await getDeployConfirmations());
+      setPotDraws(await getPotDraws());
 
       // Register custom categories for proper label display + hold them in state
       // (shared with ExpenseManager) so new ones appear instantly without a reload.
@@ -1753,7 +1782,7 @@ export default function BudgetView() {
         const pulseNow = !pulseCommitMonth || pulseCommitMonth === curMonthKey
           ? new Date()
           : new Date(Number(pulseCommitMonth.slice(0, 4)), Number(pulseCommitMonth.slice(5, 7)) - 1, 15);
-        const pulseCommitRun = computeCommitRun(pulseStashes, expenses, deployConfirms, pulseNow);
+        const pulseCommitRun = computeCommitRun(pulseStashes, expenses, deployConfirms, pulseNow, potDraws);
         return (
           <BudgetPulse
             // EVERY dollar of personal spend now reaches the Pulse (see pulseRows).
@@ -1784,6 +1813,9 @@ export default function BudgetView() {
         stashes={sinkingFunds}
         expenses={expenses}
         confirms={deployConfirms}
+        draws={potDraws}
+        onRecordDraw={recordPotDraw}
+        onUndoDraw={undoPotDraw}
         onCommitStash={(id, amt, topUp) => toggleStashCommit(curMonthKey, id, amt, topUp)}
         onChange={(next) => {
           setSinkingFunds(next);
@@ -1793,7 +1825,7 @@ export default function BudgetView() {
       />
 
       {/* Variable Pay — surfaces "above base" overage so user can sweep it instead of spending it. */}
-      <VariableSurplusCard expenses={expenses} />
+      <VariableSurplusCard expenses={expenses} deployConfirms={deployConfirms} />
 
       {/* Work Expenses & Reimbursements — totals only, no per-line itemization. */}
       <WorkReimbursementsCard expenses={expenses} onViewTransactions={() => setSection('expenses')} />

@@ -37,6 +37,18 @@ export interface UpdateEntry {
 
 export const UPDATES: UpdateEntry[] = [
   {
+    version: '2026.08.19.v1',
+    date: '2026-08-19',
+    title: 'Pots know when you spend them',
+    notes: [
+      'New "I paid something from this" button on every pot. Record what came out and the balance drops — so a pot you\'ve actually spent stops claiming it\'s still full.',
+      'Each pot now lists its recent withdrawals with what they were for, and you can remove one if you record it wrong. If a payment gets refunded, enter a negative amount to put the money back.',
+      'Nothing happens automatically here on purpose: a big charge might be the bill the pot exists for, or it might be a surprise you don\'t want quietly emptying a pot you\'re still filling. Only you know which.',
+      '"Free to deploy" on the variable-pay card was too generous. It assumed a fixed $2,000 a month was being set aside no matter what you\'d actually moved — for this year that credited $16,000 against the $3,824 really committed. It now counts only money that actually moved.',
+      'Linking a category to a pot no longer causes spending there to drain it, so linking is now safe.',
+    ],
+  },
+  {
     version: '2026.08.17.v2',
     date: '2026-08-17',
     title: 'Move part of a pot and Iris keeps count',

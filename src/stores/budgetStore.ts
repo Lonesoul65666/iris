@@ -231,6 +231,48 @@ export async function clearDeployConfirmation(month: string, lane: string): Prom
   await deleteCollectionKey('deployConfirmations', `${month}:${lane}`)
 }
 
+// ─── Pot draws — "I paid this bill from this pot" ─────────────────────────
+// The EXPLICIT counterpart to a commit. A commit puts money into a pot; a draw
+// takes it out because the thing the pot was for actually got paid.
+//
+// Why explicit and not inferred from category spend (Scott, 2026-08-13:
+// "we definitely don't want to draw down"): inference guesses. A $3k charge in
+// `taxes` might be the annual bill the pot exists for, or it might be a
+// surprise assessment that should NOT quietly empty a pot you were still
+// filling. Only the human knows which, so only the human records it.
+//
+// Keyed by a generated id (not month:pot) because a pot can legitimately be
+// drawn more than once in a month — two insurance payments, a partial refund of
+// a bill, a correction.
+
+export interface PotDraw {
+  id: string
+  potId: string
+  /** 'YYYY-MM' the draw belongs to — what the pot's month-scoped views use. */
+  month: string
+  /** SIGNED dollars. Positive = money left the pot (the normal case). Negative =
+   *  money came back — the bill was refunded, or an earlier draw was overstated. */
+  amount: number
+  /** 'YYYY-MM-DD' the payment actually happened. */
+  date: string
+  /** Optional link to the expense row this paid, when the user picked one. */
+  expenseId?: string
+  note?: string
+  recordedAt: string
+}
+
+export async function getPotDraws(): Promise<PotDraw[]> {
+  return listCollection<PotDraw>('potDraws')
+}
+
+export async function savePotDraw(d: PotDraw): Promise<void> {
+  await saveCollectionItem('potDraws', d as unknown as Record<string, unknown>, (r) => (r as unknown as PotDraw).id)
+}
+
+export async function deletePotDraw(id: string): Promise<void> {
+  await deleteCollectionKey('potDraws', id)
+}
+
 // ─── Income sources ──────────────────────────────────────────────────────
 
 export async function getIncomeSources(): Promise<IncomeSource[]> {

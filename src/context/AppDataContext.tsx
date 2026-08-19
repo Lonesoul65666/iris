@@ -22,7 +22,7 @@ import { defaultPaycheck, defaultBudgetBuckets, defaultSinkingFunds, defaultFunM
 import { isOverBudget } from '../utils/budgetLanes';
 import type { ActionItem } from '../components/ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, clearAllActionData } from '../stores/actionStore';
-import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getEarners, getPaycheck, getExpenses, getCustomCategories, getDeployConfirmations, clearAllExpenses, clearExpensesBySource, clearAllBudgetData, type DeployConfirmation } from '../stores/budgetStore';
+import { getBudgetBuckets, getSinkingFunds, getFunMoney, saveFunMoney, getEarners, getPaycheck, getExpenses, getCustomCategories, getDeployConfirmations, getPotDraws, clearAllExpenses, clearExpensesBySource, clearAllBudgetData, type DeployConfirmation, type PotDraw } from '../stores/budgetStore';
 import type { Expense, FunMoney, Earner } from '../types/budget';
 import { seedFunMoneyFromEarners, linkFunMoneyToEarners, computeFunMoneySpent } from '../utils/funMoney';
 import { computeScorecard } from '../utils/savingsScorecard';
@@ -72,6 +72,9 @@ interface AppDataContextValue {
   dashPaycheck: ReturnType<typeof getPaycheck> extends Promise<infer R> ? NonNullable<R> : any;
   dashSinkingFunds: typeof defaultSinkingFunds;
   dashDeployConfirms: DeployConfirmation[];
+  /** Explicit pot withdrawals. Shared so the dashboard and the budget page can
+   *  never disagree about a pot's balance. */
+  dashPotDraws: PotDraw[];
   /** Fun-money pots with derived balances — the couples game surface. */
   dashFunMoney: FunMoney[];
   /** Evaluated achievement states (earned + progress) for the Trophy Wall. */
@@ -207,6 +210,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
   const [dashPaycheck, setDashPaycheck] = useState(defaultPaycheck);
   const [dashSinkingFunds, setDashSinkingFunds] = useState(defaultSinkingFunds);
   const [dashDeployConfirms, setDashDeployConfirms] = useState<DeployConfirmation[]>([]);
+  const [dashPotDraws, setDashPotDraws] = useState<PotDraw[]>([]);
   const [dashFunMoney, setDashFunMoney] = useState<FunMoney[]>([]);
   const [achievementStates, setAchievementStates] = useState<AchievementState[]>([]);
   const [celebrationNudges, setCelebrationNudges] = useState<Nudge[]>([]);
@@ -425,6 +429,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       applyStashLaneConfig(loadedSF);
       // Committed stash moves feed Safe-to-Spend (only moved money comes off the top).
       setDashDeployConfirms(await getDeployConfirmations());
+      setDashPotDraws(await getPotDraws());
 
       // Register custom categories so analysis displays proper labels/icons
       const customCats = await getCustomCategories();
@@ -547,6 +552,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       if (sf.length > 0) setDashSinkingFunds(sf);
       applyStashLaneConfig(sf);
       setDashDeployConfirms(await getDeployConfirmations());
+      setDashPotDraws(await getPotDraws());
       // Sync investing bucket to real Settings amount
       const invAmt = monthlyInv?.amount || 0;
       const syncInv = (buckets: typeof defaultBudgetBuckets) =>
@@ -982,7 +988,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     accounts, setAccounts, equity, profile, setProfile, monthlyInv, setMonthlyInv,
     chatMessages, setChatMessages, chatLoading,
     apiKey, apiKeyInput, setApiKeyInput,
-    actionItems, dashBuckets, dashPaycheck, dashSinkingFunds, dashDeployConfirms, dashFunMoney,
+    actionItems, dashBuckets, dashPaycheck, dashSinkingFunds, dashDeployConfirms, dashPotDraws, dashFunMoney,
     achievementStates, celebrationNudges, dismissCelebration, milestoneCelebrations, dismissMilestone,
     replayCelebration, openReplay, closeReplay, soundEnabled, setSoundEnabled,
     momentCelebrations, dismissMomentCelebration, momentTallies, liveQuest,

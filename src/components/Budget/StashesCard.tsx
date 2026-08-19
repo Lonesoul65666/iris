@@ -1,10 +1,11 @@
 // Stashes — saving pots for lumpy life (taxes, trips, remodels, December).
 // Lives on the Budget OVERVIEW (daily-visible, not buried in edit mode).
-// Balances are DERIVED from contributions minus linked-category spend — see
-// docs/stashes-design.md. Editing saves directly (same pattern as the old grid).
+// Balances are DERIVED: opening + committed moves − EXPLICIT draws. Linked
+// categories classify the reserve lane and deliberately do NOT draw the pot down
+// (Scott, 2026-08-13) — see docs/stashes-design.md. Editing saves directly.
 import { useMemo, useState } from 'react';
 import type { Expense, Stash } from '../../types/budget';
-import type { DeployConfirmation } from '../../stores/budgetStore';
+import type { DeployConfirmation, PotDraw } from '../../stores/budgetStore';
 import { formatCurrency, formatDuration } from '../../utils/format';
 import { computeCommitRun, requiredMonthlyForGoal, computeShortfall, monthsElapsedInclusive, type StashForecast, type StashCommitRow } from '../../utils/stashMath';
 import { currentMonthKey } from '../../utils/transactionAnalysis';
@@ -15,6 +16,11 @@ interface Props {
   expenses: Expense[];
   /** Commit ledger — a pot's balance is opening + its committed moves − draws. */
   confirms: DeployConfirmation[];
+  /** Explicit withdrawals recorded against pots. */
+  draws?: PotDraw[];
+  /** Record "I paid this from the pot". Signed — negative puts money back. */
+  onRecordDraw?: (potId: string, amount: number, note?: string) => void;
+  onUndoDraw?: (drawId: string) => void;
   /** Commit/undo this month's move for a pot. Same handler the Pulse uses, so
    *  committing from either surface updates both. */
   /** `topUp` raises an existing partial commit instead of undoing it. */
@@ -110,15 +116,39 @@ function steadyStateLine(f: StashForecast): string | null {
   return `First cycle is short — settles to ${formatCurrency(f.steadyStatePerMonth)}/mo after ${f.dueLabel}`;
 }
 
-export default function StashesCard({ stashes, expenses, confirms, onCommitStash, onChange }: Props) {
+export default function StashesCard({ stashes, expenses, confirms, draws = [], onRecordDraw, onUndoDraw, onCommitStash, onChange }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   // Inline two-click delete confirm — window.confirm() is a native dialog that
   // blocks the whole tab (and froze browser automation mid-session).
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [confirmingRetire, setConfirmingRetire] = useState<string | null>(null);
+  // Which pot is showing its "paid from this" entry row, and the amount typed.
+  const [drawingFrom, setDrawingFrom] = useState<string | null>(null);
+  const [drawAmount, setDrawAmount] = useState('');
+  const [drawNote, setDrawNote] = useState('');
   // Same computation the Pulse footer renders from, so the two surfaces can't
   // disagree about what a pot wants or what's been committed.
-  const run = useMemo(() => computeCommitRun(stashes, expenses, confirms), [stashes, expenses, confirms]);
+  const run = useMemo(() => computeCommitRun(stashes, expenses, confirms, new Date(), draws), [stashes, expenses, confirms, draws]);
+  const drawsByPot = useMemo(() => {
+    const m = new Map<string, PotDraw[]>();
+    for (const d of draws) {
+      const list = m.get(d.potId) ?? [];
+      list.push(d);
+      m.set(d.potId, list);
+    }
+    // Newest first — the thing you just recorded should be the one you can undo.
+    for (const list of m.values()) list.sort((a, b) => b.date.localeCompare(a.date));
+    return m;
+  }, [draws]);
+
+  const submitDraw = (potId: string) => {
+    const n = Number(drawAmount);
+    if (!Number.isFinite(n) || n === 0) return;
+    onRecordDraw?.(potId, n, drawNote);
+    setDrawingFrom(null);
+    setDrawAmount('');
+    setDrawNote('');
+  };
   const thisMonthLabel = new Date().toLocaleDateString('en-US', { month: 'long' });
 
   const update = (id: string, patch: Partial<Stash>) => {
@@ -347,6 +377,76 @@ export default function StashesCard({ stashes, expenses, confirms, onCommitStash
                   )}
                   <div className="mb-2" />
                 </>
+              )}
+
+              {/* ⭐ "Paid from pot" — the explicit draw. Never inferred from
+                  category spend: a charge in a linked category might be the bill
+                  this pot exists for, or a surprise that shouldn't empty a pot
+                  you're still filling. Only you know which. */}
+              {onRecordDraw && (
+                drawingFrom === sf.id ? (
+                  <div className="mb-2 rounded-lg border border-glass-border bg-white/[0.03] p-2">
+                    <div className="text-[10px] text-text-secondary mb-1.5">
+                      How much came out of {sf.name}? Use a negative number if a payment was refunded.
+                    </div>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="text-xs text-text-muted">$</span>
+                      <input type="number" autoFocus value={drawAmount}
+                        onChange={e => setDrawAmount(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') submitDraw(sf.id);
+                          if (e.key === 'Escape') { setDrawingFrom(null); setDrawAmount(''); setDrawNote(''); }
+                        }}
+                        placeholder={String(Math.max(0, Math.round(balance)))}
+                        className="w-20 bg-transparent border border-glass-border focus:border-accent/50 rounded px-1.5 py-1 text-sm mono-num text-right outline-none" />
+                      <input value={drawNote} onChange={e => setDrawNote(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') submitDraw(sf.id); }}
+                        placeholder="what for? (optional)"
+                        className="flex-1 min-w-0 bg-transparent border border-glass-border focus:border-accent/50 rounded px-1.5 py-1 text-[11px] outline-none" />
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button onClick={() => submitDraw(sf.id)}
+                        className="flex-1 px-2 py-1 rounded-lg text-[11px] font-bold bg-accent/20 border border-accent/40 text-accent-light hover:bg-accent/30 transition-colors">
+                        Record it
+                      </button>
+                      <button onClick={() => { setDrawingFrom(null); setDrawAmount(''); setDrawNote(''); }}
+                        className="px-2 py-1 rounded-lg text-[11px] text-text-muted hover:text-text-secondary transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => { setDrawingFrom(sf.id); setDrawAmount(''); setDrawNote(''); }}
+                    className="w-full mb-2 px-2 py-1.5 rounded-lg text-[11px] font-semibold border border-glass-border text-text-secondary hover:border-accent/40 hover:text-accent-light transition-colors"
+                    title={`Record a payment made out of ${sf.name}`}>
+                    I paid something from this
+                  </button>
+                )
+              )}
+
+              {/* Withdrawal history — a pot that reads lower than you expect has
+                  to be able to explain itself. */}
+              {(drawsByPot.get(sf.id)?.length ?? 0) > 0 && (
+                <div className="mb-2 space-y-0.5">
+                  {drawsByPot.get(sf.id)!.slice(0, 4).map(d => (
+                    <div key={d.id} className="flex items-center gap-2 text-[10px] text-text-muted">
+                      <span className="mono-num flex-shrink-0" style={{ color: d.amount < 0 ? '#22c55e' : undefined }}>
+                        {d.amount < 0 ? '+' : '−'}{formatCurrency(Math.abs(d.amount))}
+                      </span>
+                      <span className="truncate flex-1">{d.note || monthShort(d.month)}</span>
+                      {onUndoDraw && (
+                        <button onClick={() => onUndoDraw(d.id)}
+                          className="flex-shrink-0 hover:text-negative transition-colors"
+                          title="Remove this withdrawal">×</button>
+                      )}
+                    </div>
+                  ))}
+                  {(drawsByPot.get(sf.id)?.length ?? 0) > 4 && (
+                    <div className="text-[10px] text-text-muted">
+                      +{drawsByPot.get(sf.id)!.length - 4} more · {formatCurrency(drawn)} drawn in total
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Crushed a want-to → confirm the purchase and retire it. */}
