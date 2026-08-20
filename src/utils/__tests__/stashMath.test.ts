@@ -3,7 +3,7 @@ import {
   monthsElapsedInclusive, computeStashStatus, totalStashContributions,
   stashAllocationsByCategory, stashesConfigured, seedDefaultStashes, applyStashLaneConfig,
   committedReserves, nextDueDate, computeStashForecast, requiredMonthlyForGoal, computeShortfall,
-  stashExistedBy, commitMonthsRemaining, computeCommitRun,
+  stashExistedBy, commitMonthsRemaining, computeCommitRun, type StashStatus,
 } from '../stashMath';
 import { formatDuration } from '../format';
 import type { DeployConfirmation, PotDraw } from '../../stores/budgetStore';
@@ -30,6 +30,17 @@ function stash(partial: Partial<Stash>): Stash {
     id: partial.id ?? 's1', name: partial.name ?? 'Test', targetAmount: partial.targetAmount ?? 0,
     currentBalance: partial.currentBalance ?? 0, monthlyContribution: partial.monthlyContribution ?? 0,
     color: '#fff', ...partial,
+  };
+}
+
+/** A derived status at a given balance, with no commits or draws — what the
+ *  auto-fill sees when the user is editing a fresh pot's goal/date. */
+function statusAt(s: Stash, balance: number, over: Partial<StashStatus> = {}): StashStatus {
+  return {
+    stash: s, balance, derived: true, contributed: balance, drawn: 0, monthsAccrued: 0,
+    committedThisMonth: 0, biggestDraw: null,
+    targetProgress: s.targetAmount > 0 ? balance / s.targetAmount : null,
+    ...over,
   };
 }
 
@@ -511,7 +522,7 @@ describe('moving the target date re-prices the monthly ask', () => {
     // updateAuto() writes requiredMonthlyForGoal into the drip when the date
     // changes; it must not disagree with the number on the card.
     const feb = askFor('2027-02-19');
-    expect(requiredMonthlyForGoal(office('2027-02-19'), 371, aug12)).toBe(feb.thisMonthAsk);
+    expect(requiredMonthlyForGoal(statusAt(office('2027-02-19'), 371), aug12)).toBe(feb.thisMonthAsk);
   });
 });
 
@@ -581,18 +592,18 @@ describe('requiredMonthlyForGoal — auto-fill the $/mo', () => {
     // 19th is after the 1st, so October's move still lands in time).
     // ceil(1200 / 5) = 240. The old fractional math said 281 — see
     // commitMonthsRemaining for why that was wrong.
-    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 0, NOW)).toBe(240);
+    expect(requiredMonthlyForGoal(statusAt(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 0), NOW)).toBe(240);
   });
 
   it('accounts for what is already saved', () => {
     // Only $600 of the $1,200 still to raise over the same five moves.
-    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 600, NOW)).toBe(120);
+    expect(requiredMonthlyForGoal(statusAt(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 600), NOW)).toBe(120);
   });
 
   it('semiannual targets the per-cycle payment, not the full-year goal', () => {
     // $3,300/yr, next hit Oct 1. A bill due on the 1st can't be helped by that
     // month's move → four moves (Jun–Sep) for the $1,650 cycle = 413, not ~825.
-    expect(requiredMonthlyForGoal(stash({ targetAmount: 3300, cadence: 'semiannual', dueMonth: 10 }), 0, NOW)).toBe(413);
+    expect(requiredMonthlyForGoal(statusAt(stash({ targetAmount: 3300, cadence: 'semiannual', dueMonth: 10 }), 0), NOW)).toBe(413);
   });
 
   // ⭐ THE REGRESSION. The bug: the denominator was `daysToDue / 30.44`, which
@@ -601,9 +612,9 @@ describe('requiredMonthlyForGoal — auto-fill the $/mo', () => {
   // climbed daily. Counting MOVES makes it flat inside a month.
   it('does NOT drift day to day inside the same month', () => {
     const s = stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' });
-    const onThe1st = requiredMonthlyForGoal(s, 0, new Date(2026, 5, 1));
-    const onThe11th = requiredMonthlyForGoal(s, 0, new Date(2026, 5, 11));
-    const onThe30th = requiredMonthlyForGoal(s, 0, new Date(2026, 5, 30));
+    const onThe1st = requiredMonthlyForGoal(statusAt(s, 0), new Date(2026, 5, 1));
+    const onThe11th = requiredMonthlyForGoal(statusAt(s, 0), new Date(2026, 5, 11));
+    const onThe30th = requiredMonthlyForGoal(statusAt(s, 0), new Date(2026, 5, 30));
     expect(onThe1st).toBe(240);
     expect(onThe11th).toBe(240);
     expect(onThe30th).toBe(240);
@@ -612,15 +623,15 @@ describe('requiredMonthlyForGoal — auto-fill the $/mo', () => {
   it('steps up exactly once when the month turns', () => {
     const s = stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' });
     // July: four moves left (Jul–Oct) instead of five → 300.
-    expect(requiredMonthlyForGoal(s, 0, new Date(2026, 6, 1))).toBe(300);
-    expect(requiredMonthlyForGoal(s, 0, new Date(2026, 6, 28))).toBe(300);
+    expect(requiredMonthlyForGoal(statusAt(s, 0), new Date(2026, 6, 1))).toBe(300);
+    expect(requiredMonthlyForGoal(statusAt(s, 0), new Date(2026, 6, 28))).toBe(300);
   });
 
   it('returns null when there is nothing to compute', () => {
-    expect(requiredMonthlyForGoal(stash({ targetAmount: 0, cadence: 'custom', targetDate: '2026-10-19' }), 0, NOW)).toBeNull(); // no goal
-    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200 }), 0, NOW)).toBeNull();                                          // no due date
-    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-01-01' }), 0, NOW)).toBeNull(); // past due
-    expect(requiredMonthlyForGoal(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 1200, NOW)).toBeNull(); // already funded
+    expect(requiredMonthlyForGoal(statusAt(stash({ targetAmount: 0, cadence: 'custom', targetDate: '2026-10-19' }), 0), NOW)).toBeNull(); // no goal
+    expect(requiredMonthlyForGoal(statusAt(stash({ targetAmount: 1200 }), 0), NOW)).toBeNull();                                          // no due date
+    expect(requiredMonthlyForGoal(statusAt(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-01-01' }), 0), NOW)).toBeNull(); // past due
+    expect(requiredMonthlyForGoal(statusAt(stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19' }), 1200), NOW)).toBeNull(); // already funded
   });
 });
 
@@ -689,5 +700,32 @@ describe('paging back a month never shows future money', () => {
   it('the commit run for a past month totals that month only', () => {
     const run = computeCommitRun([s], [], confirms, JULY, []);
     expect(run.committedTotal).toBe(1000);
+  });
+});
+
+describe('requiredMonthlyForGoal is the card\'s own ask', () => {
+  // The auto-fill and the displayed ask used to be two computations. These are
+  // the two shapes where they disagreed (found 2026-08-19).
+
+  it('a recurring pot paces against the real last bill, like the card does', () => {
+    // $12,000/yr taxes pot, next hit Oct 1, but the actual bill has been $9,000.
+    // The card paces against $9,000 (biggestDraw); the old auto-fill used the
+    // full-year target and wrote a drip the card instantly called "behind".
+    const s = stash({ id: 'taxes', kind: 'have_to', targetAmount: 12000, cadence: 'annual', dueMonth: 10, startMonth: '2026-01' });
+    const st = statusAt(s, 3000, { biggestDraw: { month: '2025-10', amount: 9000 } });
+    const f = computeStashForecast(st, NOW)!;
+    expect(requiredMonthlyForGoal(st, NOW)).toBe(f.requiredPerMonth);
+    expect(requiredMonthlyForGoal(st, NOW)).toBe(1500); // ceil((9000-3000)/4 moves, Jun–Sep)
+  });
+
+  it('a part-committed month does not lower the number it writes', () => {
+    // $436 already moved this month. The card adds it back so the requirement is
+    // stable all month; the old auto-fill didn't, so editing the date after
+    // committing wrote a smaller drip than the card was asking for.
+    const s = stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-10-19', startMonth: '2026-06' });
+    const st = statusAt(s, 436, { committedThisMonth: 436 });
+    const f = computeStashForecast(st, NOW)!;
+    expect(requiredMonthlyForGoal(st, NOW)).toBe(f.requiredPerMonth);
+    expect(requiredMonthlyForGoal(st, NOW)).toBe(240); // same 1200/5 as an untouched month
   });
 });

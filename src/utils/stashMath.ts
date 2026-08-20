@@ -233,26 +233,6 @@ export function computeShortfall(status: StashStatus): StashShortfall | null {
   };
 }
 
-/** The $/mo needed to hit a stash's goal by its due date, from where it stands
- *  today — the auto-fill for the contribution field ("don't make me do the
- *  math"). Spreads what's still needed over the monthly MOVES left before the
- *  due date (see commitMonthsRemaining — NOT fractional calendar time).
- *  Semiannual targets the per-cycle payment (half the annual total). Returns null
- *  when there's nothing to compute from (no goal, no due date, or already past
- *  due / already funded) — callers leave the existing contribution untouched. */
-export function requiredMonthlyForGoal(stash: Stash, balance: number, now: Date = new Date()): number | null {
-  const target = stash.targetAmount || 0;
-  if (target <= 0) return null;
-  const due = nextDueDate(stash, now);
-  if (!due) return null;
-  const movesLeft = commitMonthsRemaining(due, now);
-  if (movesLeft <= 0) return null;
-  const cycleTarget = stash.cadence === 'semiannual' ? target / 2 : target;
-  const needed = Math.max(0, cycleTarget - balance);
-  if (needed <= 0) return null;
-  return Math.ceil(needed / movesLeft);
-}
-
 /** Forward look at a stash vs its goal — built on the DERIVED balance, so the
  *  pots show "how full + when full" the same way they show their balance. Pure
  *  numbers + a status enum; the component formats the label (keeps this IO-free).
@@ -311,8 +291,17 @@ export function computeStashForecast(status: StashStatus, now: Date = new Date()
   const kind = stash.kind ?? 'want_to';
   const fmtMonth = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   const fmtDay = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  // A recurring pot's deadline is about covering the NEXT payment, so the size of
+  // that payment is either what the last one actually cost (biggestDraw) or, with
+  // no history yet, the target split across the cycle.
+  const isRecurring = stash.cadence === 'annual' || stash.cadence === 'semiannual';
+  // Gated on the CADENCE, not the kind (fixed 2026-08-20). Gating on
+  // `kind === 'have_to'` left a semiannual WANT-to pacing against the full annual
+  // target while its own steady-state line divided that target by 12 — the pot
+  // contradicted itself, and it was the one case where the auto-fill and the
+  // displayed ask still disagreed after they were unified.
   const expectedHit = biggestDraw?.amount
-    ?? (kind === 'have_to' ? Math.round(target / (stash.cadence === 'semiannual' ? 2 : 1)) : null);
+    ?? (isRecurring || kind === 'have_to' ? Math.round(target / (stash.cadence === 'semiannual' ? 2 : 1)) : null);
 
   // Days to reach the goal at the current drip — the gamified "how long" number.
   const daysToFill = remaining <= 0 ? 0
@@ -325,7 +314,6 @@ export function computeStashForecast(status: StashStatus, now: Date = new Date()
 
   // A recurring have-to's deadline is about covering the NEXT payment (annual =
   // the whole goal; semiannual = half), not topping up the full-year reserve.
-  const isRecurring = stash.cadence === 'annual' || stash.cadence === 'semiannual';
   const hitTarget = (isRecurring && expectedHit) ? expectedHit : target;
   const hitRemaining = isRecurring ? Math.max(0, hitTarget - balance) : null;
 
@@ -396,6 +384,27 @@ export function computeStashForecast(status: StashStatus, now: Date = new Date()
 
   // A goal with no funding path — can't project; nudge to set a contribution.
   return { ...base, status: 'idle', projectedMonth: null, additionalNeeded: null, monthsToGo: null, requiredPerMonth: null, thisMonthAsk: 0 };
+}
+
+/** The $/mo to write into the contribution field when the goal or the date
+ *  changes — the auto-fill ("don't make me do the math"). Pass the pot's status
+ *  with the EDIT already applied to `.stash`.
+ *
+ *  This is deliberately a thin delegate to computeStashForecast: the number we
+ *  WRITE has to be the number the card will JUDGE against. They used to be two
+ *  computations, and they disagreed in two real cases —
+ *    · a recurring pot with history: the card paces against the last actual bill
+ *      (`biggestDraw`), the old autofill against the full-year target, so it
+ *      wrote a drip the card immediately called "behind";
+ *    · a part-committed month: the card adds this month's commits back so the
+ *      requirement is stable all month, the old autofill didn't, so editing a
+ *      date after committing wrote a number too low.
+ *
+ *  Null when there's nothing to compute (no goal, no due date, past due, or the
+ *  cycle is already funded) — the caller then leaves the user's number alone. */
+export function requiredMonthlyForGoal(status: StashStatus, now: Date = new Date()): number | null {
+  const f = computeStashForecast(status, now);
+  return f && f.requiredPerMonth ? f.requiredPerMonth : null;
 }
 
 // ── The commit run ────────────────────────────────────────────────────────────
