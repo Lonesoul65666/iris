@@ -324,7 +324,11 @@ export function computeStashForecast(status: StashStatus, now: Date = new Date()
 
   const due = nextDueDate(stash, now);
   const dueLabel = due ? fmtDay(due) : null;
-  const daysToDue = due ? Math.round((due.getTime() - now.getTime()) / MS_PER_DAY) : null;
+  // CEIL, not round: with rounding, a bill due at 00:00 tomorrow read as 0 days
+  // from about lunchtime today, which tripped the `daysToDue <= 0` past-due
+  // branch a day early — the pot declared the deadline missed while there was
+  // still a day to move money. Any time left at all is at least one day.
+  const daysToDue = due ? Math.ceil((due.getTime() - now.getTime()) / MS_PER_DAY) : null;
 
   // A recurring have-to's deadline is about covering the NEXT payment (annual =
   // the whole goal; semiannual = half), not topping up the full-year reserve.
@@ -362,8 +366,23 @@ export function computeStashForecast(status: StashStatus, now: Date = new Date()
     // Recurring pots pace against the next payment; one-time goals against the goal.
     const needed = isRecurring ? Math.max(0, hitTarget - balance) : remaining;
     if (daysToDue <= 0 || commitMonthsLeft <= 0) {
-      // Nothing left to spread it over — the whole gap is due now.
-      return { ...base, status: 'past_due', projectedMonth: fmtMonth(due), additionalNeeded: null, monthsToGo: null, requiredPerMonth: null, thisMonthAsk: Math.round(needed) };
+      // PAST DUE. There are no moves left to spread the gap over, so this branch
+      // used to offer the ENTIRE remaining gap as the month's one-tap commit — a
+      // $6,000 button sitting next to a $1,082 plan, on the surface whose whole
+      // purpose is "hit commit, then move exactly that from checking".
+      //
+      // A missed deadline doesn't change what you can actually move this month.
+      // So the ask falls back to the pot's own planned drip (the same rule the
+      // no-deadline branch uses) and the gap stays visible in `remaining` /
+      // `hitRemaining` with the status still past_due — the card's job is to say
+      // "catch up at your rate, or re-date it", not to pre-fill a number nobody
+      // is going to transfer.
+      const dripAsk = Math.max(0, Math.round(contribution) - committedThisMonth);
+      return {
+        ...base, status: 'past_due', projectedMonth: fmtMonth(due), additionalNeeded: null,
+        monthsToGo: null, requiredPerMonth: null,
+        thisMonthAsk: contribution > 0 ? dripAsk : Math.round(needed),
+      };
     }
     if (needed <= 0) {
       // Already hold enough for the next hit — nothing more to do this cycle.

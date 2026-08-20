@@ -69,8 +69,18 @@ function forecastLine(f: StashForecast): { text: string; cls: string } {
   switch (f.status) {
     case 'met':
       return { text: haveTo ? 'Fully funded for the next one' : 'Goal met — this money is free to redeploy', cls: 'text-positive' };
-    case 'past_due':
-      return { text: `${f.dueLabel} has passed — ${formatCurrency(f.hitRemaining ?? f.remaining)} was never set aside`, cls: 'text-negative' };
+    case 'past_due': {
+      // The gap, then the way out. The ask beside this line is the pot's normal
+      // drip now (see computeStashForecast) — not the whole gap — so the copy has
+      // to name both options or the numbers look unrelated.
+      const gap = formatCurrency(f.hitRemaining ?? f.remaining);
+      return {
+        text: f.contribution > 0
+          ? `${f.dueLabel} has passed — ${gap} short. Catch up at ${formatCurrency(f.contribution)}/mo, or give it a new date.`
+          : `${f.dueLabel} has passed — ${gap} was never set aside. Set a rate or a new date.`,
+        cls: 'text-negative',
+      };
+    }
     case 'on_track': {
       // Two very different states land here. requiredPerMonth === 0 means the
       // money is ALREADY sitting there for the next hit. Anything else means the

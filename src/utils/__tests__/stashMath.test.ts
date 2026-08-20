@@ -763,3 +763,42 @@ describe('malformed data cannot render or persist NaN', () => {
     expect(requiredMonthlyForGoal(statusAt(s2, 0), NOW)).toBeNull();
   });
 });
+
+describe('past due: not a day early, and not a giant button', () => {
+  const s = stash({
+    id: 'table', kind: 'want_to', targetAmount: 1200, monthlyContribution: 190,
+    cadence: 'custom', targetDate: '2026-06-12', startMonth: '2026-03',
+  });
+  const forecastAt = (now: Date, balance = 400) =>
+    computeStashForecast(statusAt(s, balance), now)!;
+
+  it('is NOT past due at lunchtime the day before (Math.round used to say it was)', () => {
+    // Due 00:00 on Jun 12. At 13:00 on Jun 11 there are 11 hours left; rounding
+    // called that 0 days and declared the deadline missed.
+    const f = forecastAt(new Date(2026, 5, 11, 13, 0));
+    expect(f.daysToDue).toBe(1);
+    expect(f.status).not.toBe('past_due');
+  });
+
+  it('goes past due once the date has actually arrived', () => {
+    expect(forecastAt(new Date(2026, 5, 12, 0, 1)).status).toBe('past_due');
+  });
+
+  it('asks for one month of the drip, not the entire gap', () => {
+    const f = forecastAt(new Date(2026, 5, 20));
+    expect(f.status).toBe('past_due');
+    expect(f.remaining).toBe(800);   // the gap is still stated…
+    expect(f.thisMonthAsk).toBe(190); // …but the commit button is one month's move
+  });
+
+  it('nets off what was already committed this month', () => {
+    const st = statusAt(s, 590, { committedThisMonth: 190 });
+    expect(computeStashForecast(st, new Date(2026, 5, 20))!.thisMonthAsk).toBe(0);
+  });
+
+  it('with no rate set, the gap IS the ask (there is nothing else to say)', () => {
+    const noRate = stash({ ...s, monthlyContribution: 0 });
+    const f = computeStashForecast(statusAt(noRate, 400), new Date(2026, 5, 20))!;
+    expect(f.thisMonthAsk).toBe(800);
+  });
+});
