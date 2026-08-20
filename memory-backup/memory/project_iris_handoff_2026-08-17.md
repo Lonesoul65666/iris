@@ -4,7 +4,7 @@ description: "Iris handoff 2026-08-17 — READ FIRST. Big day: stash pacing rewr
 metadata: 
   node_type: memory
   type: project
-  modified: 2026-08-17T21:22:09.054Z
+  modified: 2026-08-19T04:23:45.910Z
   originSessionId: 8ecf5ce7-c2fd-4f6b-8b9e-475084d971f3
 ---
 
@@ -35,6 +35,102 @@ Host update = Settings → Updates → **Update Iris** on the always-on box, or
 
 ⚠️ **DATA changes are ALREADY live** (shared Postgres): stash opening balances,
 22 backfilled cash-out/mortgage rows. Only CODE waits on the host.
+
+## 🧨 HISTORY REWRITTEN 2026-08-17 — ALL PRE-REWRITE SHAS ARE DEAD
+
+`scripts/` was purged from **every commit** via `git filter-repo --path scripts
+--invert-paths`, then force-pushed. **Verified: 0 objects matching
+`expenses-backup|networth-backfill|preimport|scripts/backups` remain in history.**
+The ~1.1MB of real transaction backups accidentally committed in the old `1fbbcaa`
+is genuinely gone, so the repo is now safe to point a third-party AI (Gemini CLI,
+Code Assist) at.
+
+⚠️ **Every sha in this file and all older handoffs is now a historical label, not
+something you can `git show`.** Rough map of the new history: `023c8f9` = memory
+backup (was `6040a92`), `2028a70` = partial-commit fix (was `4530349`),
+`6f6b403` = design docs (was `958a358`). `scripts/` itself is untouched ON DISK
+(78 `.mjs` probes still there) and gitignored — only history changed.
+
+⚠️ **THE HOST WILL FAIL ITS NEXT UPDATE.** `C:\ProjectIris\iris` has a clone of the
+OLD history, so `git pull --ff-only` (and the "Update Iris" button, which uses it)
+dies with a non-fast-forward error. Fix, run once on the host:
+`git fetch origin && git reset --hard origin/master`. Not yet done — Scott hadn't
+updated the host for `2026.08.17.v2` at the time of the rewrite, so **that pending
+update is the moment this bites.**
+
+## 🌙 Even later (same day) — memory backup relocated into the iris repo
+
+Tried a separate `iris-context` GitHub repo first; couldn't create it (no `gh`
+CLI, browser tool disconnected). Scott's fix: "can you not create a folder in
+Iris or something?" — obviously right. **Moved the whole memory backup into
+`Lonesoul65666/iris` at `memory-backup/` (commit `6040a92`), pushed.**
+`C:\Claude\projects\iris-context` is now dead — don't reference it as current,
+don't push there. One repo, one place, going forward.
+
+## 🌙 Late session (same day) — pushed, HOST UPDATE PENDING for `2026.08.17.v2`
+
+Scott updated the host for `v1`, then this landed on top. **Pushed through
+`4530349`; host needs one more update.**
+
+- **`b3a8d98` versioning restored** (see above).
+- **`958a358`** — the 5 design docs the backlog cites are now tracked (they were
+  untracked, single-copy). `public/*-mockup.html` deliberately still untracked.
+- **`4530349` partial-commit fix + `2026.08.17.v2`.** `thisMonthAsk` was
+  `committedThisMonth > 0 ? 0 : …` — a boolean where money belonged. Now paces on
+  `monthNeeded = needed + committedThisMonth` (so `requiredPerMonth` is STABLE for
+  the whole month instead of shrinking as you fund it) and
+  `thisMonthAsk = max(0, requiredPerMonth − committedThisMonth)`. New
+  `partialCount` + `StashCommitRow.isFullyFunded` separate "a confirm exists" from
+  "the month is done." UI: strict toggle broke top-ups (the only way to add was
+  undo-and-redo), so part-funded pots now get **"Top up $X"** (`toggleStashCommit`
+  gained a `topUp` flag that RAISES the existing confirm) plus a separate undo, on
+  both surfaces. Also fixed the false "can never show different numbers" comment.
+  **414 tests.**
+
+### ⚠️ I GOT A DIAGNOSIS WRONG — don't repeat it
+I told Scott August was partially funded and "Income Taxes is ~$646 short." **It
+isn't.** I compared his commits against each pot's `monthlyContribution` ("plan")
+instead of the PACED `requiredPerMonth`. Verified by running the real
+`computeCommitRun` against live Postgres for Aug 2026: **every committed pot
+matches its paced ask exactly** (Insurance 342, Kitchen Table 202, Income Taxes
+436, Scott's Office 408, Credit Card Membership 33). Income Taxes = $10,000 target,
+$6,082 banked, 9 moves to 2027-04-09 → $436/mo is correct. The only pending pot is
+**Savings $336** (no confirm), which already displayed correctly.
+**So the bug was REAL but LATENT** — it only bites when Scott commits an amount
+different from the offered ask, which he never does because he clicks the button.
+⚠️ **`monthlyContribution` is the stale user-entered "plan"; the paced ask is
+authoritative.** The card labels it "plan" for exactly this reason.
+
+### Live-data facts learned this session (save re-probing)
+- **Scott's bulk categorization did NOT break anything.** 21 buckets $13,397 + 6
+  pots $2,403 = **$15,800 exactly**; **zero** blank categories across 2,192 rows;
+  **zero** `typeOverride` rows.
+- What he hit with "apply this savings amount to this category — it added it to
+  it": custom categories `savings` and `weed` exist with **no bucket and no
+  transactions**, and all six pots still have `categories: []`. Creating a custom
+  category does NOT create a budget bucket, so it lands as an orphan. Nothing
+  persisted; nothing corrupted.
+- **DB shape gotchas:** pots are stored under collection name **`sinkingFunds`**
+  (not `stashes`); **`expenses` is its own TABLE** (2,192 rows), not a
+  `collections` name. `computeStashStatus` only reads confirms when
+  **`startMonth` is set** (`derived`) — fixtures without it silently get
+  `committedThisMonth: 0` and test nothing. All six live pots are derived.
+- **The `committedReserves` 🔴 is DOWNGRADED.** The legacy `sf-vacation`/
+  `sf-holidays`/`sf-emergency` ids **do not exist** in his data — all six pots are
+  `stash-<timestamp>`, which the prefix match catches. Only non-stash lane is one
+  `2026-06:investing` $1,000 confirm. So it's ~$1,000 in one month, not ~$13.6k.
+  **`VariableSurplusCard:118` is the real source of the inflated "free to deploy."**
+- **Fidelity is live but totals-only.** 3 accounts (Abnormal 401k $75,006 ·
+  Individual TOD $331,482 · Mimecast 401k $59,782 = **$466,270**), and they DO
+  track the market ($436,931 → $466,270 across August). But each account carries
+  ONE synthetic holding: `ticker: 'HOLDINGS'`, `shares: 1`, `avgCostBasis ===
+  currentPrice`, so **`totalGainLoss` is structurally $0** — any performance view
+  built on this is a lie by construction. Cause: `server/plaid-client.ts:108`
+  requests `products: ['transactions']` only. Holdings need Plaid's `investments`
+  product, which **requires Scott to RE-LINK Fidelity through Plaid Link** — not a
+  code-only change. This is the agreed next project.
+- Flat stretches in the net-worth trend = days the app wasn't opened (snapshots are
+  client-generated — Bucket 2 #3).
 
 ## ⚠️ TWO OPEN ITEMS FOR SCOTT
 
@@ -101,15 +197,16 @@ headline money fix, was never imported by any test.
 
 ### ❌ STILL OPEN — the next session's queue, roughly prioritized
 **Stash (all real, from the stash reviewer):**
-- 🔴 **Partial commit reports "fully funded."** `thisMonthAsk` is 0 whenever
-  anything is committed. Fix: `ask = max(0, requiredPerMonth − committedThisMonth)`
-  and key `pendingCount`/footer copy off the residual. Also no UI path to top up
-  (re-click UNDOES — strict toggle).
-- 🔴 **`committedReserves` vs `computeCommitRun` disagree.** `committedReserves`
-  matches `lane.startsWith('stash-')` so **legacy `sf-vacation`/`sf-holidays`/
-  `sf-emergency` ids seeded by `budgetDefaults.ts:353` leave checking but never
-  leave the $15,800** — feeds the inflated "free to deploy". Also retired/deleted
-  pots' confirms. Fix: one shared helper.
+- ✅ **FIXED + PUSHED `4530349` (`2026.08.17.v2`) — partial commit reported "fully
+  funded."** Plus the top-up path. Detail in the late-session section above.
+- 🟡 **(DOWNGRADED from 🔴 — verified against live data) `committedReserves` vs
+  `computeCommitRun` disagree.** `committedReserves` matches
+  `lane.startsWith('stash-')`. The feared legacy `sf-vacation`/`sf-holidays`/
+  `sf-emergency` ids **are not in Scott's data** — all six pots are
+  `stash-<timestamp>`. Real exposure is one `2026-06:investing` $1,000 confirm, not
+  ~$13.6k. Still worth one shared helper (and retired/deleted pots' confirms), but
+  it is NOT the source of the inflated "free to deploy" —
+  **`VariableSurplusCard:118` is** (backlog Bucket 0 #9).
 - 🔴 **`past_due` sets `thisMonthAsk = needed`** (whole balance as a commit button)
   AND fires early — `daysToDue` uses `Math.round`, flips ~lunchtime the day before.
 - 🔴 **`requiredMonthlyForGoal` disagrees with the card's ask** for recurring pots
