@@ -7,7 +7,10 @@ import {
 } from '../stashMath';
 import { formatDuration } from '../format';
 import type { DeployConfirmation, PotDraw } from '../../stores/budgetStore';
-import { laneOf, totalReserveSetAside, configureStashLanes, RESERVE_CATEGORIES, RESERVE_ALLOCATIONS } from '../budgetLanes';
+import {
+  laneOf, totalReserveSetAside, configureStashLanes, RESERVE_CATEGORIES, RESERVE_ALLOCATIONS,
+  getReserveAllocations, reservePotsSharingWith,
+} from '../budgetLanes';
 import type { Stash } from '../../types/budget';
 
 const NOW = new Date(2026, 5, 11); // June 11, 2026 (local)
@@ -202,14 +205,34 @@ describe('aggregations', () => {
     ])).toBe(2750);
   });
 
-  it('stashAllocationsByCategory splits a multi-category stash evenly', () => {
-    const { categories, allocations } = stashAllocationsByCategory([
-      stash({ monthlyContribution: 200, categories: ['home_maintenance', 'car_maintenance'] }),
-      stash({ id: 's2', monthlyContribution: 1500, categories: ['taxes'] }),
+  it('stashAllocationsByCategory reports the whole pool, and flags a shared one', () => {
+    // An even split is an INVENTED number: a $200 "Car stuff" pot covering
+    // maintenance and gas does not reserve $100 for each, it reserves $200 for
+    // both. It used to divide, and the comment called the split "advisory" — but
+    // it feeds getReserveAllocations(), which is what the Budget page quotes.
+    const { categories, allocations, sharing } = stashAllocationsByCategory([
+      stash({ name: 'Car stuff', monthlyContribution: 200, categories: ['home_maintenance', 'car_maintenance'] }),
+      stash({ id: 's2', name: 'Taxes', monthlyContribution: 1500, categories: ['taxes'] }),
     ]);
     expect(categories.sort()).toEqual(['car_maintenance', 'home_maintenance', 'taxes']);
-    expect(allocations.home_maintenance).toBe(100);
+    expect(allocations.home_maintenance).toBe(200);
+    expect(allocations.car_maintenance).toBe(200);
+    expect(sharing.home_maintenance).toEqual(['Car stuff']);
+    // A pot with one category owns its money outright — nothing to disclose.
     expect(allocations.taxes).toBe(1500);
+    expect(sharing.taxes).toBeUndefined();
+  });
+
+  it('the shared pool never double-counts the set-aside total', () => {
+    applyStashLaneConfig([
+      stash({ name: 'Car stuff', monthlyContribution: 200, categories: ['home_maintenance', 'car_maintenance'] }),
+    ]);
+    // Reported against both categories, counted once in the total.
+    expect(getReserveAllocations().home_maintenance).toBe(200);
+    expect(getReserveAllocations().car_maintenance).toBe(200);
+    expect(totalReserveSetAside()).toBe(200);
+    expect(reservePotsSharingWith('car_maintenance')).toEqual(['Car stuff']);
+    expect(reservePotsSharingWith('taxes')).toEqual([]);
   });
 });
 

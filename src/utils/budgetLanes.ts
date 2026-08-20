@@ -57,6 +57,7 @@ export const RESERVE_ALLOCATIONS: Record<string, number> = {
 let reserveSet = new Set(RESERVE_CATEGORIES);
 let reserveAllocations: Record<string, number> = { ...RESERVE_ALLOCATIONS };
 let reserveTotalOverride: number | null = null;
+let reserveSharing: Record<string, string[]> = {};
 
 export function configureStashLanes(
   categories: string[],
@@ -64,15 +65,28 @@ export function configureStashLanes(
   /** Σ of ALL stash contributions — includes pure savings pots (no categories),
    *  which still come off the top of Safe-to-Spend. */
   totalSetAside?: number,
+  /** Category → names of the pots covering it, recorded ONLY where a covering pot
+   *  also covers other categories. That's the case where the per-category dollar
+   *  figure isn't a number in its own right — it's one pool of money — and the
+   *  copy has to say so instead of quoting a split. */
+  sharing?: Record<string, string[]>,
 ): void {
   reserveSet = new Set(['travel_work', ...categories]);
   reserveAllocations = { ...allocations };
   reserveTotalOverride = typeof totalSetAside === 'number' ? totalSetAside : null;
+  reserveSharing = { ...(sharing ?? {}) };
 }
 
 /** Current per-category monthly set-asides (stash-configured or defaults). */
 export function getReserveAllocations(): Record<string, number> {
   return reserveAllocations;
+}
+
+/** For a category whose reserve comes from a pot that ALSO covers other
+ *  categories: the pot names. Empty when the category has a pot to itself (or no
+ *  pot at all), which is the normal case. */
+export function reservePotsSharingWith(category: string): string[] {
+  return reserveSharing[category] ?? [];
 }
 
 /** Σ monthly set-asides — the "reserve set-asides" line in Safe-to-Spend. */

@@ -548,19 +548,35 @@ export function committedReserves(confirms: DeployConfirmation[], month: string)
 
 /** Per-category allocation map for the lane registry (configureStashLanes).
  *  A category covered by several stashes sums their contributions. */
-export function stashAllocationsByCategory(stashes: Stash[]): { categories: string[]; allocations: Record<string, number> } {
+export function stashAllocationsByCategory(stashes: Stash[]): {
+  categories: string[];
+  allocations: Record<string, number>;
+  /** Category → pots covering it, recorded only where a covering pot covers MORE
+   *  than one category (see below). */
+  sharing: Record<string, string[]>;
+} {
   const allocations: Record<string, number> = {};
+  const sharing: Record<string, string[]> = {};
   const categories: string[] = [];
   for (const s of stashes) {
-    for (const c of s.categories ?? []) {
+    const cats = s.categories ?? [];
+    for (const c of cats) {
       if (!categories.includes(c)) categories.push(c);
-      // Spread the stash contribution evenly across its categories for display;
-      // the lane decision only needs membership, the $ split is advisory.
-      const share = (s.monthlyContribution || 0) / Math.max(1, (s.categories ?? []).length);
-      allocations[c] = Math.round(((allocations[c] || 0) + share) * 100) / 100;
+      // The pot's WHOLE monthly move, not a slice of it.
+      //
+      // This used to divide the contribution evenly across the pot's categories
+      // and call the result "advisory" — fine while nothing read it, but it feeds
+      // getReserveAllocations(), which is the number the Budget page quotes as
+      // "$X/mo reserved". The moment a pot covers two categories, an even split
+      // is an invented number: a $200 "Car stuff" pot covering maintenance and
+      // gas does not reserve $100 for each, it reserves $200 for both. So each
+      // covered category reports the real pool, and `sharing` records that the
+      // pool is shared so the copy can say it rather than implying an entitlement.
+      allocations[c] = Math.round(((allocations[c] || 0) + (s.monthlyContribution || 0)) * 100) / 100;
+      if (cats.length > 1) sharing[c] = [...(sharing[c] ?? []), s.name];
     }
   }
-  return { categories, allocations };
+  return { categories, allocations, sharing };
 }
 
 /** True when any stash has linked categories — i.e. stash config should drive
@@ -574,8 +590,10 @@ export function stashesConfigured(stashes: Stash[]): boolean {
  *  keep ruling, so pre-stash installs behave exactly as before. */
 export function applyStashLaneConfig(stashes: Stash[]): void {
   if (!stashesConfigured(stashes)) return;
-  const { categories, allocations } = stashAllocationsByCategory(stashes);
-  configureStashLanes(categories, allocations, totalStashContributions(stashes));
+  const { categories, allocations, sharing } = stashAllocationsByCategory(stashes);
+  // totalSetAside is passed separately and is the Σ of CONTRIBUTIONS, so a shared
+  // pool reported against each of its categories can't double-count the total.
+  configureStashLanes(categories, allocations, totalStashContributions(stashes), sharing);
 }
 
 /** One-time seed (design D5): if no stash covers taxes / personal travel,

@@ -33,7 +33,7 @@ import ActionItemsView, { type ActionItem } from '../ActionItems/ActionItems';
 import { getActionItems, saveAllActionItems, saveMerchantMapping } from '../../stores/actionStore';
 import { applyTransactionsToBuckets, applyMonthToBuckets, computeMonthlySpending, computeCategoryTrends, computeWorkExpenses, registerCustomCategories, getCategoryLabel, getCategoryIcon, isRealExpense, isCompleteMonth, currentMonthKey, emptyMonthlySpending, parseLocalDate, type MonthlySpending, type CategoryTrend } from '../../utils/transactionAnalysis';
 import { formatCurrency } from '../../utils/format';
-import { laneOf, isOverBudget, RESERVE_ALLOCATIONS, FLEX_APPROACHING, type BudgetLane } from '../../utils/budgetLanes';
+import { laneOf, isOverBudget, getReserveAllocations, reservePotsSharingWith, FLEX_APPROACHING, type BudgetLane } from '../../utils/budgetLanes';
 import ScoreRing from '../ui/ScoreRing';
 import EmptyState from '../ui/EmptyState';
 import { useHasRealData } from '../../hooks/useHasRealData';
@@ -1066,7 +1066,15 @@ export default function BudgetView() {
 
                 // RESERVE — monthly set-aside vs lumpy actual. Calm slate, never "over".
                 if (lane === 'reserve') {
-                  const alloc = RESERVE_ALLOCATIONS[c.cat] ?? budget;
+                  // The LIVE registry, not the legacy constants. This line quoted
+                  // RESERVE_ALLOCATIONS directly, so once pot categories are linked
+                  // it would have kept reciting $1,000/mo taxes / $1,000/mo travel
+                  // while the pots actually planned something else — the frozen
+                  // number the whole stash-driven lane exists to replace.
+                  // (getReserveAllocations() starts life as those same constants,
+                  // so nothing changes until pots are linked.)
+                  const alloc = getReserveAllocations()[c.cat] ?? budget;
+                  const sharedWith = reservePotsSharingWith(c.cat);
                   const fill = alloc > 0 ? Math.min(c.current / alloc, 1) : (c.current > 0 ? 1 : 0);
                   return (
                     <div key={c.cat} className="space-y-1">
@@ -1084,7 +1092,13 @@ export default function BudgetView() {
                         )}
                       </div>
                       <div className="ml-8 text-[10px] text-text-muted">
-                        {alloc > 0 ? `${formatCurrency(alloc)}/mo reserved · lumpy, not a monthly bust` : 'Reserve — funded from surplus'}
+                        {alloc > 0
+                          ? sharedWith.length > 0
+                            // One pool, several categories: say whose pot it is
+                            // instead of implying this category owns the money.
+                            ? `${formatCurrency(alloc)}/mo in ${sharedWith.join(' + ')}, shared with other categories`
+                            : `${formatCurrency(alloc)}/mo reserved · lumpy, not a monthly bust`
+                          : 'Reserve — funded from surplus'}
                       </div>
                     </div>
                   );
