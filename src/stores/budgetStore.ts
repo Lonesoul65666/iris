@@ -139,7 +139,18 @@ export async function saveSinkingFunds(funds: SinkingFund[]): Promise<void> {
 }
 
 export async function getSinkingFunds(): Promise<SinkingFund[]> {
-  return listCollection<SinkingFund>('sinkingFunds')
+  const rows = await listCollection<SinkingFund>('sinkingFunds')
+  // Fold the retired `monthlyFill` into monthlyContribution (see the tombstone in
+  // types/budget.ts). Readers used to prefer monthlyFill, so preferring it HERE
+  // is what keeps every displayed number identical through the migration; saves
+  // use REPLACE semantics, so the collapsed shape persists on the next write and
+  // this becomes a no-op.
+  return rows.map((f) => {
+    const legacy = (f as SinkingFund & { monthlyFill?: number }).monthlyFill
+    if (legacy == null) return f
+    const { monthlyFill: _drop, ...rest } = f as SinkingFund & { monthlyFill?: number }
+    return { ...rest, monthlyContribution: legacy }
+  })
 }
 
 export async function saveFunMoney(fm: FunMoney[]): Promise<void> {

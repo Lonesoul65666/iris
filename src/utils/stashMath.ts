@@ -460,7 +460,7 @@ export function computeCommitRun(
     const forecast = computeStashForecast(status, now);
     const committed = status.committedThisMonth;
     // No goal to pace against → the planned drip IS the target (the Savings pot).
-    const planned = Math.round(s.monthlyFill ?? s.monthlyContribution ?? 0);
+    const planned = Math.round(s.monthlyContribution || 0);
     // Residual, never a boolean — `committed > 0 ? 0 : …` was the bug: any commit,
     // however small, reported the pot done for the month.
     const ask = forecast ? forecast.thisMonthAsk : Math.max(0, planned - committed);

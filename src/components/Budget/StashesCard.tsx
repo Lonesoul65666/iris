@@ -222,7 +222,6 @@ export default function StashesCard({ stashes, expenses, confirms, draws = [], o
         monthsSaving: sf?.startMonth ? monthsElapsedInclusive(sf.startMonth) : undefined,
       },
       monthlyContribution: 0,
-      monthlyFill: 0,
       categories: [],
       startMonth: undefined,
     });

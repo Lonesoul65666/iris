@@ -312,10 +312,14 @@ export interface SinkingFund {
    *  Want-to = goal you're saving toward (trips, remodel). Grouping only —
    *  the fill + confirm mechanic is identical for both. */
   kind?: 'have_to' | 'want_to';
-  /** Planned monthly move into this stash — the one-tap default when confirming
-   *  ("Make Every Dolla Holla"). Distinct from the legacy monthlyContribution so
-   *  we can migrate without disturbing existing reserve math. */
-  monthlyFill?: number;
+  // `monthlyFill` was a parallel copy of monthlyContribution, added so the commit
+  // model could migrate away from it. The migration never finished, so the app
+  // carried two fields for one concept: writers kept them in lockstep, readers
+  // said `monthlyFill ?? monthlyContribution`, and the auto-fill wrote only
+  // monthlyContribution — meaning a pot with a stale monthlyFill IGNORED the
+  // number the app had just calculated for it. Removed 2026-08-20;
+  // monthlyContribution is the one field, and getSinkingFunds folds any stored
+  // monthlyFill into it on read.
   /** How the goal is timed. Drives the ETA/countdown:
    *  - 'custom'     → one-time deadline held in `targetDate` (trips, a remodel).
    *  - 'annual'     → recurs once a year, in month `dueMonth` (card fees, taxes).

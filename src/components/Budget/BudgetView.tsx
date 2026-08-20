@@ -277,11 +277,11 @@ export default function BudgetView() {
     await saveBudgetBuckets(updated);
   }, [buckets]);
 
-  // Edit a pot's planned monthly move from the Edit Budget screen — same value as
-  // the card (monthlyFill/monthlyContribution kept in lockstep), so the zero-based
-  // allocation and the Have-To/Want-To card never disagree.
+  // Edit a pot's planned monthly move from the Edit Budget screen — the same
+  // single field the card edits, so the zero-based allocation and the
+  // Have-To/Want-To card can't disagree.
   const updatePotFill = useCallback(async (id: string, fill: number) => {
-    const updated = sinkingFunds.map(f => f.id === id ? { ...f, monthlyFill: fill, monthlyContribution: fill } : f);
+    const updated = sinkingFunds.map(f => f.id === id ? { ...f, monthlyContribution: fill } : f);
     setSinkingFunds(updated);
     applyStashLaneConfig(updated);
     await saveSinkingFunds(updated);
@@ -673,7 +673,7 @@ export default function BudgetView() {
   // claim to part of the $15,800 before they're ever committed. Counting them here
   // is what makes "add until only a small gap is left = budget done" tell the truth
   // (the old leftover ignored the pots and read ~$2k too high).
-  const plannedPotFills = sinkingFunds.reduce((s, f) => s + Math.round(f.monthlyFill ?? f.monthlyContribution ?? 0), 0);
+  const plannedPotFills = sinkingFunds.reduce((s, f) => s + Math.round(f.monthlyContribution || 0), 0);
   const unallocated = paycheck.netTakeHome - totalAllocated - plannedPotFills;
 
   // Comparative planning: last complete month's actuals vs the plan, + rebalance
@@ -2119,7 +2119,7 @@ export default function BudgetView() {
           {sinkingFunds.map(f => {
             const isHave = (f.kind ?? 'want_to') === 'have_to';
             const kc = isHave ? '#f59e0b' : '#a855f7';
-            const fill = Math.round(f.monthlyFill ?? f.monthlyContribution ?? 0);
+            const fill = Math.round(f.monthlyContribution || 0);
             return (
               <div key={f.id} className="px-4 py-2.5 flex items-center gap-3">
                 <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: kc + '22', color: kc }}>{isHave ? 'Have' : 'Want'}</span>
