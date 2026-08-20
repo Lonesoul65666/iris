@@ -5,9 +5,10 @@ import type {
   SinkingFund,
   FunMoney,
 } from '../types/budget';
-import { computeMonthlySpending, computeCategoryTrends, computeCategoryAverages } from './transactionAnalysis';
+import { computeMonthlySpending, computeCategoryTrends, computeCategoryAverages, parseLocalDate } from './transactionAnalysis';
 import { laneOf } from './budgetLanes';
 import { computeSavingsRate } from './savingsRate';
+import { isBankFee } from './disputes';
 
 // ─── Types ───
 
@@ -508,21 +509,50 @@ function generatePositiveReinforcement(
 // Transfers import as transactionType='transfer' and are ignored here; a real
 // outflow EXPENSE on those sources is the thing worth flagging.
 const SAVINGS_SOURCES = new Set(['bofa_savings', 'bofa_joint']);
-function detectSavingsWithdrawals(expenses: Expense[]): Insight[] {
+
+/** How far back the savings tripwire looks.
+ *
+ *  It used to scan ALL history with no window, so a February cash run was still
+ *  warning in August — six months after anything could be done about it. Live
+ *  case: "$1.6k spent straight from savings" was one $150 Zelle from Dec 2025
+ *  plus nine rows from a single Dubai trip in Feb 2026. (Scott, 2026-08-19: "the
+ *  1.6k spent straight from savings, I need to figure out what that is.")
+ *
+ *  Deliberately shorter than JUDGING_WINDOW_MONTHS: a budget verdict wants
+ *  enough months to see a pattern, but a tripwire is only useful while you can
+ *  still react. ~2 months so a withdrawal near a month boundary doesn't vanish
+ *  the next morning. */
+export const SAVINGS_TRIPWIRE_DAYS = 60;
+
+function detectSavingsWithdrawals(expenses: Expense[], now: Date = new Date()): Insight[] {
+  const cutoff = new Date(now.getTime() - SAVINGS_TRIPWIRE_DAYS * 86_400_000);
   const hits = expenses.filter(e =>
     SAVINGS_SOURCES.has(e.source ?? '') &&
     (e.flow ?? 'outflow') === 'outflow' &&
-    (e.transactionType ?? 'expense') === 'expense',
+    (e.transactionType ?? 'expense') === 'expense' &&
+    parseLocalDate(e.date) >= cutoff,
   );
   if (hits.length === 0) return [];
+  // Fees ride along with the withdrawal that caused them — three Dubai cash
+  // pulls arrived as nine rows, so counting rows made one trip look like a
+  // spree. They're still real money out (kept in the total); they just aren't
+  // separate decisions worth counting.
+  const principal = hits.filter(e => !isBankFee(e.description));
+  const feeCount = hits.length - principal.length;
   const total = hits.reduce((s, e) => s + e.amount, 0);
-  const latest = hits.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+  const counted = principal.length > 0 ? principal : hits;
+  const latest = counted.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
   return [{
     id: 'savings-withdrawal',
     severity: 'warning',
     category: 'saving',
     title: `${fmt(total)} spent straight from savings`,
-    description: `${hits.length === 1 ? 'A charge' : `${hits.length} charges`} left your savings buckets (Super Savings / Our Stuffs), which shouldn't have spending — most recently "${latest.description.slice(0, 40)}" for ${fmt(latest.amount)}. If that was a rare ATM pull, fine; otherwise it's worth a look.`,
+    description:
+      `${counted.length === 1 ? 'A charge' : `${counted.length} charges`} left your savings buckets ` +
+      `(Super Savings / Our Stuffs) in the last ${SAVINGS_TRIPWIRE_DAYS} days — those shouldn't have spending. ` +
+      `Most recently "${latest.description.slice(0, 40)}" for ${fmt(latest.amount)}` +
+      (feeCount > 0 ? `, plus ${feeCount} bank ${feeCount === 1 ? 'fee' : 'fees'} on top` : '') +
+      `. If that was a rare ATM pull, fine; otherwise it's worth a look.`,
     metric: total,
     metricLabel: `${fmt(total)} from savings`,
   }];
@@ -536,6 +566,9 @@ export function generateInsights(params: {
   funMoney: FunMoney[];
   monthlyInvestmentAmount: number;
   totalLiquidAssets: number;
+  /** Injectable clock. Windowed insights (the judging window, the savings
+   *  tripwire) are only testable if "now" can be moved. */
+  now?: Date;
 }): Insight[] {
   const {
     expenses,
@@ -545,12 +578,13 @@ export function generateInsights(params: {
     funMoney,
     monthlyInvestmentAmount,
     totalLiquidAssets,
+    now = new Date(),
   } = params;
 
   // Budget-vs-reality verdicts judge on the RECENT window, not all of history —
   // see JUDGING_WINDOW_MONTHS. Both the over- and under-budget insights read this
   // so they can never disagree about the same category.
-  const recentActual = computeCategoryAverages(expenses, new Date(), { trailingMonths: JUDGING_WINDOW_MONTHS });
+  const recentActual = computeCategoryAverages(expenses, now, { trailingMonths: JUDGING_WINDOW_MONTHS });
 
   const monthly = computeMonthlySpending(expenses);
   const monthCount = Math.max(monthly.length, 1);
@@ -583,7 +617,7 @@ export function generateInsights(params: {
   // Run all insight generators
   const allInsights: Insight[] = [
     ...detectDeficit(bestExpenseEstimate, paycheck.netTakeHome),
-    ...detectSavingsWithdrawals(expenses),
+    ...detectSavingsWithdrawals(expenses, now),
     ...detectCategorySpikes(expenses),
     ...detectOverBudgetCategories(buckets, recentActual),
     ...detectUnallocatedSurplus(paycheck.netTakeHome, bestExpenseEstimate),
