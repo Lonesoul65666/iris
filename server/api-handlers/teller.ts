@@ -529,7 +529,15 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
                    'spender',             expenses.data->'spender',
                    -- type/flow are mapper-owned UNLESS the user reclassified by hand
                    -- (typeOverride). See the note in plaid.ts upsertMappedRows.
-                   'typeOverride',        expenses.data->'typeOverride',
+                   -- What the feed says NOW, kept whether or not the user has
+                   -- overridden the type — this is what makes typeOverride a latch
+                   -- (see resolveTypeEdit). If the classifier has come round to the
+                   -- user's answer the override is redundant, so drop it and let the
+                   -- row be mapper-owned again; jsonb_strip_nulls removes the key,
+                   -- and EXCLUDED.data carries no typeOverride of its own.
+                   'feedType',            EXCLUDED.data->'transactionType',
+                   'typeOverride',        CASE WHEN expenses.data->>'transactionType' IS DISTINCT FROM EXCLUDED.data->>'transactionType'
+                                               THEN expenses.data->'typeOverride' END,
                    -- Dispute lifecycle is 100% user-owned — a sync must never clear it.
                    'disputeStatus',       expenses.data->'disputeStatus',
                    'disputedAt',          expenses.data->'disputedAt',
@@ -538,9 +546,15 @@ export async function handleTellerImport(req: Req, res: Res): Promise<void> {
                    'disputeCreditFor',    expenses.data->'disputeCreditFor',
                    'disputeRejectedCreditIds', expenses.data->'disputeRejectedCreditIds',
                    'cashOutReviewed',     expenses.data->'cashOutReviewed',
+                   -- Same condition as the override above, deliberately: when the
+                   -- override is dropped the mapper takes flow back in the SAME
+                   -- statement, instead of the row sitting a sync behind with an
+                   -- old flow and no override to justify it.
                    'transactionType',     CASE WHEN expenses.data->>'typeOverride' = 'true'
+                                               AND expenses.data->>'transactionType' IS DISTINCT FROM EXCLUDED.data->>'transactionType'
                                                THEN expenses.data->'transactionType' END,
                    'flow',                CASE WHEN expenses.data->>'typeOverride' = 'true'
+                                               AND expenses.data->>'transactionType' IS DISTINCT FROM EXCLUDED.data->>'transactionType'
                                                THEN expenses.data->'flow' END
                  )),
                  updated_at = now()
@@ -693,7 +707,15 @@ export async function handleTellerImportIncome(req: Req, res: Res): Promise<void
                    'spender',             expenses.data->'spender',
                    -- type/flow are mapper-owned UNLESS the user reclassified by hand
                    -- (typeOverride). See the note in plaid.ts upsertMappedRows.
-                   'typeOverride',        expenses.data->'typeOverride',
+                   -- What the feed says NOW, kept whether or not the user has
+                   -- overridden the type — this is what makes typeOverride a latch
+                   -- (see resolveTypeEdit). If the classifier has come round to the
+                   -- user's answer the override is redundant, so drop it and let the
+                   -- row be mapper-owned again; jsonb_strip_nulls removes the key,
+                   -- and EXCLUDED.data carries no typeOverride of its own.
+                   'feedType',            EXCLUDED.data->'transactionType',
+                   'typeOverride',        CASE WHEN expenses.data->>'transactionType' IS DISTINCT FROM EXCLUDED.data->>'transactionType'
+                                               THEN expenses.data->'typeOverride' END,
                    -- Dispute lifecycle is 100% user-owned — a sync must never clear it.
                    'disputeStatus',       expenses.data->'disputeStatus',
                    'disputedAt',          expenses.data->'disputedAt',
@@ -702,9 +724,15 @@ export async function handleTellerImportIncome(req: Req, res: Res): Promise<void
                    'disputeCreditFor',    expenses.data->'disputeCreditFor',
                    'disputeRejectedCreditIds', expenses.data->'disputeRejectedCreditIds',
                    'cashOutReviewed',     expenses.data->'cashOutReviewed',
+                   -- Same condition as the override above, deliberately: when the
+                   -- override is dropped the mapper takes flow back in the SAME
+                   -- statement, instead of the row sitting a sync behind with an
+                   -- old flow and no override to justify it.
                    'transactionType',     CASE WHEN expenses.data->>'typeOverride' = 'true'
+                                               AND expenses.data->>'transactionType' IS DISTINCT FROM EXCLUDED.data->>'transactionType'
                                                THEN expenses.data->'transactionType' END,
                    'flow',                CASE WHEN expenses.data->>'typeOverride' = 'true'
+                                               AND expenses.data->>'transactionType' IS DISTINCT FROM EXCLUDED.data->>'transactionType'
                                                THEN expenses.data->'flow' END
                  )),
                  updated_at = now()

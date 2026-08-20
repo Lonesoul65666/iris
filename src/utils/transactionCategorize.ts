@@ -71,6 +71,33 @@ export function isDefiniteSpend(d: string): boolean {
   return false;
 }
 
+/** What to persist when the user picks a transaction type by hand.
+ *
+ *  `typeOverride` was a ONE-WAY latch: any edit set it true and nothing ever set
+ *  it false, so from the first hand-edit a row's type and flow were frozen
+ *  forever — even if the user immediately set it back to what the bank said. A
+ *  frozen row also stops benefiting from classifier fixes, which is the entire
+ *  reason untouched rows are left mapper-owned.
+ *
+ *  So latch against the FEED's type: an edit that AGREES with the feed clears the
+ *  override and hands the row back. `feedType` is remembered on the row (and
+ *  refreshed by every sync) so the comparison still works after the edit.
+ *
+ *  A legacy row that was already overridden before `feedType` existed keeps its
+ *  override — we cannot know what the feed said, and guessing would silently undo
+ *  a deliberate correction. */
+export function resolveTypeEdit(
+  row: { transactionType?: TransactionType; typeOverride?: boolean; feedType?: TransactionType },
+  nextType: TransactionType,
+): { transactionType: TransactionType; typeOverride: boolean; feedType?: TransactionType } {
+  const current = row.transactionType ?? 'expense';
+  // Undefined ONLY for a legacy overridden row: for an un-overridden row the
+  // current type IS the feed's, since that's who owns it.
+  const feedType = row.feedType ?? (row.typeOverride ? undefined : current);
+  if (feedType === undefined) return { transactionType: nextType, typeOverride: true };
+  return { transactionType: nextType, feedType, typeOverride: nextType !== feedType };
+}
+
 export function classifyBankTransaction(
   desc: string,
   amount: number,

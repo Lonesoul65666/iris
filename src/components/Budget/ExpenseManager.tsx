@@ -3,7 +3,7 @@ import type { Expense, ExpenseCategory, TransactionFlow, TransactionType, Transa
 import { saveExpense, deleteExpense, saveCustomCategory, saveBudgetBuckets, getBudgetBuckets, getEarners, getSourceOwners } from '../../stores/budgetStore';
 import { getMerchantMappings, saveMerchantMapping, type MerchantMapping } from '../../stores/actionStore';
 import { registerCustomCategories, isRealExpense } from '../../utils/transactionAnalysis';
-import { classifyBankTransaction, guessCategory } from '../../utils/transactionCategorize';
+import { classifyBankTransaction, guessCategory, resolveTypeEdit } from '../../utils/transactionCategorize';
 import { formatCurrency } from '../../utils/format';
 import { markDisputed, clearDispute } from '../../utils/disputes';
 import { JOINT, buildOwnerMap, effectiveSpender, spenderName, nextSpender } from '../../utils/attribution';
@@ -872,7 +872,10 @@ export default function ExpenseManager({ expenses, onExpensesChanged, customCate
                                 onChange={async (ev) => {
                                   const nextType = ev.target.value as TransactionType;
                                   if (nextType === txType) return;
-                                  const updated = { ...e, transactionType: nextType, typeOverride: true };
+                                  // Override = "disagrees with the feed", not "was
+                                  // touched" — see resolveTypeEdit. Setting a row
+                                  // back to the bank's answer un-freezes it.
+                                  const updated = { ...e, ...resolveTypeEdit(e, nextType) };
                                   await saveExpense(updated);
                                   onExpensesChanged();
                                 }}

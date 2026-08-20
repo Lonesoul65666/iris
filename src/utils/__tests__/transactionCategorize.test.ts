@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyBankTransaction, guessCategory, isCashOut, isDefiniteSpend } from '../transactionCategorize';
+import { classifyBankTransaction, guessCategory, isCashOut, isDefiniteSpend, resolveTypeEdit } from '../transactionCategorize';
 
 // Sign convention: classifyBankTransaction reads the RAW bank amount —
 // positive = inflow, negative = outflow.
@@ -145,5 +145,33 @@ describe('cash out — one concept (2026-08-13)', () => {
   it('ATM inflows (rebates, deposits) are NOT cash-out — they never reach the rule', () => {
     expect(classifyBankTransaction('BofA Rewards-ATM Oper Rebate Refund of $4', 4).flow).toBe('inflow');
     expect(classifyBankTransaction('BKOFAMERICA ATM 05/01 DEPOSIT', 1538).flow).toBe('inflow');
+  });
+});
+
+describe('resolveTypeEdit — typeOverride is a latch, not a trapdoor', () => {
+  it('an edit that disagrees with the feed sets the override and records the feed type', () => {
+    // The feed called this ATM row a transfer; the user says it is spend.
+    expect(resolveTypeEdit({ transactionType: 'transfer' }, 'expense'))
+      .toEqual({ transactionType: 'expense', typeOverride: true, feedType: 'transfer' });
+  });
+
+  it('setting a row BACK to what the bank said clears the override', () => {
+    // Nothing ever wrote false, so this row used to stay frozen forever — and a
+    // frozen row also stops getting classifier fixes, which is the reason
+    // untouched rows are left mapper-owned in the first place.
+    expect(resolveTypeEdit({ transactionType: 'expense', typeOverride: true, feedType: 'transfer' }, 'transfer'))
+      .toEqual({ transactionType: 'transfer', typeOverride: false, feedType: 'transfer' });
+  });
+
+  it('a second disagreeing edit keeps the override and the same feed type', () => {
+    expect(resolveTypeEdit({ transactionType: 'expense', typeOverride: true, feedType: 'transfer' }, 'investment'))
+      .toEqual({ transactionType: 'investment', typeOverride: true, feedType: 'transfer' });
+  });
+
+  it('a legacy overridden row with no remembered feed type stays overridden', () => {
+    // We cannot know what the bank said, and guessing would silently undo a
+    // deliberate correction.
+    expect(resolveTypeEdit({ transactionType: 'expense', typeOverride: true }, 'transfer'))
+      .toEqual({ transactionType: 'transfer', typeOverride: true });
   });
 });

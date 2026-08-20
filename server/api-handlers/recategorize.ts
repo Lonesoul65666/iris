@@ -52,6 +52,7 @@ export async function handleExpensesRecategorize(req: Req, res: Res): Promise<vo
   const samples: Array<{ desc: string; from: string; to: string }> = []
 
   let guarded = 0
+  let typePreserved = 0
   for (const row of rows) {
     const data = row.data || {}
     const oldCat = (data.category as string) || 'other'
@@ -81,7 +82,16 @@ export async function handleExpensesRecategorize(req: Req, res: Res): Promise<vo
     after[newCat] = (after[newCat] ?? 0) + 1
 
     if (shouldTouch && newCat !== oldCat) {
-      const newData = { ...data, category: newCat, flow, transactionType: type }
+      // A hand-set type is USER-owned. This endpoint wrote flow/transactionType
+      // unconditionally, so running it with ?all=1 reverted the very overrides the
+      // sync SQL exists to protect — a Cash App row flipped to "counts as spend"
+      // would go back to being a transfer. The CATEGORY still updates; only the
+      // ownership of type/flow is respected.
+      const overridden = data.typeOverride === true
+      if (overridden) typePreserved++
+      const newData = overridden
+        ? { ...data, category: newCat }
+        : { ...data, category: newCat, flow, transactionType: type }
       updates.push({ id: row.id, data: newData })
       if (samples.length < 12) samples.push({ desc: desc.slice(0, 34), from: oldCat, to: newCat })
     }
@@ -119,6 +129,7 @@ export async function handleExpensesRecategorize(req: Req, res: Res): Promise<vo
     total: rows.length,
     changed: updates.length,
     guarded, // non-expense rows (income/transfer/refund) skipped by the safety guard
+    typePreserved, // rows re-categorised with their hand-set type left alone
     written,
     before: sortCounts(before),
     after: sortCounts(after),

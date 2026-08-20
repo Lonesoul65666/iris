@@ -103,6 +103,17 @@ export interface Expense {
    *  mortgage got fixed) — an unconditional preserve would freeze old mistakes. */
   typeOverride?: boolean;
 
+  /** What the FEED's mapper most recently classified this row as. Refreshed by
+   *  every sync, whether or not the user has overridden the type.
+   *
+   *  This is what makes typeOverride a latch instead of a one-way trapdoor: an
+   *  edit is an override only while it DISAGREES with the feed. Set it back to
+   *  what the bank said and the row returns to mapper ownership (so later
+   *  classifier fixes reach it again); if the classifier later comes round to the
+   *  user's answer, the sync drops the override for the same reason. Absent on
+   *  rows that predate this field. */
+  feedType?: TransactionType;
+
   // ─── Dispute lifecycle (2026-08-13) ───────────────────────────────────────
   // A charge you're fighting with the card company. Scott's real case: a
   // subscription that shouldn't have billed (Links Car Wash after cancelling,
