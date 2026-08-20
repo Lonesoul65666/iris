@@ -356,6 +356,7 @@ const CATEGORY_INFO: Record<string, { label: string; icon: string }> = {
   savings: { label: 'Savings', icon: '🏦' },
   debt: { label: 'Debt Payments', icon: '💳' },
   amazon: { label: 'Amazon', icon: '📦' },
+  shopping_other: { label: 'Online Shopping (other)', icon: '🛍️' },
   taxes: { label: 'Taxes', icon: '🏛️' },
   other: { label: 'Other', icon: '📦' },
 };

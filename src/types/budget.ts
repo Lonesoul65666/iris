@@ -6,7 +6,7 @@ export type ExpenseCategory =
   | 'travel_work' | 'home_maintenance' | 'car_maintenance'
   | 'education' | 'pets' | 'savings' | 'investing' | 'debt'
   | 'charity' | 'entertainment' | 'alcohol' | 'electronics'
-  | 'amazon' | 'taxes'
+  | 'amazon' | 'shopping_other' | 'taxes'
   | 'other'
   | (string & {}); // allows custom categories while keeping autocomplete for built-ins
 

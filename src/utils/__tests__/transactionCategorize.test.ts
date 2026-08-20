@@ -175,3 +175,16 @@ describe('resolveTypeEdit — typeOverride is a latch, not a trapdoor', () => {
       .toEqual({ transactionType: 'transfer', typeOverride: true });
   });
 });
+
+describe('online marketplaces are their own bucket', () => {
+  it('routes Temu / Shein / AliExpress to shopping_other, not Personal Care', () => {
+    for (const d of ['TEMU.COM', 'TEMU.COM 13024806118 MA', 'SHEIN.COM', 'ALIEXPRESS US', 'WISH.COM']) {
+      expect(guessCategory(d)).toBe('shopping_other');
+    }
+  });
+
+  it('does not touch Amazon, which keeps its own bucket', () => {
+    expect(guessCategory('AMAZON.COM*5A04174U0')).toBe('amazon');
+    expect(guessCategory('AMAZON MKTPL*5A1WQ54S1')).toBe('amazon');
+  });
+});
