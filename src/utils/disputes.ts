@@ -29,7 +29,7 @@
 // the components.
 
 import type { Expense, DisputeStatus } from '../types/budget';
-import { parseLocalDate } from './transactionAnalysis';
+import { parseLocalDate, isDisputeExcluded } from './transactionAnalysis';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -167,6 +167,44 @@ export function rejectCandidateCredit(charge: Expense, creditId: string): Partia
   return {
     disputeRejectedCreditIds: seen.includes(creditId) ? seen : [...seen, creditId],
   };
+}
+
+/** A refund that is being HELD OUT of the budget for a dispute that no longer
+ *  justifies it.
+ *
+ *  `disputeCreditFor` suppresses a credit so it can't net against its category
+ *  while the charge it offsets is already excluded from spend — count both and
+ *  you invent money. But the link is a bare id with nothing enforcing the other
+ *  end, so two ordinary actions strand it:
+ *
+ *   • DELETE the disputed charge. `disputeCreditFor` now points at nothing, the
+ *     credit is suppressed forever, and there is no way back through the UI — the
+ *     dispute badge only renders when `disputeStatus` is set, which a credit never
+ *     has. SQL was the only exit (2026-08-19 audit).
+ *   • Resolve or undo a dispute and have the SECOND save fail. Every one of those
+ *     flows is two un-transacted patches (see NeedsYourCall), so the release can
+ *     be lost to a closed tab or a sleeping host.
+ *
+ *  Both land in the same state: a suppressed credit whose charge is not excluded.
+ *  That's the test — not "was the charge deleted" — so it covers the race too.
+ *  Money stops disappearing quietly; it appears in the queue with a way out. */
+export function listOrphanedDisputeCredits(expenses: Expense[]): Expense[] {
+  const byId = new Map(expenses.map((e) => [e.id, e]));
+  return expenses
+    .filter((e) => {
+      if (!e.disputeCreditFor) return false;
+      const charge = byId.get(e.disputeCreditFor);
+      // No charge at all, or a charge that counts as spend again → nothing for
+      // this credit to offset.
+      return !charge || !isDisputeExcluded(charge);
+    })
+    .sort((a, b) => parseLocalDate(b.date).getTime() - parseLocalDate(a.date).getTime());
+}
+
+/** Let the credit count again. The only fix — the suppression exists purely to
+ *  pair with an excluded charge, and there is no longer one. */
+export function releaseDisputeCredit(): Partial<Expense> {
+  return { disputeCreditFor: undefined };
 }
 
 /** Cash-out still sitting in the ATM/Cash bucket with nobody having said what it

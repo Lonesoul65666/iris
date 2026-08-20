@@ -15,8 +15,9 @@ import { useMemo } from 'react';
 import type { Expense, ExpenseCategory } from '../../types/budget';
 import { formatCurrency } from '../../utils/format';
 import {
-  listOpenDisputes, listCashOutNeedingCall,
+  listOpenDisputes, listCashOutNeedingCall, listOrphanedDisputeCredits,
   resolveDisputeWon, resolveDisputeLost, clearDispute, rejectCandidateCredit,
+  releaseDisputeCredit,
 } from '../../utils/disputes';
 import { defaultBudgetBuckets } from '../../stores/budgetDefaults';
 
@@ -38,8 +39,11 @@ const shortDate = (d: string) => {
 export default function NeedsYourCall({ expenses, onPatch }: Props) {
   const disputes = useMemo(() => listOpenDisputes(expenses), [expenses]);
   const cashOut = useMemo(() => listCashOutNeedingCall(expenses), [expenses]);
+  // Refunds still held out for a dispute that no longer exists — money that had
+  // no way back except SQL.
+  const orphaned = useMemo(() => listOrphanedDisputeCredits(expenses), [expenses]);
 
-  if (disputes.length === 0 && cashOut.length === 0) return null;
+  if (disputes.length === 0 && cashOut.length === 0 && orphaned.length === 0) return null;
 
   // Won: BOTH patches or neither. Excluding the charge while the credit still
   // nets would credit the money twice — the whole reason the link exists.
@@ -175,6 +179,42 @@ export default function NeedsYourCall({ expenses, onPatch }: Props) {
                     </button>
                   </div>
                 )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Held-back refunds ──
+          A credit suppressed for a dispute that isn't there any more: the charge
+          was deleted, or a resolve/undo lost its second save. Either way the
+          money silently left every surface, and this is the only exit. */}
+      {orphaned.length > 0 && (
+        <div className="mb-5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-2 h-2 rounded-full bg-positive" />
+            <span className="text-xs font-bold uppercase tracking-wider text-positive">
+              Refunds held back
+            </span>
+            <span className="text-[10px] text-text-muted">· kept out of your budget for a dispute that is gone</span>
+          </div>
+          <div className="space-y-1.5">
+            {orphaned.map(e => (
+              <div key={e.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.04] border-l-2 border-positive/50">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-text-primary truncate">{e.description}</div>
+                  <div className="text-[10px] text-text-muted">
+                    {shortDate(e.date)} · was paired with a disputed charge that no longer exists
+                  </div>
+                </div>
+                <span className="mono-num text-sm font-semibold text-positive flex-shrink-0">
+                  {formatCurrency(e.amount)}
+                </span>
+                <button onClick={() => void onPatch(e.id, releaseDisputeCredit())}
+                  className="px-2 py-0.5 rounded text-[10px] font-semibold border border-positive/40 text-positive hover:bg-positive/15 transition-colors flex-shrink-0"
+                  title="Let this refund count in your budget again">
+                  Count it
+                </button>
               </div>
             ))}
           </div>

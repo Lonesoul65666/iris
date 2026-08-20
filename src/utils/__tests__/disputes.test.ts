@@ -3,7 +3,7 @@ import {
   findCandidateCredit, listOpenDisputes, listCashOutNeedingCall,
   markDisputed, resolveDisputeWon, resolveDisputeLost, clearDispute,
   STALE_DISPUTE_DAYS, MATCH_WINDOW_DAYS, CASH_OUT_LOOKBACK_DAYS, isBankFee,
-  rejectCandidateCredit,
+  rejectCandidateCredit, listOrphanedDisputeCredits, releaseDisputeCredit,
 } from '../disputes';
 import { computeMonthlySpending, isRealExpense } from '../transactionAnalysis';
 import type { Expense } from '../../types/budget';
@@ -300,5 +300,38 @@ describe('the release actually re-nets the credit (both halves applied)', () => 
     const { charge } = clearDispute(won);
     const half = [{ ...won, ...charge }, linked]; // release NOT applied
     expect(month(half).totalExpenses).toBeCloseTo(34.99); // credit never nets
+  });
+});
+
+describe('a suppressed credit whose dispute is gone', () => {
+  // `disputeCreditFor` is a bare id with nothing enforcing the other end, so the
+  // credit could be held out of the budget forever with SQL as the only exit.
+  const suppressed = credit({ id: 'crd', disputeCreditFor: 'chg' });
+
+  it('is listed when the charge was deleted outright', () => {
+    expect(listOrphanedDisputeCredits([suppressed]).map(e => e.id)).toEqual(['crd']);
+  });
+
+  it('is listed when the charge is back to normal spend (a lost second save)', () => {
+    // Both resolve/undo flows are two un-transacted patches; if the release is
+    // lost the charge counts again AND the credit stays suppressed.
+    const lost = ex({ id: 'chg', disputeStatus: 'lost' });
+    const cleared = ex({ id: 'chg' });
+    expect(listOrphanedDisputeCredits([lost, suppressed])).toHaveLength(1);
+    expect(listOrphanedDisputeCredits([cleared, suppressed])).toHaveLength(1);
+  });
+
+  it('is NOT listed while its charge is genuinely excluded', () => {
+    for (const status of ['open', 'won'] as const) {
+      expect(listOrphanedDisputeCredits([ex({ id: 'chg', disputeStatus: status }), suppressed])).toEqual([]);
+    }
+  });
+
+  it('releasing it lets the refund count again', () => {
+    const released = { ...suppressed, ...releaseDisputeCredit() };
+    expect(listOrphanedDisputeCredits([released])).toEqual([]);
+    // And the money is back in the month's numbers.
+    const m = computeMonthlySpending([ex({ id: 'x', amount: 100, date: '2026-08-05' }), released])[0];
+    expect(m.totalDisputed).toBe(0);
   });
 });
