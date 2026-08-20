@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeGuaranteedBase, computeScorecard, computeRecurringPaycheckFloor } from '../savingsScorecard';
+import { computeGuaranteedBase, computeScorecard, computeRecurringPaycheckFloor, settleNotice } from '../savingsScorecard';
 import { currentMonthKey } from '../transactionAnalysis';
 import { exp } from './fixtures';
 import type { Expense } from '../../types/budget';
@@ -272,5 +272,34 @@ describe('computeScorecard — settle lag before a month counts as final', () =>
   it('the in-progress month is partial regardless of the lag', () => {
     const sc = computeScorecard(history, { since: '2026-06', now: new Date(2026, 6, 20) });
     expect(sc.months.find(m => m.month === '2026-07')!.partial).toBe(true);
+  });
+});
+
+describe('settleNotice — saying the lag out loud', () => {
+  const history: Expense[] = [
+    paycheck('2026-06-01', 7900), paycheck('2026-06-15', 7900),
+    paycheck('2026-07-01', 7900), paycheck('2026-07-15', 7900),
+    exp({ date: '2026-06-10', amount: 1000, category: 'food_dining' }),
+    exp({ date: '2026-07-10', amount: 1000, category: 'food_dining' }),
+  ];
+  const noticeAt = (now: Date) => settleNotice(computeScorecard(history, { since: '2026-06', now }), now);
+
+  it('names the month that just ended and counts down whole days', () => {
+    // 00:00 Aug 1 — the exact moment the old code judged July. Final at 00:00 Aug 4.
+    expect(noticeAt(new Date(2026, 7, 1, 0, 0))).toMatchObject({ month: '2026-07', daysRemaining: 3, lagDays: 3 });
+    expect(noticeAt(new Date(2026, 7, 2, 0, 0))!.daysRemaining).toBe(2);
+  });
+
+  it('rounds UP — never promises "final today" while the gate is still shut', () => {
+    // Aug 3, 18:00: 6 hours left. A floor would say 0 days and contradict the gate.
+    expect(noticeAt(new Date(2026, 7, 3, 18, 0))!.daysRemaining).toBe(1);
+  });
+
+  it('goes silent the moment the month is final', () => {
+    expect(noticeAt(new Date(2026, 7, 4, 0, 0))).toBeNull();
+  });
+
+  it('says nothing mid-month — the in-progress month is not "settling"', () => {
+    expect(noticeAt(new Date(2026, 6, 20))).toBeNull();
   });
 });

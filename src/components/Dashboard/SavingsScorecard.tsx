@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useAppData, formatCurrency } from '../../context/AppDataContext';
-import { computeScorecard } from '../../utils/savingsScorecard';
+import { computeScorecard, settleNotice } from '../../utils/savingsScorecard';
 import InfoTooltip from '../ui/InfoTooltip';
 
 /**
@@ -17,6 +17,8 @@ import InfoTooltip from '../ui/InfoTooltip';
 export default function SavingsScorecard() {
   const { rawExpenses } = useAppData();
   const sc = useMemo(() => computeScorecard(rawExpenses || []), [rawExpenses]);
+  // The just-ended month while it's still settling — see the notice line below.
+  const settling = useMemo(() => settleNotice(sc), [sc]);
 
   if (sc.guaranteedBase === 0 || sc.months.length === 0) return null;
 
@@ -60,7 +62,7 @@ export default function SavingsScorecard() {
             <div
               key={m.month}
               className="flex-1 flex flex-col items-center justify-end relative group"
-              title={`${m.label}: spent ${formatCurrency(m.totalSpend)} (${formatCurrency(m.spend)} everyday${m.reserveSpend > 0 ? ` + ${formatCurrency(m.reserveSpend)} taxes/travel` : ''}) — ${under ? 'under' : 'over'} base by ${formatCurrency(Math.abs(m.surplusVsBase))}${m.partial ? ' · in progress' : ''}`}
+              title={`${m.label}: spent ${formatCurrency(m.totalSpend)} (${formatCurrency(m.spend)} everyday${m.reserveSpend > 0 ? ` + ${formatCurrency(m.reserveSpend)} taxes/travel` : ''}) — ${under ? 'under' : 'over'} base by ${formatCurrency(Math.abs(m.surplusVsBase))}${m.month === settling?.month ? ' · settling, not final yet' : m.partial ? ' · in progress' : ''}`}
             >
               <div
                 className={`w-full rounded-t transition-all ${m.partial ? 'opacity-40' : ''} ${under ? 'bg-positive' : 'bg-negative'}`}
@@ -71,6 +73,19 @@ export default function SavingsScorecard() {
           );
         })}
       </div>
+
+      {/* Settle notice — the honest reason the month that just ended is dimmed and
+          not counted yet. Without this sentence the lag reads as a bug on the 1st. */}
+      {settling && (
+        <div className="text-[11px] leading-relaxed text-accent/90 mt-3 flex items-start gap-1.5">
+          <span aria-hidden>⏳</span>
+          <span>
+            Holding <span className="font-medium">{settling.label}</span> until the charges settle — final in{' '}
+            <span className="font-medium mono-num">{settling.daysRemaining}</span> {settling.daysRemaining === 1 ? 'day' : 'days'}.
+            <span className="text-text-muted/80"> Banks post for up to {settling.lagDays} days after a month ends, so streaks and trophies wait for the real number.</span>
+          </span>
+        </div>
+      )}
 
       <div className="flex items-center justify-between text-xs text-text-muted mt-3 pt-3 border-t border-glass-border">
         <span>Under base <span className="text-text-secondary font-medium">{sc.monthsUnderBase}/{sc.fullMonthCount}</span> months</span>

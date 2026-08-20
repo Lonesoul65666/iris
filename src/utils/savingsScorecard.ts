@@ -11,7 +11,7 @@
 // Plus a cumulative "banked since" running total. Pure function — no React/IO.
 
 import type { Expense } from '../types/budget';
-import { computeMonthlySpending, isSettledMonth } from './transactionAnalysis';
+import { computeMonthlySpending, isCompleteMonth, isSettledMonth, monthSettlesAt, SETTLE_LAG_DAYS } from './transactionAnalysis';
 
 // UTC epoch-ms for a 'MM/DD/YYYY' or 'YYYY-MM-DD' date, or null if unparseable.
 // Used to measure the spacing between paychecks (see computeGuaranteedBase).
@@ -186,6 +186,38 @@ export function computeScorecard(expenses: Expense[], opts: { since?: string; no
   };
 
   return { guaranteedBase: base, months, cumulativeBanked, monthsUnderBase, fullMonthCount: full.length, lastFull, priorFull, trend, solvency };
+}
+
+/**
+ * The month that has ENDED but is deliberately not final yet — i.e. we're inside
+ * the SETTLE_LAG_DAYS window. Null the rest of the time.
+ *
+ * The settle lag is a real constraint (Plaid posts late), but on Sept 1 an
+ * already-finished August reading "in progress" looks exactly like a bug. Say it
+ * out loud instead and the constraint becomes a feature: Iris is waiting for the
+ * charges, not confused about the calendar. `daysRemaining` is whole days,
+ * rounded UP, so it never promises "final today" while the gate is still shut.
+ */
+export interface SettleNotice {
+  month: string;          // 'YYYY-MM'
+  label: string;          // 'August 2026'
+  daysRemaining: number;  // ≥ 1
+  lagDays: number;        // the window itself, so copy can explain the why
+}
+
+export function settleNotice(sc: Scorecard, now: Date = new Date()): SettleNotice | null {
+  // Newest first: only the month that just ended can be settling.
+  const m = [...sc.months].reverse().find(
+    (x) => isCompleteMonth(x.month, now) && !isSettledMonth(x.month, now),
+  );
+  if (!m) return null;
+  const msLeft = monthSettlesAt(m.month).getTime() - now.getTime();
+  return {
+    month: m.month,
+    label: m.label,
+    daysRemaining: Math.max(1, Math.ceil(msLeft / 86_400_000)),
+    lagDays: SETTLE_LAG_DAYS,
+  };
 }
 
 /**

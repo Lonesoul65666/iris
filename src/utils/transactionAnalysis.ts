@@ -31,10 +31,15 @@ export const SETTLE_LAG_DAYS = 3;
  *  trust the totals". Use this one before writing anything durable. */
 export function isSettledMonth(ym: string, now: Date = new Date(), lagDays: number = SETTLE_LAG_DAYS): boolean {
   if (!isCompleteMonth(ym, now)) return false;
+  return now.getTime() >= monthSettlesAt(ym, lagDays).getTime();
+}
+
+/** The instant a month's numbers become final. One function so the gate and the
+ *  countdown we SHOW the user can never disagree about the boundary. */
+export function monthSettlesAt(ym: string, lagDays: number = SETTLE_LAG_DAYS): Date {
   const [y, m] = ym.split('-').map(Number);
   // `m` is 1-based, so new Date(y, m, …) is already the FOLLOWING month.
-  const settlesAt = new Date(y, m, 1 + lagDays);
-  return now.getTime() >= settlesAt.getTime();
+  return new Date(y, m, 1 + lagDays);
 }
 
 /** Parse an expense date string as LOCAL time. `new Date('YYYY-MM-DD')` parses
