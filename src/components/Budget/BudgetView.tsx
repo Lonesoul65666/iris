@@ -1017,6 +1017,16 @@ export default function BudgetView() {
                   </div>
                 </div>
               )}
+              {/* Contested money, said out loud. `totalDisputed` was computed and
+                  displayed NOWHERE, so an open dispute simply subtracted itself
+                  from Total Spend with no trace — the amount vanished from every
+                  surface, which is the opposite of what holding it out is for. */}
+              {current.totalDisputed > 0 && (
+                <div className="text-[10px] text-warning mt-1"
+                  title="Charges you're disputing are held out of your spend while the fight is open — see Needs your call">
+                  + {formatCurrency(current.totalDisputed)} disputed — held out of this total
+                </div>
+              )}
             </div>
             <div className="glass-card p-4">
               <div className="term-label">Surplus / Deficit</div>

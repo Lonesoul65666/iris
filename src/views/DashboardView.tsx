@@ -28,6 +28,7 @@ import { detectRecurring } from '../utils/recurringDetector';
 import { forecastCashflow } from '../utils/cashflowForecast';
 import { buildSubscriptionRadar, subKey, type SubscriptionStatusMap, type SubStatus } from '../utils/subscriptionRadar';
 import { buildSubscriptionNudges } from '../utils/subscriptionNudges';
+import { disputeNudges } from '../utils/disputes';
 import { sectionFromBriefingId } from '../utils/weeklyBriefing';
 import { syncHealthNudges } from '../utils/syncHealth';
 import { getLastSyncSummary, hoursSinceLastSync, syncTellerTransactions } from '../lib/syncTellerTransactions';
@@ -194,6 +195,32 @@ export default function DashboardView() {
 
   const dismissSubNudge = useCallback(async (n: Nudge, permanent: boolean) => {
     setSubNudges((prev) => prev.filter((x) => x.id !== n.id));
+    const rec: DismissState = { id: n.id, dismissedAt: new Date().toISOString(), permanent, title: n.title, snoozeDays: n.snoozeDays };
+    await saveSetting(dismissSettingKey(n.id), rec);
+  }, []);
+
+  // Dispute reminders — a credit that landed and needs confirming, or disputes
+  // that have gone quiet. Until now the staleness flag only coloured a row inside
+  // the Needs-your-call queue, so "what's my reminder recourse outside of digging
+  // through my transactions" was answered by a page you had to remember to visit.
+  const [dispNudges, setDispNudges] = useState<Nudge[]>([]);
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const now = new Date();
+      const candidates = disputeNudges(rawExpenses || [], now);
+      const active: Nudge[] = [];
+      for (const n of candidates) {
+        const dismiss = (await getSetting<DismissState>(dismissSettingKey(n.id))) ?? null;
+        if (isNudgeActive(n, dismiss, now)) active.push(n);
+      }
+      if (live) setDispNudges(active);
+    })();
+    return () => { live = false; };
+  }, [rawExpenses]);
+
+  const dismissDispNudge = useCallback(async (n: Nudge, permanent: boolean) => {
+    setDispNudges((prev) => prev.filter((x) => x.id !== n.id));
     const rec: DismissState = { id: n.id, dismissedAt: new Date().toISOString(), permanent, title: n.title, snoozeDays: n.snoozeDays };
     await saveSetting(dismissSettingKey(n.id), rec);
   }, []);
@@ -380,6 +407,16 @@ export default function DashboardView() {
         <NudgeCard key={n.id} nudge={n} index={i}
           onSnooze={() => void dismissSubNudge(n, false)}
           onDismissForever={() => void dismissSubNudge(n, true)} />
+      ))}
+
+      {/* Disputes — the refund landed (confirm it), or the fight has gone quiet.
+          Sits next to the subscription watchdog on purpose: a resurrected charge
+          is exactly what gets disputed, and this is the other end of that story. */}
+      {dispNudges.map((n, i) => (
+        <NudgeCard key={n.id} nudge={n} index={i}
+          onPrimary={n.primary?.view ? () => setView(n.primary!.view!) : undefined}
+          onSnooze={() => void dismissDispNudge(n, false)}
+          onDismissForever={() => void dismissDispNudge(n, true)} />
       ))}
 
       {/* What's New — one-time card after an update (version-gated). "Got it"

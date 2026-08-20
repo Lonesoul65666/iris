@@ -3,7 +3,7 @@ import {
   findCandidateCredit, listOpenDisputes, listCashOutNeedingCall,
   markDisputed, resolveDisputeWon, resolveDisputeLost, clearDispute,
   STALE_DISPUTE_DAYS, MATCH_WINDOW_DAYS, CASH_OUT_LOOKBACK_DAYS, isBankFee,
-  rejectCandidateCredit, listOrphanedDisputeCredits, releaseDisputeCredit,
+  rejectCandidateCredit, listOrphanedDisputeCredits, releaseDisputeCredit, disputeNudges,
 } from '../disputes';
 import { computeMonthlySpending, isRealExpense } from '../transactionAnalysis';
 import type { Expense } from '../../types/budget';
@@ -333,5 +333,63 @@ describe('a suppressed credit whose dispute is gone', () => {
     // And the money is back in the month's numbers.
     const m = computeMonthlySpending([ex({ id: 'x', amount: 100, date: '2026-08-05' }), released])[0];
     expect(m.totalDisputed).toBe(0);
+  });
+});
+
+describe('disputeNudges — the reminder that finds YOU', () => {
+  const iso = (d: string) => new Date(d).toISOString();
+
+  it('says nothing when there is nothing open', () => {
+    expect(disputeNudges([ex({ id: 'a' })], NOW)).toEqual([]);
+  });
+
+  it('is silent on a fresh dispute with no credit yet — that is the normal state', () => {
+    const fresh = ex({ id: 'chg', disputeStatus: 'open', disputedAt: iso('2026-08-18') });
+    expect(disputeNudges([fresh], NOW)).toEqual([]);
+  });
+
+  it('announces a landed credit and points at the confirm step', () => {
+    const chg = ex({ id: 'chg', disputeStatus: 'open', disputedAt: iso('2026-08-08'), amount: 34.99 });
+    const crd = credit({ id: 'crd', date: '2026-08-11', amount: 34.99 });
+    const n = disputeNudges([chg, crd], NOW);
+    expect(n).toHaveLength(1);
+    expect(n[0].id).toBe('dispute-credit:chg');
+    expect(n[0].title).toBe('Your money came back');
+    expect(n[0].body).toContain('$35');
+    expect(n[0].primary?.view).toBe('budget');
+  });
+
+  it('chases a dispute that has gone quiet, with the days and the amount', () => {
+    const chg = ex({ id: 'chg', description: 'ALIVEMOMENT', amount: 89, disputeStatus: 'open', disputedAt: iso('2026-07-20') });
+    const n = disputeNudges([chg], NOW);
+    expect(n).toHaveLength(1);
+    expect(n[0].id).toBe('dispute-stale:chg');
+    expect(n[0].severity).toBe('warning');
+    expect(n[0].body).toContain('31 days');
+  });
+
+  it('never nags twice about the same dispute — a landed credit wins the slot', () => {
+    // Stale AND a credit has arrived: the actionable card is the credit one.
+    const chg = ex({ id: 'chg', date: '2026-07-01', amount: 34.99, disputeStatus: 'open', disputedAt: iso('2026-07-01') });
+    const crd = credit({ id: 'crd', date: '2026-07-05', amount: 34.99 });
+    const ids = disputeNudges([chg, crd], NOW).map(n => n.id);
+    expect(ids).toEqual(['dispute-credit:chg']);
+  });
+
+  it('aggregates rather than stacking one card per dispute', () => {
+    const a = ex({ id: 'a', description: 'A', amount: 50, disputeStatus: 'open', disputedAt: iso('2026-07-10') });
+    const b = ex({ id: 'b', description: 'B', amount: 75, disputeStatus: 'open', disputedAt: iso('2026-07-15') });
+    const n = disputeNudges([a, b], NOW);
+    expect(n).toHaveLength(1);
+    expect(n[0].title).toBe('2 disputes have gone quiet');
+    expect(n[0].body).toContain('$125');   // held out across both
+    expect(n[0].id).toBe('dispute-stale:a,b');  // resolving one changes the key
+  });
+
+  it('calls out a "marked refunded" charge whose credit never linked', () => {
+    const chg = ex({ id: 'chg', amount: 40, disputeStatus: 'won', disputeResolvedAt: iso('2026-07-20') });
+    const n = disputeNudges([chg], NOW);
+    expect(n[0].body).toContain('marked refunded');
+    expect(n[0].body).toContain('no credit linked');
   });
 });

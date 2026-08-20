@@ -18,17 +18,17 @@
 //    explicitly did not want pattern matching doing this behind his back.
 //  • The recall is event-driven: the credit landing is the real signal.
 //
-// ⚠️ SCOPE, stated honestly (corrected 2026-08-13 after review): the staleness
-// backstop is a FLAG IN THIS QUEUE, not a push notification. `stale` turns the
-// row amber and changes its copy — nothing here produces a Nudge, so a dispute
-// you never revisit will not chase you on the Dashboard. Wiring a real
-// disputeNudges() builder into the nudge engine is outstanding work; until then
-// do not describe this as a nudge.
+// SCOPE (2026-08-20): the queue is no longer the only surface. disputeNudges()
+// below builds real Dashboard nudges — a credit that has landed and needs
+// confirming, and disputes that have gone quiet — so "what's my reminder
+// recourse outside of digging through my transactions" has an answer you get
+// without going looking. `stale` still turns the row amber inside the queue.
 //
 // Pure functions — no React, no IO. The plot is computed here; prose lives in
 // the components.
 
 import type { Expense, DisputeStatus } from '../types/budget';
+import type { Nudge } from './nudgeEngine';
 import { parseLocalDate, isDisputeExcluded } from './transactionAnalysis';
 
 const MS_PER_DAY = 86_400_000;
@@ -290,3 +290,79 @@ export const DISPUTE_LABELS: Record<DisputeStatus, string> = {
   won: 'Refunded',
   lost: 'Dispute lost',
 };
+
+// ─── Dashboard nudges ───────────────────────────────────────────────────────
+
+const money = (n: number) => '$' + Math.round(n).toLocaleString();
+
+/**
+ * The dispute reminders, on the Dashboard rather than only inside the queue.
+ *
+ * Scott's actual question was "what's my reminder recourse outside of digging
+ * through my transactions" — and until now the answer was a coloured row on a
+ * page you had to visit. Two beats, deliberately aggregated into at most two
+ * cards: a dispute you forget about is a nag problem, and N cards for N disputes
+ * is how a dashboard becomes wallpaper.
+ *
+ *  1. A CREDIT HAS LANDED. The event-driven half of the design — the credit
+ *     arriving IS the reminder — and it needs one confirming tap to stop the
+ *     money counting twice. This one is genuinely good news, so it says so.
+ *  2. DISPUTES HAVE GONE QUIET. Past STALE_DISPUTE_DAYS with nothing back: the
+ *     card company has almost certainly not posted a conditional credit, and
+ *     issuers have filing deadlines. Also covers the "marked refunded, credit
+ *     never linked" state, where the charge sits excluded indefinitely.
+ *
+ * Pure — the caller handles dismissal/snooze persistence like every other nudge.
+ */
+export function disputeNudges(expenses: Expense[], now: Date = new Date()): Nudge[] {
+  const open = listOpenDisputes(expenses, now);
+  if (open.length === 0) return [];
+  const nudges: Nudge[] = [];
+
+  const withCredit = open.filter((d) => d.candidateCredit);
+  if (withCredit.length > 0) {
+    const first = withCredit[0];
+    const credit = first.candidateCredit!;
+    const more = withCredit.length - 1;
+    nudges.push({
+      // Keyed on the charges involved, so resolving one and leaving another
+      // produces a DIFFERENT nudge rather than a dismissed one staying silent.
+      id: `dispute-credit:${withCredit.map((d) => d.charge.id).join(',')}`,
+      severity: 'info',
+      category: 'budget',
+      icon: '💸',
+      title: withCredit.length === 1 ? 'Your money came back' : `${withCredit.length} refunds came back`,
+      body: `A ${money(credit.amount)} credit landed that matches your ${first.charge.description} dispute`
+        + `${more > 0 ? `, plus ${more} more like it` : ''}. Confirm it in Needs your call and Iris will close the loop`
+        + ` — until you do, the charge stays out of your budget and the credit is on hold, so neither number is finished.`,
+      // The button navigates; it doesn't resolve anything. "Confirm the refund"
+      // on a card that only changes page is a promise it can't keep.
+      primary: { label: 'Take me to it', view: 'budget' },
+      snoozeDays: 2,
+    });
+  }
+
+  // Quiet ones: stale, and nothing to confirm (a landed credit is the other card).
+  const quiet = open.filter((d) => d.stale && !d.candidateCredit);
+  if (quiet.length > 0) {
+    const oldest = quiet[0]; // listOpenDisputes sorts worst-first
+    const held = quiet.reduce((t, d) => t + d.charge.amount, 0);
+    const awaiting = quiet.filter((d) => d.awaitingCredit).length;
+    nudges.push({
+      id: `dispute-stale:${quiet.map((d) => d.charge.id).join(',')}`,
+      severity: 'warning',
+      category: 'budget',
+      icon: '⏳',
+      title: quiet.length === 1 ? 'A dispute has gone quiet' : `${quiet.length} disputes have gone quiet`,
+      body: `${oldest.charge.description} (${money(oldest.charge.amount)}) has been ${oldest.awaitingCredit ? 'marked refunded' : 'open'}`
+        + ` ${oldest.daysOpen} days with nothing back. Card issuers usually post a conditional credit inside a couple of weeks, and they have`
+        + ` filing deadlines — worth chasing.`
+        + (quiet.length > 1 ? ` ${money(held)} is held out of your budget across ${quiet.length} of these.` : '')
+        + (awaiting > 0 ? ` ${awaiting === quiet.length ? 'It is' : `${awaiting} are`} marked refunded with no credit linked, so the charge stays excluded until one arrives.` : ''),
+      primary: { label: 'Open the queue', view: 'budget' },
+      snoozeDays: 7,
+    });
+  }
+
+  return nudges;
+}
