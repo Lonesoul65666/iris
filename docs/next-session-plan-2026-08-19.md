@@ -259,3 +259,70 @@ interesting but not sufficient on its own.
 **Recommended start:** Scott requests the data export (a few clicks, then wait),
 and meanwhile step 1 gets built and tested against a sample CSV. Step 4 is where
 the value is, so don't stop at step 3.
+
+---
+
+## 5. EXECUTION ORDER for the must-do list
+
+Written 2026-08-20 after Scott confirmed the host is on `2026.08.19.v2` and said:
+*"lets get started on the must do as I want to start wrapping up some final
+features."* Repo and host are level; nothing is pending deploy.
+
+Grouped so each block is one coherent commit, testable on its own, in the order
+I'd actually do them. Reasoning for the order: finish what the last session
+started, then kill the contradictions, then the latent traps, then the
+half-wired features, then cleanup.
+
+### Block 1 — close out the settle lag (it's half-shipped)
+1. **Amend policy for late data.** Detect a settled month whose total moved after
+   judgement; decide re-open vs. supersede. Without this, an early-settled month
+   can still lock in a wrong number — just three days later than before.
+2. **Copy for the 3-day window.** "Holding August until charges settle." Without
+   it the new behaviour reads as a bug on Sept 1.
+
+*Do these first because I introduced the gap; leaving it is worse than not having
+shipped the lag.*
+
+### Block 2 — stop surfaces contradicting each other
+3. **`GoalTracker.tsx`** — retire the old pacing math and the UTC date parse; make
+   it derive from the same source as the budget page, or delete the duplication.
+4. **Pulse paging shows future money** — filter `deployConfirms` to
+   `c.month <= pulseCommitMonth`.
+5. **`requiredMonthlyForGoal` vs the card's ask** — one source of truth.
+6. **`monthlyContribution` vs `monthlyFill`** — pick one, migrate, delete the other.
+
+*This block IS §3a (one canonical number per concept) applied to the specific
+places it currently bites. Consider landing the reconciliation test here so the
+class stays closed.*
+
+### Block 3 — latent traps that fire on new data
+7. **`isCashOut` substring** — gate on the non-spend payee regex. Fires the moment
+   a non-BoA checking account is linked.
+8. **`typeOverride` one-way latch** — store the feed's type, latch against it.
+9. **`recategorize.ts` ignores `typeOverride`** — same fix, same commit.
+10. **The `$NaN` path** — `Number.isFinite` guards in `nextDueDate` consumers, and
+    refuse to persist NaN.
+11. **`past_due`** — stop offering the whole balance as one commit; fix the
+    `Math.round` early trigger.
+
+### Block 4 — finish the dispute feature (it's 80% built)
+12. **Orphaned credit when a disputed charge is deleted** — needs a UI exit, not SQL.
+13. **Surface `totalDisputed`** or drop it. Right now the money silently vanishes.
+14. **A real `disputeNudges()` builder** wired into `DashboardView` — this is the
+    part of Scott's "what's my reminder recourse" question that was never answered.
+
+### Block 5 — small, safe, satisfying
+15. **Temu out of the `amazon` bucket** (8 rows, $111) + a classifier rule.
+16. **The four dead items** — `DISPUTE_LABELS`, the duplicated
+    `CASH_OUT_CATEGORY` literal, the `_expenses` param, and **fix the unreachable
+    `surcharge` branch in `isBankFee`** (that one's a live bug).
+17. **`stashAllocationsByCategory`** — make the dollar split correct rather than
+    "advisory", because linking categories makes it load-bearing.
+
+### Not in this list, deliberately
+- **Scott's task:** link pot categories → flips the reserve lane from the $2,000
+  legacy constant to the real $2,403. Blocks nothing above, but item 17 matters
+  more once it's done.
+- `SYSTEM_PROMPT`'s stale persona → belongs to the voice-rail project.
+- Amazon → parked (§4).
+- Visuals/mobile → Scott's explicit call: guts first.
