@@ -15,6 +15,28 @@ export function isCompleteMonth(ym: string, now: Date = new Date()): boolean {
   return /^\d{4}-\d{2}$/.test(ym) && ym < currentMonthKey(now);
 }
 
+/** Days after a month ends before its numbers can be trusted as final.
+ *
+ *  The calendar rolling over is NOT the same as the data being in: Plaid settles
+ *  1–3 days late, so at 00:00 on the 1st last month is complete but incomplete —
+ *  the totals will still move. Anything that PERSISTS a judgement (achievements,
+ *  Moments) must wait, because those are keyed on the period and store the
+ *  number: fire early and you write a wrong magnitude that the key then blocks
+ *  from ever being re-earned. Display can be live; the permanent record cannot.
+ *  (Found 2026-08-19: three achievements all unlocked at 00:00 on 2026-08-01.) */
+export const SETTLE_LAG_DAYS = 3;
+
+/** Has this month ended AND had time for late transactions to land?
+ *  `isCompleteMonth` answers "is the calendar past it"; this answers "can I
+ *  trust the totals". Use this one before writing anything durable. */
+export function isSettledMonth(ym: string, now: Date = new Date(), lagDays: number = SETTLE_LAG_DAYS): boolean {
+  if (!isCompleteMonth(ym, now)) return false;
+  const [y, m] = ym.split('-').map(Number);
+  // `m` is 1-based, so new Date(y, m, …) is already the FOLLOWING month.
+  const settlesAt = new Date(y, m, 1 + lagDays);
+  return now.getTime() >= settlesAt.getTime();
+}
+
 /** Parse an expense date string as LOCAL time. `new Date('YYYY-MM-DD')` parses
  *  as UTC midnight — which is the previous evening in US timezones, so
  *  1st-of-month paychecks silently fell out of "this month" / YTD windows. */

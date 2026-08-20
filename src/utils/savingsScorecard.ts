@@ -11,7 +11,7 @@
 // Plus a cumulative "banked since" running total. Pure function — no React/IO.
 
 import type { Expense } from '../types/budget';
-import { computeMonthlySpending, isCompleteMonth } from './transactionAnalysis';
+import { computeMonthlySpending, isSettledMonth } from './transactionAnalysis';
 
 // UTC epoch-ms for a 'MM/DD/YYYY' or 'YYYY-MM-DD' date, or null if unparseable.
 // Used to measure the spacing between paychecks (see computeGuaranteedBase).
@@ -84,7 +84,10 @@ export interface ScorecardMonth {
   totalSpend: number;     // everyday + reserve — the REAL personal spend that month
   surplusVsBase: number;  // base - totalSpend  (+ = lived under base; - = over base, by how much)
   banked: number;         // income - totalSpend (cash-honest; variable income bridges the gap)
-  partial: boolean;       // current/in-progress month (don't count in trend/cumulative)
+  /** Not final yet — either still in progress, or ended but inside the
+   *  SETTLE_LAG_DAYS window where late charges can still land. Excluded from
+   *  trend/cumulative/streaks, and nothing durable may be written from it. */
+  partial: boolean;
 }
 
 /**
@@ -114,8 +117,11 @@ export interface Scorecard {
   solvency: SolvencySummary;
 }
 
-export function computeScorecard(expenses: Expense[], opts: { since?: string } = {}): Scorecard {
+export function computeScorecard(expenses: Expense[], opts: { since?: string; now?: Date } = {}): Scorecard {
   const since = opts.since ?? '2025-09';
+  // Injectable so the settle-lag boundary is testable (and so a month-scoped
+  // view can ask "what did this look like then").
+  const now = opts.now ?? new Date();
   const base = computeGuaranteedBase(expenses);
 
   const monthly = computeMonthlySpending(expenses)
@@ -140,10 +146,15 @@ export function computeScorecard(expenses: Expense[], opts: { since?: string } =
       // but THIS chart shows the raw truth, no set-aside sleight of hand.
       surplusVsBase: base - totalSpend,
       banked: Math.round(m.totalIncome - m.totalExpenses),
-      // CALENDAR check — the in-progress month is partial no matter how many
-      // transactions it has. (income===0 guards data-edge months, e.g. an import
-      // that started mid-month.)
-      partial: !isCompleteMonth(m.month) || m.totalIncome === 0,
+      // SETTLE check, not just a calendar check. The in-progress month is
+      // partial no matter how many transactions it has — and so is the month
+      // that just ended, until late-posting charges have had SETTLE_LAG_DAYS to
+      // land. Everything that celebrates or streaks filters on `partial`
+      // (gamification.underBaseStreak, moments.momentOccurrences), so holding it
+      // here is what stops a permanent record being written off numbers that are
+      // still moving. (income===0 guards data-edge months, e.g. an import that
+      // started mid-month.)
+      partial: !isSettledMonth(m.month, now) || m.totalIncome === 0,
     };
   });
 

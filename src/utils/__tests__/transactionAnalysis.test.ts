@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   currentMonthKey,
   isCompleteMonth,
+  isSettledMonth,
   parseLocalDate,
   computeMonthlySpending,
   computeCategoryAverages,
@@ -276,5 +277,37 @@ describe('computeMonthComparison', () => {
     const cats = cmp!.categoryChanges.map(c => c.category);
     expect(cats).toContain('food_dining');
     expect(cats).not.toContain('utilities');
+  });
+});
+
+describe('isSettledMonth — "can I trust the totals", not "is the calendar past it"', () => {
+  it('an in-progress month is never settled', () => {
+    expect(isSettledMonth('2026-08', new Date(2026, 7, 20))).toBe(false);
+  });
+
+  it('a just-ended month is COMPLETE but not yet SETTLED', () => {
+    const aug1 = new Date(2026, 7, 1);
+    expect(isCompleteMonth('2026-07', aug1)).toBe(true);   // calendar has moved on…
+    expect(isSettledMonth('2026-07', aug1)).toBe(false);   // …but Plaid hasn't caught up
+  });
+
+  it('settles exactly SETTLE_LAG_DAYS into the following month', () => {
+    expect(isSettledMonth('2026-07', new Date(2026, 7, 3, 23, 59))).toBe(false);
+    expect(isSettledMonth('2026-07', new Date(2026, 7, 4, 0, 0))).toBe(true);
+  });
+
+  it('handles the December→January year boundary', () => {
+    expect(isSettledMonth('2026-12', new Date(2027, 0, 2))).toBe(false);
+    expect(isSettledMonth('2026-12', new Date(2027, 0, 4))).toBe(true);
+  });
+
+  it('honours a custom lag and rejects malformed input', () => {
+    expect(isSettledMonth('2026-07', new Date(2026, 7, 2), 0)).toBe(true);
+    expect(isSettledMonth('nope', new Date(2026, 7, 20))).toBe(false);
+    expect(isSettledMonth('', new Date(2026, 7, 20))).toBe(false);
+  });
+
+  it('long-past months are settled', () => {
+    expect(isSettledMonth('2025-10', new Date(2026, 7, 19))).toBe(true);
   });
 });

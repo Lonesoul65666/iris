@@ -224,3 +224,53 @@ describe('computeRecurringPaycheckFloor', () => {
     expect(computeRecurringPaycheckFloor([])).toBe(0);
   });
 });
+
+// ── Settle lag ──────────────────────────────────────────────────────────────
+// Found live 2026-08-19: three achievements all unlocked at 00:00 on 2026-08-01,
+// judging a July that Plaid hadn't finished reporting. Because achievements and
+// Moments are keyed on the period AND persist the number, firing early writes a
+// wrong magnitude that the key then blocks from ever being corrected. The
+// calendar rolling over is not the data being in.
+describe('computeScorecard — settle lag before a month counts as final', () => {
+  // A July that is under base, plus June, plus income so partial's income guard
+  // passes. Amounts are small; only the base/spend comparison matters here.
+  const history: Expense[] = [
+    paycheck('2026-06-01', 7900), paycheck('2026-06-15', 7900),
+    paycheck('2026-07-01', 7900), paycheck('2026-07-15', 7900),
+    exp({ date: '2026-06-10', amount: 20000, category: 'food_dining' }), // June: OVER base
+    exp({ date: '2026-07-10', amount: 1000, category: 'food_dining' }),  // July: under base
+  ];
+  const julyOf = (now: Date) =>
+    computeScorecard(history, { since: '2026-06', now }).months.find(m => m.month === '2026-07')!;
+
+  it('July is still PARTIAL at 00:00 on Aug 1 — the exact moment that misfired', () => {
+    expect(julyOf(new Date(2026, 7, 1, 0, 0)).partial).toBe(true);
+  });
+
+  it('stays partial through the lag window (Aug 2, Aug 3)', () => {
+    expect(julyOf(new Date(2026, 7, 2, 23, 59)).partial).toBe(true);
+    expect(julyOf(new Date(2026, 7, 3, 12, 0)).partial).toBe(true);
+  });
+
+  it('becomes final once the lag has passed (Aug 4)', () => {
+    expect(julyOf(new Date(2026, 7, 4, 0, 0)).partial).toBe(false);
+  });
+
+  it('an unsettled month is excluded from the counters achievements read', () => {
+    const early = computeScorecard(history, { since: '2026-06', now: new Date(2026, 7, 1) });
+    const settled = computeScorecard(history, { since: '2026-06', now: new Date(2026, 7, 4) });
+    // June (over base) is final either way; July only lands after the lag.
+    expect(early.monthsUnderBase).toBe(0);
+    expect(settled.monthsUnderBase).toBe(1);
+    expect(early.fullMonthCount).toBe(1);
+    expect(settled.fullMonthCount).toBe(2);
+    // cumulativeBanked must not move on a month that can still change.
+    expect(early.lastFull?.month).toBe('2026-06');
+    expect(settled.lastFull?.month).toBe('2026-07');
+  });
+
+  it('the in-progress month is partial regardless of the lag', () => {
+    const sc = computeScorecard(history, { since: '2026-06', now: new Date(2026, 6, 20) });
+    expect(sc.months.find(m => m.month === '2026-07')!.partial).toBe(true);
+  });
+});
