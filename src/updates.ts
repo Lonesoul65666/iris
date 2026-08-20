@@ -37,6 +37,19 @@ export interface UpdateEntry {
 
 export const UPDATES: UpdateEntry[] = [
   {
+    version: '2026.08.19.v2',
+    date: '2026-08-19',
+    title: 'The dashboard stops nagging and starts making sense',
+    notes: [
+      'Cards you\'ve seen can finally be cleared. Every achievement, Moment and What\'s New card had a dismiss button with no text on it — invisible, so they just piled up. They now say "Got it".',
+      'Earning something is worth clicking. Hit "Show me" on an achievement and you get the full moment — the medallion, the reason it matters — and the card clears itself.',
+      'This month\'s quest tells you the actual goal now: "Keep Aug 2026 under $15,800. You\'ve spent $7,805, so $7,995 left to play with and 13 days to hold it." It used to show a buffer and a countdown without ever saying what you were aiming at.',
+      'Amazon stopped being flagged as over budget. It was being judged against your whole spending history, so a heavy December kept setting off an alarm — your last three months have actually been under budget. Budget warnings now look at recent months only.',
+      '"$1.6k spent straight from savings" is gone. That was a Zelle from December and one Dubai cash run in February, with each ATM fee counted as its own charge. The alert now only covers the last 60 days and groups fees with the withdrawal that caused them.',
+      'Wins wait for the numbers to settle. Your bank can take a few days to report everything, so a month is no longer graded at midnight on the 1st — three achievements had already unlocked that way off numbers that were still moving.',
+    ],
+  },
+  {
     version: '2026.08.19.v1',
     date: '2026-08-19',
     title: 'Pots know when you spend them',
