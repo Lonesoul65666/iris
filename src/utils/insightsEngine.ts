@@ -5,7 +5,7 @@ import type {
   SinkingFund,
   FunMoney,
 } from '../types/budget';
-import { computeMonthlySpending, computeCategoryTrends } from './transactionAnalysis';
+import { computeMonthlySpending, computeCategoryTrends, computeCategoryAverages } from './transactionAnalysis';
 import { laneOf } from './budgetLanes';
 import { computeSavingsRate } from './savingsRate';
 
@@ -103,7 +103,23 @@ function detectCategorySpikes(expenses: Expense[]): Insight[] {
   return insights;
 }
 
-function detectOverBudgetCategories(buckets: BudgetBucket[]): Insight[] {
+/** How many recent complete months a budget-vs-reality verdict is judged on.
+ *
+ *  Was the LIFETIME average, which meant a category could be alarmed on spending
+ *  that stopped months ago. Amazon: $1,200/mo lifetime (Sep '25 – Jul '26) →
+ *  "118% over budget, critical", while the trailing three months ran $517
+ *  against a $550 budget — comfortably under. The alarm was about last
+ *  Christmas. (Scott, 2026-08-19: "Amazon has not been that over budget in a
+ *  long time… we need to figure out where we're going to start judging from.")
+ *
+ *  Three is short enough to follow a real change in behaviour and long enough
+ *  that one heavy month doesn't trip an alarm on its own. */
+export const JUDGING_WINDOW_MONTHS = 3;
+
+/** `recentActual` is the trailing-window average per category. Falls back to the
+ *  bucket's lifetime `monthlyActual` for categories with no recent data, so a
+ *  category that only ever spent long ago still reports something. */
+function detectOverBudgetCategories(buckets: BudgetBucket[], recentActual: Record<string, number>): Insight[] {
   const insights: Insight[] = [];
 
   for (const b of buckets) {
@@ -111,8 +127,9 @@ function detectOverBudgetCategories(buckets: BudgetBucket[]): Insight[] {
     // daycare) running high means "adjust the target," not "you overspent," and
     // reserves (taxes/travel) are lumpy by design. Only flex categories alarm.
     if (laneOf(b.category) !== 'flexible') continue;
-    if (b.monthlyBudget <= 0 || b.monthlyActual <= 0) continue;
-    const overBy = b.monthlyActual - b.monthlyBudget;
+    const actual = recentActual[b.category] ?? b.monthlyActual;
+    if (b.monthlyBudget <= 0 || actual <= 0) continue;
+    const overBy = actual - b.monthlyBudget;
     const overPct = (overBy / b.monthlyBudget) * 100;
 
     if (overPct >= 10) {
@@ -123,8 +140,9 @@ function detectOverBudgetCategories(buckets: BudgetBucket[]): Insight[] {
         category: 'spending',
         title: `${b.label} over budget by ${pct(overPct)}`,
         description:
-          `You budgeted ${fmt(b.monthlyBudget)}/mo for ${b.label.toLowerCase()} but you're actually spending ${fmt(b.monthlyActual)}. ` +
-          `That's ${fmt(overBy)} more than planned. ` +
+          `You budgeted ${fmt(b.monthlyBudget)}/mo for ${b.label.toLowerCase()} but over the last ` +
+          `${JUDGING_WINDOW_MONTHS} months you've averaged ${fmt(actual)}. ` +
+          `That's ${fmt(overBy)}/mo more than planned. ` +
           (overPct >= 50
             ? `This one's worth a serious look -- either the budget needs to be more realistic or the spending needs to come down.`
             : `Might be time to adjust the budget or rein it in a bit.`),
@@ -424,6 +442,7 @@ function generatePositiveReinforcement(
   expenses: Expense[],
   buckets: BudgetBucket[],
   _savingsRate: number,
+  recentActual: Record<string, number>,
 ): Insight[] {
   const insights: Insight[] = [];
   const monthly = computeMonthlySpending(expenses);
@@ -456,10 +475,14 @@ function generatePositiveReinforcement(
   }
 
   // Check for categories that are under budget
+  // Same window as the over-budget alarm above. Mixing the two (lifetime here,
+  // trailing there) would let one insight call a category under budget while the
+  // other calls it over.
+  const actualOf = (b: BudgetBucket) => recentActual[b.category] ?? b.monthlyActual;
   const underBudgetCount = buckets.filter(
-    b => b.monthlyBudget > 0 && b.monthlyActual > 0 && b.monthlyActual <= b.monthlyBudget * 0.9
+    b => b.monthlyBudget > 0 && actualOf(b) > 0 && actualOf(b) <= b.monthlyBudget * 0.9
   ).length;
-  const activeBucketCount = buckets.filter(b => b.monthlyBudget > 0 && b.monthlyActual > 0).length;
+  const activeBucketCount = buckets.filter(b => b.monthlyBudget > 0 && actualOf(b) > 0).length;
 
   if (activeBucketCount >= 3 && underBudgetCount >= Math.ceil(activeBucketCount * 0.6)) {
     insights.push({
@@ -524,6 +547,11 @@ export function generateInsights(params: {
     totalLiquidAssets,
   } = params;
 
+  // Budget-vs-reality verdicts judge on the RECENT window, not all of history —
+  // see JUDGING_WINDOW_MONTHS. Both the over- and under-budget insights read this
+  // so they can never disagree about the same category.
+  const recentActual = computeCategoryAverages(expenses, new Date(), { trailingMonths: JUDGING_WINDOW_MONTHS });
+
   const monthly = computeMonthlySpending(expenses);
   const monthCount = Math.max(monthly.length, 1);
   const totalExpenses = monthly.reduce((s, m) => s + m.totalExpenses, 0);
@@ -557,14 +585,14 @@ export function generateInsights(params: {
     ...detectDeficit(bestExpenseEstimate, paycheck.netTakeHome),
     ...detectSavingsWithdrawals(expenses),
     ...detectCategorySpikes(expenses),
-    ...detectOverBudgetCategories(buckets),
+    ...detectOverBudgetCategories(buckets, recentActual),
     ...detectUnallocatedSurplus(paycheck.netTakeHome, bestExpenseEstimate),
     ...checkEmergencyFund(totalLiquidAssets, bestExpenseEstimate),
     ...checkSavingsRate(paycheck, monthlyInvestmentAmount),
     ...detectSubscriptionCreep(expenses),
     ...checkSinkingFundProgress(sinkingFunds),
     ...checkFunMoneyBurnRate(funMoney),
-    ...generatePositiveReinforcement(expenses, buckets, savingsRate),
+    ...generatePositiveReinforcement(expenses, buckets, savingsRate, recentActual),
   ];
 
   // Sort by severity (critical first), then cap at 8 insights

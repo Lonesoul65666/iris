@@ -232,9 +232,22 @@ export function computeMonthlySpending(expenses: Expense[]): MonthlySpending[] {
 // average early in the month and overstating surplus).
 export function computeCategoryAverages(
   expenses: Expense[],
-  now: Date = new Date()
+  now: Date = new Date(),
+  /** `trailingMonths` limits the average to the N most recent COMPLETE months.
+   *  Omit it for the lifetime average (the default — the budget grid wants the
+   *  long view). Pass it when the number is going to be used to JUDGE current
+   *  behaviour: a lifetime average never stops relitigating an old spike. Amazon
+   *  averaged $1,200/mo across 11 months on the back of Sep '25–Mar '26, while
+   *  the last three months ran $517 against a $550 budget — the same category
+   *  reads "118% over" or "6% under" purely on window choice. */
+  opts: { trailingMonths?: number } = {},
 ): Record<ExpenseCategory, number> {
-  const monthly = computeMonthlySpending(expenses).filter(m => isCompleteMonth(m.month, now));
+  let monthly = computeMonthlySpending(expenses)
+    .filter(m => isCompleteMonth(m.month, now))
+    .sort((a, b) => a.month.localeCompare(b.month));
+  if (opts.trailingMonths && opts.trailingMonths > 0) {
+    monthly = monthly.slice(-opts.trailingMonths);
+  }
   const numMonths = Math.max(monthly.length, 1);
 
   const totals: Record<string, number> = {};

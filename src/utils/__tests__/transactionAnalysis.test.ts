@@ -311,3 +311,41 @@ describe('isSettledMonth — "can I trust the totals", not "is the calendar past
     expect(isSettledMonth('2025-10', new Date(2026, 7, 19))).toBe(true);
   });
 });
+
+// The window a budget-vs-reality verdict is judged on decides the verdict. Live
+// case (2026-08-19): Amazon averaged $1,200/mo over 11 months on the back of a
+// Sep '25–Mar '26 run, but $517 over the trailing three against a $550 budget.
+// Same category, "118% over" or "6% under", purely on window choice.
+describe('computeCategoryAverages — trailing window', () => {
+  const now = new Date(2026, 7, 19); // Aug 19 2026; Aug is incomplete
+  // 5 complete months: a big spike, then four calm ones.
+  const history = [
+    exp({ date: '2026-03-05', amount: 2000, category: 'amazon' }),
+    exp({ date: '2026-04-05', amount: 400, category: 'amazon' }),
+    exp({ date: '2026-05-05', amount: 400, category: 'amazon' }),
+    exp({ date: '2026-06-05', amount: 400, category: 'amazon' }),
+    exp({ date: '2026-07-05', amount: 400, category: 'amazon' }),
+    exp({ date: '2026-08-05', amount: 9999, category: 'amazon' }), // in progress — excluded
+  ];
+
+  it('defaults to the lifetime average of complete months', () => {
+    // (2000 + 400*4) / 5 = 720 — the spike is still in there.
+    expect(computeCategoryAverages(history, now).amazon).toBe(720);
+  });
+
+  it('a trailing window drops the old spike', () => {
+    expect(computeCategoryAverages(history, now, { trailingMonths: 3 }).amazon).toBe(400);
+  });
+
+  it('never includes the in-progress month, windowed or not', () => {
+    expect(computeCategoryAverages(history, now, { trailingMonths: 1 }).amazon).toBe(400); // July, not August
+  });
+
+  it('a window longer than the history is the same as the lifetime average', () => {
+    expect(computeCategoryAverages(history, now, { trailingMonths: 99 }).amazon).toBe(720);
+  });
+
+  it('ignores a zero or negative window', () => {
+    expect(computeCategoryAverages(history, now, { trailingMonths: 0 }).amazon).toBe(720);
+  });
+});
