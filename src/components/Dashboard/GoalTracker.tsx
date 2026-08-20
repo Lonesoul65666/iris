@@ -1,28 +1,22 @@
 import { useMemo } from 'react';
-import type { SinkingFund } from '../../types/budget';
+import { computeStashForecast, type StashStatus } from '../../utils/stashMath';
 import { formatCurrency } from '../../utils/format';
 
 interface GoalTrackerProps {
-  sinkingFunds: SinkingFund[];
+  /** Derived pot status from stashMath — the SAME input the Budget page reads. */
+  statuses: StashStatus[];
   monthlyInvestmentAmount: number;
   /** When true, drop the outer card + own title — a DashSection provides them. */
   bare?: boolean;
 }
 
-/** Calculate months between now and a future date. Returns 0 if date is in the past. */
-function monthsUntil(dateStr: string): number {
-  const target = new Date(dateStr);
-  const now = new Date();
-  const months =
-    (target.getFullYear() - now.getFullYear()) * 12 +
-    (target.getMonth() - now.getMonth());
-  return Math.max(0, months);
-}
-
-/** Format a Date as "Mon YYYY" */
-function formatMonthYear(date: Date): string {
-  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-}
+// ⚠️ NO PACING MATH LIVES IN THIS FILE. It used to (2026-08-19 audit: "a THIRD
+// pacing surface"): its own monthsUntil() with a `new Date('YYYY-MM-DD')` UTC
+// parse that lost a whole month in a -06:00 timezone, its own remaining/months
+// division against fractional calendar time, and its own on-track test — all
+// under the same section title as the Budget page, which paces on discrete
+// commit MOVES. Two surfaces could state different things about the same pot.
+// Everything now comes from computeStashForecast, so there is one answer per pot.
 
 const HAVE_COLOR = '#f59e0b'; // obligations — amber
 const WANT_COLOR = '#a855f7'; // goals — violet
@@ -52,86 +46,53 @@ interface GoalCardData {
   targetAmount: number;
   currentBalance: number;
   monthlyContribution: number;
-  targetDate?: string;
+  /** Cadence-resolved due date, already formatted by stashMath ("Oct 1, 2026"). */
+  dueLabel: string | null;
   color: string;
   percent: number;
   statusLabel: string;
   statusColor: string; // Tailwind text class
-  projectedDate: string | null;
-  additionalNeeded: number | null; // extra $/mo needed if behind
+  /** What to move into this pot THIS month to stay on plan (0 = already done). */
+  thisMonthAsk: number;
 }
 
-function computeGoalData(fund: {
-  id: string;
-  name: string;
-  kind?: 'have_to' | 'want_to';
-  targetAmount: number;
-  currentBalance: number;
-  monthlyContribution: number;
-  targetDate?: string;
-  color: string;
-}): GoalCardData {
-  const remaining = Math.max(0, fund.targetAmount - fund.currentBalance);
-  const percent =
-    fund.targetAmount > 0
-      ? Math.min(100, Math.round((fund.currentBalance / fund.targetAmount) * 100))
-      : 0;
+/** Read a pot's card straight off the shared forecast. The only decisions made
+ *  here are wording and colour. */
+export function computeGoalData(status: StashStatus, now: Date = new Date()): GoalCardData {
+  const { stash, balance } = status;
+  const f = computeStashForecast(status, now);
 
-  let statusLabel = '';
-  let statusColor = 'text-text-muted';
-  let projectedDate: string | null = null;
-  let additionalNeeded: number | null = null;
-
-  if (percent >= 100) {
-    statusLabel = 'Complete';
-    statusColor = 'text-positive';
-  } else if (fund.targetDate) {
-    const monthsLeft = monthsUntil(fund.targetDate);
-    if (monthsLeft <= 0) {
-      statusLabel = 'Past due';
-      statusColor = 'text-negative';
-    } else {
-      const requiredPerMonth = remaining / monthsLeft;
-      if (fund.monthlyContribution >= requiredPerMonth) {
-        statusLabel = 'On track';
-        statusColor = 'text-positive';
-      } else {
-        const gap = Math.ceil(requiredPerMonth - fund.monthlyContribution);
-        additionalNeeded = gap;
-        statusLabel = `Behind \u2014 need ${formatCurrency(gap)}/mo more`;
-        statusColor = 'text-warning';
-      }
-    }
-    projectedDate = formatMonthYear(new Date(fund.targetDate));
-  } else {
-    // No target date -- project completion from monthly contribution
-    if (fund.monthlyContribution > 0) {
-      const monthsToGo = Math.ceil(remaining / fund.monthlyContribution);
-      const projected = new Date();
-      projected.setMonth(projected.getMonth() + monthsToGo);
-      projectedDate = formatMonthYear(projected);
-      statusLabel = `Est. ${projectedDate}`;
-      statusColor = 'text-text-secondary';
-    } else {
-      statusLabel = 'No contributions set';
-      statusColor = 'text-text-muted';
-    }
+  let statusLabel: string;
+  let statusColor: string;
+  switch (f?.status) {
+    case 'met':        statusLabel = 'Complete'; statusColor = 'text-positive'; break;
+    case 'past_due':   statusLabel = 'Past due'; statusColor = 'text-negative'; break;
+    case 'on_track':   statusLabel = 'On track'; statusColor = 'text-positive'; break;
+    case 'behind':
+      statusLabel = `Behind \u2014 need ${formatCurrency(f.additionalNeeded ?? 0)}/mo more`;
+      statusColor = 'text-warning';
+      break;
+    case 'projecting': statusLabel = `Est. ${f.projectedMonth}`; statusColor = 'text-text-secondary'; break;
+    case 'idle':       statusLabel = 'No contributions set'; statusColor = 'text-text-muted'; break;
+    // No target amount at all → nothing to pace against. Say so rather than
+    // inventing a percentage (this is the date-only pot the Budget page shows
+    // as "no goal set").
+    default:           statusLabel = 'No target set'; statusColor = 'text-text-muted';
   }
 
   return {
-    id: fund.id,
-    name: fund.name,
-    kind: fund.kind ?? 'want_to',
-    targetAmount: fund.targetAmount,
-    currentBalance: fund.currentBalance,
-    monthlyContribution: fund.monthlyContribution,
-    targetDate: fund.targetDate,
-    color: fund.color,
-    percent,
+    id: stash.id,
+    name: stash.name,
+    kind: stash.kind ?? 'want_to',
+    targetAmount: stash.targetAmount,
+    currentBalance: balance,
+    monthlyContribution: stash.monthlyContribution || 0,
+    dueLabel: f?.dueLabel ?? null,
+    color: stash.color,
+    percent: f?.percent ?? 0,
     statusLabel,
     statusColor,
-    projectedDate,
-    additionalNeeded,
+    thisMonthAsk: f?.thisMonthAsk ?? 0,
   };
 }
 
@@ -182,17 +143,20 @@ function GoalCard({ goal }: { goal: GoalCardData }) {
         <span className={goal.statusColor}>{goal.statusLabel}</span>
       </div>
 
-      {/* Monthly contribution chip */}
-      {goal.monthlyContribution > 0 && (
-        <div className="flex items-center gap-1.5 text-xs text-text-muted">
-          <span className="bg-accent/15 text-accent px-2 py-0.5 rounded-full">
-            {formatCurrency(goal.monthlyContribution)}/mo
-          </span>
-          {goal.targetDate && (
-            <span>
-              Target: {formatMonthYear(new Date(goal.targetDate))}
+      {/* Plan + due date + the ask. The ask is the Budget page's own
+          `thisMonthAsk`, so the two surfaces can't disagree about what this pot
+          needs — the whole reason this card stopped doing its own math. */}
+      {(goal.monthlyContribution > 0 || goal.dueLabel || goal.thisMonthAsk > 0) && (
+        <div className="flex items-center flex-wrap gap-1.5 text-xs text-text-muted">
+          {goal.monthlyContribution > 0 && (
+            <span className="bg-accent/15 text-accent px-2 py-0.5 rounded-full">
+              {formatCurrency(goal.monthlyContribution)}/mo
             </span>
           )}
+          {goal.thisMonthAsk > 0 && (
+            <span className="text-text-secondary">{formatCurrency(goal.thisMonthAsk)} to commit this month</span>
+          )}
+          {goal.dueLabel && <span>Due: {goal.dueLabel}</span>}
         </div>
       )}
 
@@ -209,13 +173,13 @@ function GoalCard({ goal }: { goal: GoalCardData }) {
 }
 
 export default function GoalTracker({
-  sinkingFunds,
+  statuses,
   monthlyInvestmentAmount,
   bare = false,
 }: GoalTrackerProps) {
   // Only the user's real stashes (Have-To's / Want-To's) — no synthesized goals.
   // An emergency fund, if wanted, is a real stash the user owns and can edit.
-  const goals = useMemo(() => sinkingFunds.map(computeGoalData), [sinkingFunds]);
+  const goals = useMemo(() => statuses.map((s) => computeGoalData(s)), [statuses]);
 
   // Summary stats
   const totalTarget = goals.reduce((s, g) => s + g.targetAmount, 0);

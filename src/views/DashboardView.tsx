@@ -808,17 +808,16 @@ export default function DashboardView() {
         // with balances DERIVED from transactions (stashMath) — the stored
         // currentBalance is legacy/manual. Targetless pots stay on the
         // Budget Overview's StashesCard; duplicating them here is noise.
-        const statuses = computeAllStashes(dashSinkingFunds, rawExpenses, dashDeployConfirms, new Date(), dashPotDraws);
-        const goalFunds = statuses
-          .filter(s => !s.stash.achievedAt && (s.stash.targetAmount > 0 || s.stash.targetDate))
-          .map(s => ({ ...s.stash, currentBalance: s.balance }));
-        if (goalFunds.length === 0) return null;
-        const done = goalFunds.filter(g => g.targetAmount > 0 && g.currentBalance >= g.targetAmount).length;
+        const goalStatuses = computeAllStashes(dashSinkingFunds, rawExpenses, dashDeployConfirms, new Date(), dashPotDraws)
+          .filter(s => !s.stash.achievedAt && (s.stash.targetAmount > 0 || s.stash.targetDate));
+        if (goalStatuses.length === 0) return null;
+        // "Complete" off the derived balance, same as the card's own forecast.
+        const done = goalStatuses.filter(s => s.stash.targetAmount > 0 && s.balance >= s.stash.targetAmount).length;
         return (
           <DashSection title="Have To's / Want To's" icon="🎯" defaultOpen
-            summary={`${done}/${goalFunds.length} complete`}>
+            summary={`${done}/${goalStatuses.length} complete`}>
             <GoalTracker
-              sinkingFunds={goalFunds}
+              statuses={goalStatuses}
               monthlyInvestmentAmount={monthlyInv?.amount || 0}
               bare
             />
