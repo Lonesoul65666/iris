@@ -139,13 +139,42 @@ local/private storage, and **actually restore it once into a scratch database** 
 prove it works. Everything else we backed up this session is replaceable by
 comparison.
 
-### 3d. Delete the dead code that disagrees with the live code
-The 2026-08-12 review found ~7,400 dead lines, chat unreachable behind
-`PHASE_1_LOCK`, a `SYSTEM_PROMPT` still carrying the old market-intelligence
-persona, `DISPUTE_LABELS` as a dead export whose strings **contradict** what
-ships, and an unreachable `isBankFee` branch. Dead code that merely sits there is
-debt; dead code that *disagrees* with reality actively misleads whoever reads it
-next — it sent me down at least two wrong paths. One deliberate deletion pass.
+### 3d. Code cleanup — CORRECTED 2026-08-19, I had overstated this
+
+Scott pushed back: *"Is that dead code for real or the backend of stuff we haven't
+finished like the equity play and Fidelity tracking and investing stuff?"* He was
+right. I'd repeated a "~7,400 dead lines" figure from the 2026-08-12 review
+without checking what it covered. Verified classification:
+
+**PARKED, NOT DEAD — do NOT delete.** `investments`, `equity`, `wealth`,
+Watchlist, Intelligence, Ask Iris and First Report are hidden by a single
+deliberate flag: `PHASE_1_LOCK = true` in `hooks/useEnabledModules.ts`, documented
+in `docs/adr/0001-phase-1-scope.md`. The views are still imported and routed in
+`App.tsx` — they render the moment the flag flips — and the comment is explicit
+that stored user preferences are preserved untouched. This is scope control
+working as designed. It is the single largest chunk of what that line count
+described, and deleting it would destroy real unfinished work.
+
+**GENUINELY DEAD — small, safe to remove:**
+- `DISPUTE_LABELS` (`utils/disputes.ts:250`) — exported, referenced nowhere.
+  Worse than unused: its strings are a shorter variant of what `ExpenseManager`
+  actually renders inline, so it reads as authoritative and isn't.
+- The `surcharge` alternative in `isBankFee`'s regex is unreachable — the
+  function early-returns on `!d.includes('fee')`, so a row saying only
+  "SURCHARGE" never reaches it. **This is a small live bug, not just dead code**,
+  and it's adjacent to the savings-tripwire fee handling shipped in `7627273`.
+- `CASH_OUT_CATEGORY` duplicated as a bare literal in
+  `transactionCategorize.ts:117`.
+- The `_expenses` parameter I left on `computeStashStatus` (see must-do).
+
+**NOT DEAD — WRONG. Needs rewriting, not deleting:** `SYSTEM_PROMPT` still
+carries the old market-intelligence persona. That's live code with stale content
+actively shaping Ask Iris's voice, and it belongs to the voice-rail work in the
+gamification roadmap, not to a cleanup pass.
+
+**Revised recommendation:** there is no big deletion pass to do. Remove the four
+small dead items above (an afternoon, mostly safe), fix the `surcharge` bug, and
+treat `SYSTEM_PROMPT` as part of the persona project. Leave `PHASE_1_LOCK` alone.
 
 ### 3e. Talk to Claire before building the big swing
 The north star is "make money not suck, for Claire." Every design decision so far
@@ -163,7 +192,20 @@ before the first real over-draw rather than during it.
 
 ---
 
-## 4. Amazon item-level detail — investigation
+## 4. Amazon item-level detail — 🅿️ PARKED (Scott, 2026-08-19: "leave Amazon on
+## the burner until I figure out what I want to do here")
+
+Nothing to build until Scott picks a data source. Investigation below is complete
+and stands — don't redo it. **Fastest route if/when he wants it: request ONLY the
+"Your Orders" category from Request-My-Data (minutes–hours, vs days for
+"everything", which bundles Alexa voice and Prime Video history). Before that,
+spend 10 seconds checking whether the legacy instant-CSV page
+`amazon.com/gp/b2b/reports` still loads on his account — retired for most
+consumer accounts but not all, and it's strictly better if present.** There is NO
+consumer API for your own order history: Selling Partner API is for sellers,
+Product Advertising API is affiliate metadata, and the Purchase/Reports API needs
+a Business account (free, but a separate account type that changes Prime/tax
+behaviour — not worth it for reporting).
 
 **Goal (Scott):** "I don't want items hidden in places and the budget abused."
 Amazon is $13,604 across 433 charges — currently a black box with a $550/mo cap.
