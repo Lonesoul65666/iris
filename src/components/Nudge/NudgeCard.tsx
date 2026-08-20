@@ -126,7 +126,15 @@ export default function NudgeCard({
                   onClick={onDismissForever}
                   className="text-xs text-text-muted hover:text-negative transition-colors ml-auto"
                 >
-                  {nudge.oneShot ? snoozeLabel : "Don't show again"}
+                  {/* resolvedSnoozeLabel, NOT the raw prop. `snoozeLabel` is
+                      optional and undefined by default, so a oneShot nudge
+                      rendered this button with NO TEXT — a zero-width, invisible
+                      control. Since achievements, Moments and What's New are all
+                      oneShot, and oneShot also hides the snooze button above,
+                      every one of them was undismissable: they stacked on the
+                      dashboard forever with no way to clear them. (Scott,
+                      2026-08-19: "there's no way to make them go away.") */}
+                  {nudge.oneShot ? resolvedSnoozeLabel : "Don't show again"}
                 </button>
               )}
             </div>
