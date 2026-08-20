@@ -10,10 +10,35 @@ import type { ExpenseCategory, TransactionFlow, TransactionType } from '../types
  * imports) can reuse without pulling in the React component graph.
  */
 
+/** A withdrawal that NAMES where the money went, and the answer is one of your
+ *  own accounts: a card payment, a self-transfer, a brokerage funding. Those are
+ *  genuine transfers, and calling them spend double-counts the bill you already
+ *  count when the card charges land.
+ *
+ *  Why this guard exists (2026-08-19 audit): `isCashOut` matched a bare
+ *  "withdrawal" substring, and `isDefiniteSpend` then FORCED that row to spend
+ *  even when the feed correctly typed it a transfer. So an
+ *  "ELECTRONIC WITHDRAWAL … CRCARDPMT" — how several banks describe a credit-card
+ *  autopay — would have counted as $X of ATM cash on top of the card's own
+ *  charges. It was only ever dormant because Bank of America and Wells Fargo
+ *  spell it "WITHDRWL" on ATM rows and don't use the word for card payments; it
+ *  goes live the moment a non-BoA checking account is linked.
+ *
+ *  Deliberately NOT in this list: mortgage and loan payments. Those ARE spend, so
+ *  a mis-categorised-but-counted row beats an uncounted one — that's the lesson
+ *  from the vanishing mortgage (see isDefiniteSpend). */
+const CASH_OUT_EXCLUSIONS = [
+  'crcardpmt', 'cr card pmt', 'card payment', 'card pmt', 'cardmember', 'autopay',
+  'payment thank you', 'online payment', 'epayment', 'e-payment',
+  'online banking transfer', 'transfer to sav', 'transfer to chk', 'xfer to', 'keepthechange',
+  'fid bkg svc', 'fidelity', 'coinbase', 'wealthfront', 'betterment', 'vanguard', 'schwab',
+];
+
 /** Cash leaving the household with no merchant to attribute it to: ATM
  *  withdrawals and peer-app sends. Banks/Plaid type these as TRANSFER_OUT, but
  *  the money is gone — it's spend. Lowercased description in. */
 export function isCashOut(d: string): boolean {
+  if (CASH_OUT_EXCLUSIONS.some((x) => d.includes(x))) return false;
   if (d.includes('withdrwl') || d.includes('withdrawal')) return true;
   if (d.includes('cash app') || d.includes('cashapp') || d.includes('cash-app')) return true;
   return false;

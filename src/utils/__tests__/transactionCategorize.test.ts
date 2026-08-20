@@ -122,8 +122,21 @@ describe('cash out — one concept (2026-08-13)', () => {
     expect(isCashOut('pai atm withdrwl')).toBe(true);
     expect(isCashOut('cash app*dallas pmnt sent')).toBe(true);
     expect(isCashOut('amazon.com')).toBe(false);
+    // A withdrawal that names one of YOUR OWN accounts is a transfer, not cash
+    // out the door — counting it would double the card bill (2026-08-19 audit).
+    expect(isCashOut('electronic withdrawal 08/12 crcardpmt')).toBe(false);
+    expect(isCashOut('electronic withdrawal card payment chase')).toBe(false);
+    expect(isCashOut('withdrawal online banking transfer to sav 1234')).toBe(false);
+    expect(isCashOut('withdrawal fid bkg svc llc moneyline')).toBe(false);
+    // …but a bare ATM withdrawal still is, and so is a loan/mortgage payment
+    // (mis-categorised beats uncounted — see the vanishing mortgage).
+    expect(isCashOut('electronic withdrawal 08/12 atm 7eleven')).toBe(true);
+    expect(isCashOut('electronic withdrawal mortgage pmt')).toBe(true);
     expect(isDefiniteSpend('wf home mtg des:auto pay')).toBe(true);
     expect(isDefiniteSpend('pai atm withdrwl')).toBe(true);
+    // The same guard has to hold through isDefiniteSpend, which is what FORCED
+    // these rows to spend regardless of what the feed said.
+    expect(isDefiniteSpend('electronic withdrawal crcardpmt')).toBe(false);
     // must stay false or the double-count guard breaks
     expect(isDefiniteSpend('citi card online des:payment')).toBe(false);
     expect(isDefiniteSpend('online banking transfer to sav')).toBe(false);
