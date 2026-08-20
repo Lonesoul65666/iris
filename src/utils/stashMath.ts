@@ -5,8 +5,11 @@
 // not what time says you should have. It does NOT auto-accrue by month.
 //
 //   balance(now) = openingBalance
-//                + Σ committed moves for this stash (DeployConfirmations, all months)
-//                − Σ EXPLICIT draws recorded against this stash (PotDraws)
+//                + Σ committed moves for this stash (DeployConfirmations) up to `now`
+//                − Σ EXPLICIT draws recorded against this stash (PotDraws) up to `now`
+//
+// Both sides are capped AS OF `now` so a month-scoped view (paging the Pulse
+// back) can never show money that hadn't moved yet.
 //
 // DRAW-DOWN IS EXPLICIT, NEVER INFERRED (Scott, 2026-08-13: "we definitely don't
 // want to draw down"; 2026-08-17: "one explicit button, no inference"). The
@@ -95,14 +98,20 @@ export function computeStashStatus(stash: Stash, _expenses: Expense[], confirms:
   }
 
   const start = stash.startMonth!;
-  // Commit-driven: sum the moves ACTUALLY committed to this pot (all months), not
-  // an accrual of the planned drip. monthsAccrued now = the count of committed
-  // months ("funded N months" reads as N months you actually moved money).
-  const stashConfirms = confirms.filter((c) => c.lane === stash.id);
+  const thisMonth = currentMonthKey(now);
+  // Commit-driven: sum the moves ACTUALLY committed to this pot, not an accrual of
+  // the planned drip. monthsAccrued = the count of committed months ("funded N
+  // months" reads as N months you actually moved money).
+  //
+  // AS-OF `now`, never "all months" (fixed 2026-08-20). Draws were already capped
+  // at the current month while commits weren't, so paging the Pulse back to July
+  // showed July's withdrawals against a balance that included AUGUST's commit —
+  // a past month reading as funded by money that hadn't been moved yet. A
+  // month-scoped view has to be scoped on both sides of the ledger.
+  const stashConfirms = confirms.filter((c) => c.lane === stash.id && (c.month || '') <= thisMonth);
   const committed = stashConfirms.reduce((s, c) => s + (c.amount || 0), 0);
   const monthsAccrued = stashConfirms.length;
   const contributed = (stash.openingBalance || 0) + committed;
-  const thisMonth = currentMonthKey(now);
   const committedThisMonth = stashConfirms
     .filter((c) => c.month === thisMonth)
     .reduce((s, c) => s + (c.amount || 0), 0);
@@ -110,9 +119,8 @@ export function computeStashStatus(stash: Stash, _expenses: Expense[], confirms:
   // EXPLICIT draws only. `stash.categories` deliberately plays no part here —
   // it classifies the reserve lane, nothing more. Draws after the current month
   // are ignored so paging back to an earlier month can't show future withdrawals
-  // (same guard the commit side needs).
-  const thisMonthKey = currentMonthKey(now);
-  const potDraws = draws.filter(d => d.potId === stash.id && d.month >= start && d.month <= thisMonthKey);
+  // (the commit side above is capped the same way).
+  const potDraws = draws.filter(d => d.potId === stash.id && d.month >= start && d.month <= thisMonth);
   let drawn = 0;
   let biggestDraw: { month: string; amount: number } | null = null;
   const byMonth = new Map<string, number>();

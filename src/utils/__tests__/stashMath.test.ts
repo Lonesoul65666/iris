@@ -656,3 +656,38 @@ describe('seedDefaultStashes (design D5)', () => {
     expect(stashesConfigured([stash({ categories: ['taxes'] })])).toBe(true);
   });
 });
+
+describe('paging back a month never shows future money', () => {
+  // Found 2026-08-19: draws were capped at the viewed month but commits were not,
+  // so viewing July could read as funded off an AUGUST commit.
+  const s = stash({ id: 'taxes', name: 'Taxes', startMonth: '2026-06', targetAmount: 12000, monthlyContribution: 1000 });
+  const confirms = [commit('2026-06', 'taxes', 1000), commit('2026-07', 'taxes', 1000), commit('2026-08', 'taxes', 5000)];
+  const JULY = new Date(2026, 6, 15);
+  const AUG = new Date(2026, 7, 15);
+
+  it('a July view counts June + July only', () => {
+    const st = computeStashStatus(s, [], confirms, JULY, []);
+    expect(st.balance).toBe(2000);
+    expect(st.monthsAccrued).toBe(2);
+    expect(st.committedThisMonth).toBe(1000);
+  });
+
+  it('the August view counts all three', () => {
+    const st = computeStashStatus(s, [], confirms, AUG, []);
+    expect(st.balance).toBe(7000);
+    expect(st.monthsAccrued).toBe(3);
+    expect(st.committedThisMonth).toBe(5000);
+  });
+
+  it('a July draw is not judged against August money', () => {
+    const draws = [draw('2026-07', 'taxes', 1800)];
+    // July: $2,000 in, $1,800 out → $200. With the August commit leaking in it
+    // read $7,000 − $1,800 = $5,200 while looking at July.
+    expect(computeStashStatus(s, [], confirms, JULY, draws).balance).toBe(200);
+  });
+
+  it('the commit run for a past month totals that month only', () => {
+    const run = computeCommitRun([s], [], confirms, JULY, []);
+    expect(run.committedTotal).toBe(1000);
+  });
+});
