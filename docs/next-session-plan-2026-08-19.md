@@ -2,8 +2,11 @@
 
 Input for the next session. Three lists, then the Amazon item-level investigation.
 
-State at time of writing: pushed through `2748d87`, ships `2026.08.19.v2`, **host
-update pending**. 443 tests.
+**Status 2026-08-20: host IS updated to `2026.08.19.v2`. Repo and host are level
+— nothing pending deploy.** 443 tests, `tsc -b` clean.
+
+**➡️ Start with §5 (execution order) at the bottom.** Scott: *"lets get started on
+the must do as I want to start wrapping up some final features."*
 
 ---
 
