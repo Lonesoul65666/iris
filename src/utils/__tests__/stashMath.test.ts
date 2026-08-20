@@ -729,3 +729,37 @@ describe('requiredMonthlyForGoal is the card\'s own ask', () => {
     expect(requiredMonthlyForGoal(st, NOW)).toBe(240); // same 1200/5 as an untouched month
   });
 });
+
+describe('malformed data cannot render or persist NaN', () => {
+  // An Invalid Date is truthy and NaN passes every comparison it meets, so a
+  // half-typed targetDate used to reach the card as "$NaN" — and the auto-fill
+  // then wrote NaN, which JSON.stringify stores as null (2026-08-19 audit).
+  it('a malformed targetDate has no due date at all', () => {
+    expect(nextDueDate(stash({ cadence: 'custom', targetDate: '2026-13-45' }), NOW)).toBeNull();
+    expect(nextDueDate(stash({ cadence: 'custom', targetDate: 'not-a-date' }), NOW)).toBeNull();
+    expect(nextDueDate(stash({ cadence: 'custom', targetDate: '2026-1' }), NOW)).toBeNull();
+    // …and a good one still resolves.
+    expect(nextDueDate(stash({ cadence: 'custom', targetDate: '2026-10-19' }), NOW)?.getMonth()).toBe(9);
+  });
+
+  it('a dueMonth outside 1-12 is corruption, not a date', () => {
+    expect(nextDueDate(stash({ cadence: 'annual', dueMonth: 98 }), NOW)).toBeNull();
+    expect(nextDueDate(stash({ cadence: 'annual', dueMonth: 0 }), NOW)).toBeNull();
+  });
+
+  it('the forecast stays finite, and the card falls back to projecting', () => {
+    const s = stash({ targetAmount: 1200, monthlyContribution: 100, cadence: 'custom', targetDate: '2026-13-45', startMonth: '2026-06' });
+    const f = computeStashForecast(computeStashStatus(s, [], [], NOW, []), NOW)!;
+    expect(f.daysToDue).toBeNull();
+    expect(f.dueLabel).toBeNull();
+    expect(Number.isFinite(f.thisMonthAsk)).toBe(true);
+    expect(f.status).toBe('projecting');   // no deadline → project from the drip
+  });
+
+  it('never returns a non-finite number to persist', () => {
+    const s = stash({ targetAmount: Number.NaN as unknown as number, cadence: 'custom', targetDate: '2026-10-19' });
+    expect(requiredMonthlyForGoal(statusAt(s, 0), NOW)).toBeNull();
+    const s2 = stash({ targetAmount: 1200, cadence: 'custom', targetDate: '2026-13-45' });
+    expect(requiredMonthlyForGoal(statusAt(s2, 0), NOW)).toBeNull();
+  });
+});

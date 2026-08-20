@@ -170,9 +170,18 @@ const MS_PER_DAY = 86_400_000;
 export function nextDueDate(stash: Stash, now: Date = new Date()): Date | null {
   const cadence = stash.cadence;
   if (cadence === 'custom' || (!cadence && stash.targetDate)) {
-    return stash.targetDate ? new Date(`${stash.targetDate}T00:00:00`) : null;
+    if (!stash.targetDate) return null;
+    const d = new Date(`${stash.targetDate}T00:00:00`);
+    // ⚠️ An Invalid Date is TRUTHY and every arithmetic guard downstream passes
+    // quietly (`NaN <= 0` is false, `NaN > 0` is false), so a malformed
+    // targetDate — a half-typed date, a hand-edited row, a bad import — rendered
+    // "$NaN" on the card, and the auto-fill then WROTE NaN, which JSON.stringify
+    // turns into null. Refuse it here, once, where the date is parsed.
+    return Number.isNaN(d.getTime()) ? null : d;
   }
-  if ((cadence === 'annual' || cadence === 'semiannual') && stash.dueMonth) {
+  // A dueMonth outside 1–12 is data corruption, not a date: JS would happily
+  // normalise month 98 into a real (nonsense) future date.
+  if ((cadence === 'annual' || cadence === 'semiannual') && stash.dueMonth && stash.dueMonth >= 1 && stash.dueMonth <= 12) {
     const m = stash.dueMonth - 1; // 0-indexed month
     const cands: Date[] = [];
     const push = (year: number, month: number) => {
@@ -281,13 +290,18 @@ function monthStart(ym: string): Date {
 }
 
 export function computeStashForecast(status: StashStatus, now: Date = new Date()): StashForecast | null {
-  const { stash, balance, biggestDraw, committedThisMonth } = status;
-  const target = stash.targetAmount || 0;
+  const { stash, biggestDraw, committedThisMonth } = status;
+  // Coerce the stored numbers. `target <= 0` already rejects a missing goal, but
+  // a NaN passes every comparison it meets, and one NaN infects the whole
+  // forecast — target, remaining, percent, the ask. Nothing downstream can
+  // recover from it, so it stops here.
+  const target = Number(stash.targetAmount) || 0;
   if (target <= 0) return null;
+  const balance = Number(status.balance) || 0;
 
   const remaining = Math.max(0, target - balance);
   const percent = Math.max(0, Math.min(100, Math.round((balance / target) * 100)));
-  const contribution = stash.monthlyContribution || 0;
+  const contribution = Number(stash.monthlyContribution) || 0;
   const kind = stash.kind ?? 'want_to';
   const fmtMonth = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   const fmtDay = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -404,7 +418,10 @@ export function computeStashForecast(status: StashStatus, now: Date = new Date()
  *  cycle is already funded) — the caller then leaves the user's number alone. */
 export function requiredMonthlyForGoal(status: StashStatus, now: Date = new Date()): number | null {
   const f = computeStashForecast(status, now);
-  return f && f.requiredPerMonth ? f.requiredPerMonth : null;
+  const req = f?.requiredPerMonth;
+  // Last line of defence before a number gets PERSISTED: never write a non-finite
+  // contribution (JSON turns NaN into null, so the pot silently loses its drip).
+  return req && Number.isFinite(req) ? req : null;
 }
 
 // ── The commit run ────────────────────────────────────────────────────────────
