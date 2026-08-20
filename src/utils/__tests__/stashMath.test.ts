@@ -8,22 +8,12 @@ import {
 import { formatDuration } from '../format';
 import type { DeployConfirmation, PotDraw } from '../../stores/budgetStore';
 import { laneOf, totalReserveSetAside, configureStashLanes, RESERVE_CATEGORIES, RESERVE_ALLOCATIONS } from '../budgetLanes';
-import type { Expense, Stash } from '../../types/budget';
+import type { Stash } from '../../types/budget';
 
 const NOW = new Date(2026, 5, 11); // June 11, 2026 (local)
 
-function exp(partial: Partial<Expense>): Expense {
-  return {
-    id: partial.id ?? `e-${Math.abs(JSON.stringify(partial).length)}-${partial.date}-${partial.amount}`,
-    date: partial.date ?? '2026-06-01',
-    description: partial.description ?? 'test',
-    amount: partial.amount ?? 100,
-    category: partial.category ?? 'other',
-    flow: partial.flow ?? 'outflow',
-    transactionType: partial.transactionType ?? 'expense',
-    isWorkExpense: partial.isWorkExpense ?? false,
-  } as Expense;
-}
+// (The expense-row helper went with the `_expenses` parameter — stash math has
+// not read a transaction since draws became explicit.)
 
 function stash(partial: Partial<Stash>): Stash {
   return {
@@ -129,7 +119,7 @@ describe('computeStashStatus — commit-driven balances (2026-07-05)', () => {
       draw('2026-04', 'other-pot', 900),  // another pot — ignored
       draw('2025-12', 's1', 9999),        // before startMonth — ignored
     ];
-    const st = computeStashStatus(s, [], confirms, NOW, potDraws);
+    const st = computeStashStatus(s, confirms, NOW, potDraws);
     expect(st.derived).toBe(true);
     expect(st.contributed).toBe(2000 + 1500 * 6); // opening + committed
     expect(st.drawn).toBe(5000);
@@ -143,8 +133,9 @@ describe('computeStashStatus — commit-driven balances (2026-07-05)', () => {
     // draw down"). A linked category classifies the reserve lane; it must not
     // move the balance. This is the regression guard for the old behaviour.
     const s = stash({ id: 's1', monthlyContribution: 0, categories: ['taxes'], startMonth: '2026-01', openingBalance: 4000 });
-    const bigTaxBill = [exp({ date: '2026-04-15', amount: 5000, category: 'taxes' })];
-    const st = computeStashStatus(s, bigTaxBill, [], NOW, []);
+    // The API can no longer even be handed the spend: computeStashStatus stopped
+     // taking an expense list at all (2026-08-20). Kept as the record of the rule.
+    const st = computeStashStatus(s, [], NOW, []);
     expect(st.drawn).toBe(0);
     expect(st.balance).toBe(4000);     // untouched — no draw was recorded
     expect(st.biggestDraw).toBeNull();
@@ -152,7 +143,7 @@ describe('computeStashStatus — commit-driven balances (2026-07-05)', () => {
 
   it('a draw in a FUTURE month is ignored (no time travel when paging back)', () => {
     const s = stash({ id: 's1', monthlyContribution: 0, startMonth: '2026-01', openingBalance: 1000 });
-    const st = computeStashStatus(s, [], [], NOW, [draw('2026-09', 's1', 400)]);
+    const st = computeStashStatus(s, [], NOW, [draw('2026-09', 's1', 400)]);
     expect(st.drawn).toBe(0);
     expect(st.balance).toBe(1000);
   });
@@ -160,7 +151,7 @@ describe('computeStashStatus — commit-driven balances (2026-07-05)', () => {
   it('shows only the opening balance until a month is committed (no phantom accrual)', () => {
     // $500/mo planned, started 5 months ago, but NOTHING committed → balance = opening only.
     const s = stash({ id: 's1', monthlyContribution: 500, startMonth: '2026-01', openingBalance: 300 });
-    const st = computeStashStatus(s, [], [], NOW);
+    const st = computeStashStatus(s, [], NOW);
     expect(st.balance).toBe(300);      // NOT 300 + 500*6
     expect(st.monthsAccrued).toBe(0);
   });
@@ -173,7 +164,7 @@ describe('computeStashStatus — commit-driven balances (2026-07-05)', () => {
       commit('2026-06', 's-other', 999),   // different stash — excluded
       commit('2026-06', 'investing', 500), // not a stash lane — excluded
     ];
-    expect(computeStashStatus(s, [], confirms, NOW).balance).toBe(2000);
+    expect(computeStashStatus(s, confirms, NOW).balance).toBe(2000);
   });
 
   it('a NEGATIVE draw puts money back (the refunded-bill case)', () => {
@@ -181,7 +172,7 @@ describe('computeStashStatus — commit-driven balances (2026-07-05)', () => {
     // Explicit draws keep that expressible: record the payment, then record the
     // refund as a negative draw. `drawn` is the net.
     const s = stash({ id: 's1', monthlyContribution: 0, categories: ['travel_personal'], startMonth: '2026-01', openingBalance: 1000 });
-    const st = computeStashStatus(s, [], [], NOW, [
+    const st = computeStashStatus(s, [], NOW, [
       draw('2026-02', 's1', 800),
       draw('2026-02', 's1', -300),   // partially refunded
     ]);
@@ -192,12 +183,12 @@ describe('computeStashStatus — commit-driven balances (2026-07-05)', () => {
   it('can go honestly negative when a draw outruns what was committed (design D4)', () => {
     const s = stash({ id: 's1', monthlyContribution: 100, startMonth: '2026-05', openingBalance: 0 });
     const confirms = [commit('2026-05', 's1', 100), commit('2026-06', 's1', 100)];
-    const st = computeStashStatus(s, [], confirms, NOW, [draw('2026-06', 's1', 5000)]);
+    const st = computeStashStatus(s, confirms, NOW, [draw('2026-06', 's1', 5000)]);
     expect(st.balance).toBe(200 - 5000);
   });
 
   it('legacy stash without startMonth falls back to the manual balance', () => {
-    const st = computeStashStatus(stash({ currentBalance: 750, targetAmount: 1000 }), [], [], NOW);
+    const st = computeStashStatus(stash({ currentBalance: 750, targetAmount: 1000 }), [], NOW);
     expect(st.derived).toBe(false);
     expect(st.balance).toBe(750);
     expect(st.targetProgress).toBeCloseTo(0.75);
@@ -279,10 +270,10 @@ describe('nextDueDate — cadence anchoring', () => {
 
 describe('computeStashForecast — gamified ETA + pace', () => {
   const fc = (partial: Partial<Stash>) =>
-    computeStashForecast(computeStashStatus(stash(partial), [], [], NOW), NOW)!;
+    computeStashForecast(computeStashStatus(stash(partial), [], NOW), NOW)!;
 
   it('returns null with no goal set', () => {
-    expect(computeStashForecast(computeStashStatus(stash({ targetAmount: 0 }), [], [], NOW), NOW)).toBeNull();
+    expect(computeStashForecast(computeStashStatus(stash({ targetAmount: 0 }), [], NOW), NOW)).toBeNull();
   });
 
   it('met when the balance covers the goal', () => {
@@ -338,7 +329,7 @@ describe('partial commits — the ask is a residual, not a flag', () => {
     monthlyContribution: 500, cadence: 'custom', targetDate: '2026-12-20', ...extra,
   });
   const forecastWith = (confirms: DeployConfirmation[]) =>
-    computeStashForecast(computeStashStatus(goal(), [], confirms, NOW), NOW)!;
+    computeStashForecast(computeStashStatus(goal(), confirms, NOW), NOW)!;
 
   it('asks for the full month target when nothing is committed', () => {
     const f = forecastWith([]);
@@ -377,14 +368,14 @@ describe('partial commits — the ask is a residual, not a flag', () => {
 
   it('a no-goal pot (the Savings pot) also asks for the residual drip', () => {
     const savings = stash({ id: 'sv', name: 'Savings', targetAmount: 0, monthlyContribution: 336, startMonth: '2026-01' });
-    const run = computeCommitRun([savings], [], [commit('2026-06', 'sv', 100)], NOW);
+    const run = computeCommitRun([savings], [commit('2026-06', 'sv', 100)], NOW);
     expect(run.rows[0].committed).toBe(100);
     expect(run.rows[0].ask).toBe(236);          // was 0 — reported done at $100 of $336
     expect(run.rows[0].isFullyFunded).toBe(false);
   });
 
   it('commit run: partial pots stay pending and are counted as part-funded', () => {
-    const run = computeCommitRun([goal()], [], [commit('2026-06', 'pot', 700)], NOW);
+    const run = computeCommitRun([goal()], [commit('2026-06', 'pot', 700)], NOW);
     const [row] = run.rows;
     expect(row.isCommitted).toBe(true);          // a confirm DOES exist…
     expect(row.isFullyFunded).toBe(false);       // …but the month isn't done
@@ -397,7 +388,7 @@ describe('partial commits — the ask is a residual, not a flag', () => {
   });
 
   it('commit run: a fully funded pot is not pending and not partial', () => {
-    const run = computeCommitRun([goal()], [], [commit('2026-06', 'pot', Math.ceil(12000 / 7))], NOW);
+    const run = computeCommitRun([goal()], [commit('2026-06', 'pot', Math.ceil(12000 / 7))], NOW);
     expect(run.rows[0].isFullyFunded).toBe(true);
     expect(run.pendingCount).toBe(0);
     expect(run.partialCount).toBe(0);
@@ -445,7 +436,7 @@ describe('thisMonthAsk — "here is what you need to commit"', () => {
     openingBalance: 0, ...partial,
   });
   const ask = (confirms: DeployConfirmation[], now = NOW) =>
-    computeStashForecast(computeStashStatus(table(), [], confirms, now), now)!;
+    computeStashForecast(computeStashStatus(table(), confirms, now), now)!;
 
   it('asks for the even split before anything is committed', () => {
     const f = ask([]);
@@ -466,7 +457,7 @@ describe('thisMonthAsk — "here is what you need to commit"', () => {
     // June: paid $140 of the $240 ask. July has four moves left for $1,060.
     const july = new Date(2026, 6, 11);
     const f = computeStashForecast(
-      computeStashStatus(table(), [], [dc('2026-06', 'stash-table', 140)], july), july)!;
+      computeStashStatus(table(), [dc('2026-06', 'stash-table', 140)], july), july)!;
     expect(f.commitMonthsLeft).toBe(4);
     expect(f.thisMonthAsk).toBe(265);   // ceil(1060 / 4) — up from 240
   });
@@ -475,7 +466,7 @@ describe('thisMonthAsk — "here is what you need to commit"', () => {
     // June: dropped $640 (the big-check case). July has four moves for $560.
     const july = new Date(2026, 6, 11);
     const f = computeStashForecast(
-      computeStashStatus(table(), [], [dc('2026-06', 'stash-table', 640)], july), july)!;
+      computeStashStatus(table(), [dc('2026-06', 'stash-table', 640)], july), july)!;
     expect(f.thisMonthAsk).toBe(140);   // ceil(560 / 4) — down from 240
   });
 
@@ -499,7 +490,7 @@ describe('moving the target date re-prices the monthly ask', () => {
   ];
   const aug12 = new Date(2026, 7, 12);
   const askFor = (targetDate: string) =>
-    computeStashForecast(computeStashStatus(office(targetDate), [], confirms, aug12), aug12)!;
+    computeStashForecast(computeStashStatus(office(targetDate), confirms, aug12), aug12)!;
 
   it('pushing the date OUT lowers the ask', () => {
     const nov = askFor('2026-11-19');
@@ -537,7 +528,7 @@ describe('have-tos started mid-cycle (Insurance, Jul start / Nov 1 hit)', () => 
   const confirms: DeployConfirmation[] = [
     { month: '2026-07', lane: 'stash-ins', amount: 350, confirmedAt: '2026-07-05T00:00:00.000Z' },
   ];
-  const f = computeStashForecast(computeStashStatus(insurance, [], confirms, aug12), aug12)!;
+  const f = computeStashForecast(computeStashStatus(insurance, confirms, aug12), aug12)!;
 
   it('resolves the sooner semiannual anchor', () => {
     expect(f.dueLabel).toContain('Nov 1, 2026');
@@ -557,7 +548,7 @@ describe('have-tos started mid-cycle (Insurance, Jul start / Nov 1 hit)', () => 
   it('is not flagged compressed once a full cycle is available', () => {
     // Same pot, but tracking started a full six months before the hit.
     const early = computeStashForecast(
-      computeStashStatus(stash({ ...insurance, startMonth: '2026-05' }), [], [], aug12), aug12)!;
+      computeStashStatus(stash({ ...insurance, startMonth: '2026-05' }), [], aug12), aug12)!;
     expect(early.firstCycleCompressed).toBe(false);
     expect(early.steadyStatePerMonth).toBe(275);
   });
@@ -568,7 +559,7 @@ describe('computeShortfall — the bill outran the pot (chunk D)', () => {
     // Committed $100 in May + June (opening $0); a $5,000 bill in June → underwater.
     const s = stash({ id: 's1', monthlyContribution: 100, startMonth: '2026-05', openingBalance: 0 });
     const confirms = [commit('2026-05', 's1', 100), commit('2026-06', 's1', 100)];
-    const status = computeStashStatus(s, [], confirms, NOW, [draw('2026-06', 's1', 5000)]);
+    const status = computeStashStatus(s, confirms, NOW, [draw('2026-06', 's1', 5000)]);
     const sf = computeShortfall(status)!;
     expect(sf.gap).toBe(4800);                 // 200 committed − 5000 = −4800
     expect(sf.culprit).toEqual({ month: '2026-06', amount: 5000 });
@@ -576,12 +567,12 @@ describe('computeShortfall — the bill outran the pot (chunk D)', () => {
   });
 
   it('is null when the pot is healthy', () => {
-    const status = computeStashStatus(stash({ monthlyContribution: 1000, categories: ['taxes'], startMonth: '2026-01', openingBalance: 0 }), [], [], NOW);
+    const status = computeStashStatus(stash({ monthlyContribution: 1000, categories: ['taxes'], startMonth: '2026-01', openingBalance: 0 }), [], NOW);
     expect(computeShortfall(status)).toBeNull();
   });
 
   it('recoverMonths is null with no drip to recover on', () => {
-    const status = computeStashStatus(stash({ id: 's1', monthlyContribution: 0, startMonth: '2026-05', openingBalance: 0 }), [], [], NOW, [draw('2026-06', 's1', 500)]);
+    const status = computeStashStatus(stash({ id: 's1', monthlyContribution: 0, startMonth: '2026-05', openingBalance: 0 }), [], NOW, [draw('2026-06', 's1', 500)]);
     expect(computeShortfall(status)!.recoverMonths).toBeNull();
   });
 });
@@ -677,14 +668,14 @@ describe('paging back a month never shows future money', () => {
   const AUG = new Date(2026, 7, 15);
 
   it('a July view counts June + July only', () => {
-    const st = computeStashStatus(s, [], confirms, JULY, []);
+    const st = computeStashStatus(s, confirms, JULY, []);
     expect(st.balance).toBe(2000);
     expect(st.monthsAccrued).toBe(2);
     expect(st.committedThisMonth).toBe(1000);
   });
 
   it('the August view counts all three', () => {
-    const st = computeStashStatus(s, [], confirms, AUG, []);
+    const st = computeStashStatus(s, confirms, AUG, []);
     expect(st.balance).toBe(7000);
     expect(st.monthsAccrued).toBe(3);
     expect(st.committedThisMonth).toBe(5000);
@@ -694,11 +685,11 @@ describe('paging back a month never shows future money', () => {
     const draws = [draw('2026-07', 'taxes', 1800)];
     // July: $2,000 in, $1,800 out → $200. With the August commit leaking in it
     // read $7,000 − $1,800 = $5,200 while looking at July.
-    expect(computeStashStatus(s, [], confirms, JULY, draws).balance).toBe(200);
+    expect(computeStashStatus(s, confirms, JULY, draws).balance).toBe(200);
   });
 
   it('the commit run for a past month totals that month only', () => {
-    const run = computeCommitRun([s], [], confirms, JULY, []);
+    const run = computeCommitRun([s], confirms, JULY, []);
     expect(run.committedTotal).toBe(1000);
   });
 });
@@ -749,7 +740,7 @@ describe('malformed data cannot render or persist NaN', () => {
 
   it('the forecast stays finite, and the card falls back to projecting', () => {
     const s = stash({ targetAmount: 1200, monthlyContribution: 100, cadence: 'custom', targetDate: '2026-13-45', startMonth: '2026-06' });
-    const f = computeStashForecast(computeStashStatus(s, [], [], NOW, []), NOW)!;
+    const f = computeStashForecast(computeStashStatus(s, [], NOW, []), NOW)!;
     expect(f.daysToDue).toBeNull();
     expect(f.dueLabel).toBeNull();
     expect(Number.isFinite(f.thisMonthAsk)).toBe(true);

@@ -177,6 +177,16 @@ describe('listCashOutNeedingCall — ~10 a year, each wants a human', () => {
 });
 
 describe('isBankFee', () => {
+  it('catches a bare SURCHARGE row (the cheap gate used to exclude it)', () => {
+    // The gate was `if (!d.includes('fee')) return false`, so the regex's own
+    // `surcharge` alternative was unreachable — an ATM surcharge counted as
+    // attributable cash and went into the "where did it go?" queue.
+    expect(isBankFee('PAI ATM SURCHARGE')).toBe(true);
+    expect(isBankFee('ATM SURCHARGE 3.00')).toBe(true);
+    // Still not a fee just because it mentions a merchant with 'fee' inside it.
+    expect(isBankFee('COFFEE SHOP')).toBe(false);
+  });
+
   it('spots the fee riders, not the withdrawal itself', () => {
     expect(isBankFee('10014413 02/07 WITHDRWL Dubai AE FEE')).toBe(true);
     expect(isBankFee('MashreqBank WITHDRWL DUBAI INTERNATIONAL TRANSACTION FEE')).toBe(true);

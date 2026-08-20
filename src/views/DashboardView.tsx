@@ -845,7 +845,7 @@ export default function DashboardView() {
         // with balances DERIVED from transactions (stashMath) — the stored
         // currentBalance is legacy/manual. Targetless pots stay on the
         // Budget Overview's StashesCard; duplicating them here is noise.
-        const goalStatuses = computeAllStashes(dashSinkingFunds, rawExpenses, dashDeployConfirms, new Date(), dashPotDraws)
+        const goalStatuses = computeAllStashes(dashSinkingFunds, dashDeployConfirms, new Date(), dashPotDraws)
           .filter(s => !s.stash.achievedAt && (s.stash.targetAmount > 0 || s.stash.targetDate));
         if (goalStatuses.length === 0) return null;
         // "Complete" off the derived balance, same as the card's own forecast.

@@ -27,7 +27,7 @@
 // showed a phantom balance before anything was committed. Nothing is persisted
 // but user intent + the commit ledger. Pure functions, no React/IO.
 
-import type { Expense, Stash } from '../types/budget';
+import type { Stash } from '../types/budget';
 import type { DeployConfirmation, PotDraw } from '../stores/budgetStore';
 import { currentMonthKey } from './transactionAnalysis';
 import { configureStashLanes, RESERVE_ALLOCATIONS } from './budgetLanes';
@@ -76,12 +76,11 @@ export function stashExistedBy(stash: Stash, month: string): boolean {
   return stash.startMonth <= month;
 }
 
-/** ⚠️ `_expenses` is UNUSED and kept only so the 29 existing call sites don't all
- *  have to change in the same commit as the balance-model switch. The balance no
- *  longer reads transactions at all — draws are explicit. Drop the parameter in a
- *  follow-up (the compiler will find every site; the types don't line up if one
- *  is missed). Do not add logic that depends on it. */
-export function computeStashStatus(stash: Stash, _expenses: Expense[], confirms: DeployConfirmation[] = [], now: Date = new Date(), draws: PotDraw[] = []): StashStatus {
+/** The pot's derived state. Takes NO transaction list: the balance is
+ *  commits-in minus explicit draws, and nothing about it is inferred from spend.
+ *  (An unused `_expenses` parameter survived the balance-model switch here and on
+ *  computeAllStashes / computeCommitRun for a while — dropped 2026-08-20.) */
+export function computeStashStatus(stash: Stash, confirms: DeployConfirmation[] = [], now: Date = new Date(), draws: PotDraw[] = []): StashStatus {
   const derived = Boolean(stash.startMonth);
   if (!derived) {
     return {
@@ -154,8 +153,8 @@ export function computeStashStatus(stash: Stash, _expenses: Expense[], confirms:
   };
 }
 
-export function computeAllStashes(stashes: Stash[], expenses: Expense[], confirms: DeployConfirmation[] = [], now: Date = new Date(), draws: PotDraw[] = []): StashStatus[] {
-  return stashes.map(s => computeStashStatus(s, expenses, confirms, now, draws));
+export function computeAllStashes(stashes: Stash[], confirms: DeployConfirmation[] = [], now: Date = new Date(), draws: PotDraw[] = []): StashStatus[] {
+  return stashes.map(s => computeStashStatus(s, confirms, now, draws));
 }
 
 const DAYS_PER_MONTH = 30.44;
@@ -484,7 +483,6 @@ export interface StashCommitRun {
  *  Active pots only — a retired want-to is inert. Pure. */
 export function computeCommitRun(
   stashes: Stash[],
-  expenses: Expense[],
   confirms: DeployConfirmation[] = [],
   now: Date = new Date(),
   draws: PotDraw[] = [],
@@ -492,7 +490,7 @@ export function computeCommitRun(
   const rows: StashCommitRow[] = [];
   for (const s of stashes) {
     if (s.achievedAt) continue;
-    const status = computeStashStatus(s, expenses, confirms, now, draws);
+    const status = computeStashStatus(s, confirms, now, draws);
     const forecast = computeStashForecast(status, now);
     const committed = status.committedThisMonth;
     // No goal to pace against → the planned drip IS the target (the Savings pot).

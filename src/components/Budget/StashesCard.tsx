@@ -138,7 +138,7 @@ export default function StashesCard({ stashes, expenses, confirms, draws = [], o
   const [drawNote, setDrawNote] = useState('');
   // Same computation the Pulse footer renders from, so the two surfaces can't
   // disagree about what a pot wants or what's been committed.
-  const run = useMemo(() => computeCommitRun(stashes, expenses, confirms, new Date(), draws), [stashes, expenses, confirms, draws]);
+  const run = useMemo(() => computeCommitRun(stashes, confirms, new Date(), draws), [stashes, expenses, confirms, draws]);
   const drawsByPot = useMemo(() => {
     const m = new Map<string, PotDraw[]>();
     for (const d of draws) {

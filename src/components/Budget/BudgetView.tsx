@@ -1792,7 +1792,7 @@ export default function BudgetView() {
         const pulseNow = !pulseCommitMonth || pulseCommitMonth === curMonthKey
           ? new Date()
           : new Date(Number(pulseCommitMonth.slice(0, 4)), Number(pulseCommitMonth.slice(5, 7)) - 1, 15);
-        const pulseCommitRun = computeCommitRun(pulseStashes, expenses, deployConfirms, pulseNow, potDraws);
+        const pulseCommitRun = computeCommitRun(pulseStashes, deployConfirms, pulseNow, potDraws);
         return (
           <BudgetPulse
             // EVERY dollar of personal spend now reaches the Pulse (see pulseRows).

@@ -24,7 +24,7 @@ function commit(month: string, lane: string, amount: number): DeployConfirmation
 }
 
 const statusOf = (s: Stash, confirms: DeployConfirmation[] = []) =>
-  computeStashStatus(s, [], confirms, NOW, []);
+  computeStashStatus(s, confirms, NOW, []);
 
 describe('GoalTracker card data', () => {
   it('reads status, percent and the ask straight off computeStashForecast', () => {

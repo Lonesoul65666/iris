@@ -27,7 +27,7 @@
 // Pure functions — no React, no IO. The plot is computed here; prose lives in
 // the components.
 
-import type { Expense, DisputeStatus } from '../types/budget';
+import type { Expense } from '../types/budget';
 import type { Nudge } from './nudgeEngine';
 import { parseLocalDate, isDisputeExcluded } from './transactionAnalysis';
 
@@ -42,8 +42,11 @@ export const MATCH_WINDOW_DAYS = 120;
  *  usually post a conditional credit within a couple of weeks. */
 export const STALE_DISPUTE_DAYS = 14;
 
-/** The bucket cash-out lands in before anyone says where it went. */
-export const CASH_OUT_CATEGORY = 'atm_cash';
+/** The bucket cash-out lands in before anyone says where it went. Re-exported
+ *  from the classifier that assigns it — it was declared here AND written as a
+ *  bare literal there, which is two places to change one thing. */
+export { CASH_OUT_CATEGORY } from './transactionCategorize';
+import { CASH_OUT_CATEGORY } from './transactionCategorize';
 
 /** How far back the cash queue asks. Beyond this you cannot honestly remember
  *  what a $204 withdrawal was for, so asking is just guilt with a dropdown.
@@ -58,7 +61,12 @@ export const CASH_OUT_LOOKBACK_DAYS = 90;
  *  international transaction fee for?" */
 export function isBankFee(description: string): boolean {
   const d = (description || '').toLowerCase();
-  if (!d.includes('fee')) return false;
+  // The cheap gate has to admit everything the pattern can match, or the
+  // pattern's other alternatives are dead code. `surcharge` was exactly that: a
+  // row saying only "SURCHARGE" never reached the regex, so an ATM surcharge was
+  // treated as attributable cash and went into the "where did it go?" queue —
+  // a question nobody can answer about a $3 surcharge.
+  if (!d.includes('fee') && !d.includes('surcharge')) return false;
   return /\bfee\b|fee waiver|transaction fee|atm fee|surcharge/.test(d);
 }
 
@@ -285,11 +293,9 @@ export function clearDispute(charge: Expense): { charge: Partial<Expense>; relea
   };
 }
 
-export const DISPUTE_LABELS: Record<DisputeStatus, string> = {
-  open: 'Disputed',
-  won: 'Refunded',
-  lost: 'Dispute lost',
-};
+// (Removed 2026-08-20: a DISPUTE_LABELS map nothing imported, whose strings were
+// a shorter variant of what ExpenseManager renders inline. Unused is harmless;
+// unused-and-authoritative-looking is a trap for the next person to reach for it.)
 
 // ─── Dashboard nudges ───────────────────────────────────────────────────────
 

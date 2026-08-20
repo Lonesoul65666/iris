@@ -10,6 +10,10 @@ import type { ExpenseCategory, TransactionFlow, TransactionType } from '../types
  * imports) can reuse without pulling in the React component graph.
  */
 
+/** The bucket cash-out lands in before anyone says where it went. Declared here
+ *  because this is the code that assigns it (disputes.ts re-exports it). */
+export const CASH_OUT_CATEGORY = 'atm_cash';
+
 /** A withdrawal that NAMES where the money went, and the answer is one of your
  *  own accounts: a card payment, a self-transfer, a brokerage funding. Those are
  *  genuine transfers, and calling them spend double-counts the bill you already
@@ -166,7 +170,7 @@ export function classifyBankTransaction(
   // ended up as atm_cash in March, travel_personal in June and an uncounted
   // transfer in August. Inflows (rebates, fee waivers, ATM deposits) never reach
   // here — callers branch on flow first.
-  if (isCashOut(d)) return { flow: 'outflow', type: 'expense', category: 'atm_cash' };
+  if (isCashOut(d)) return { flow: 'outflow', type: 'expense', category: CASH_OUT_CATEGORY };
 
   if (d.includes('residence inn') || d.includes('marriott') || d.includes('hilton') || d.includes('hyatt') || d.includes('hotel')) {
     const isInternational = d.includes('dubai') || d.includes('abu dhabi') || d.includes('doha') || d.includes('london');
