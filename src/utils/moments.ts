@@ -18,6 +18,7 @@
 import type { Stash } from '../types/budget';
 import type { Scorecard } from './savingsScorecard';
 import { streakOf, type PersonMonthResults } from './gamification';
+import { currentMonthKey } from './transactionAnalysis';
 import type { Nudge } from './nudgeEngine';
 
 export type MomentType = 'beat-the-clock' | 'both-banked' | 'held-the-line' | 'goal-crushed';
@@ -294,14 +295,27 @@ export interface LiveQuest {
   buffer: number;       // base − spend so far ( + = still under base )
   daysLeft: number;
   onTrack: boolean;
+  /** The number to stay under — the guaranteed base. The card showed a buffer
+   *  and a countdown but never what the goal WAS, so it read as trivia.
+   *  (Scott, 2026-08-19: "What's the fucking clock? What am I on track for?") */
+  target: number;
+  /** Spent so far this month, so the card can show progress toward the target
+   *  rather than only the remainder. */
+  spent: number;
 }
 
 /** The current month's live "Beat the Clock" quest — the daily hook. Reads the
  *  in-progress (partial) scorecard month; null if there isn't one yet. Not a
  *  logged Moment — it's the live, still-winnable version shown with urgency. */
 export function currentMonthQuest(ctx: MomentsContext): LiveQuest | null {
-  const cur = ctx.scorecard.months.find((m) => m.partial);
-  if (!cur) return null;
+  // Must be THIS month by key, not "the first partial month". Since the settle
+  // lag landed there can be two partial months at once — the one that just ended
+  // and the one in progress — and `find` would have returned the older of the
+  // two, so for the first days of September the quest would have been about
+  // August. (A month with income===0 was already enough to break it.)
+  const key = currentMonthKey(ctx.now);
+  const cur = ctx.scorecard.months.find((m) => m.month === key);
+  if (!cur || !cur.partial) return null;
   return {
     type: 'beat-the-clock',
     name: MOMENT_DEFS['beat-the-clock'].name,
@@ -311,5 +325,7 @@ export function currentMonthQuest(ctx: MomentsContext): LiveQuest | null {
     buffer: cur.surplusVsBase,
     daysLeft: daysLeftInMonth(ctx.now),
     onTrack: cur.surplusVsBase >= 0,
+    target: ctx.scorecard.guaranteedBase,
+    spent: cur.totalSpend,
   };
 }

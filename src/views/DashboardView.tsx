@@ -438,11 +438,22 @@ export default function DashboardView() {
                   {liveQuest.onTrack ? 'On track' : 'Over base'}
                 </span>
               </div>
+              {/* State the OBJECTIVE first. This used to open with "$7,995 of
+                  buffer left" — a number with no stated goal, so it read as
+                  trivia rather than a game you could win. (Scott: "What's the
+                  fucking clock? What am I on track for?") Goal, then progress,
+                  then the clock. */}
               <p className="text-sm text-text-secondary mt-1">
+                Keep {liveQuest.label} under{' '}
+                <span className="font-bold text-text-primary mono-num">${Math.round(liveQuest.target).toLocaleString()}</span>.
+                {' '}You've spent{' '}
+                <span className="font-semibold mono-num">${Math.round(liveQuest.spent).toLocaleString()}</span>
                 {liveQuest.onTrack ? (
-                  <><span className="font-bold text-text-primary mono-num">${Math.round(liveQuest.buffer).toLocaleString()}</span> of buffer left, <span className="font-semibold">{liveQuest.daysLeft} {liveQuest.daysLeft === 1 ? 'day' : 'days'}</span> to go. Hold the line to catch {liveQuest.label}.</>
+                  <>, so <span className="font-bold text-text-primary mono-num">${Math.round(liveQuest.buffer).toLocaleString()}</span> left to play with and{' '}
+                    <span className="font-semibold">{liveQuest.daysLeft} {liveQuest.daysLeft === 1 ? 'day' : 'days'}</span> to hold it.</>
                 ) : (
-                  <>Over base by <span className="font-bold text-negative mono-num">${Math.abs(Math.round(liveQuest.buffer)).toLocaleString()}</span> with <span className="font-semibold">{liveQuest.daysLeft} {liveQuest.daysLeft === 1 ? 'day' : 'days'}</span> left. Still time to pull it back.</>
+                  <> — that's <span className="font-bold text-negative mono-num">${Math.abs(Math.round(liveQuest.buffer)).toLocaleString()}</span> over, with{' '}
+                    <span className="font-semibold">{liveQuest.daysLeft} {liveQuest.daysLeft === 1 ? 'day' : 'days'}</span> left to pull it back.</>
                 )}
               </p>
             </div>

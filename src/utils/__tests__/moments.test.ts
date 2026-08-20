@@ -148,6 +148,38 @@ describe('currentMonthQuest', () => {
     const c = ctx({ scorecard: scorecard([month({ month: '2026-06', surplusVsBase: 100 })]) });
     expect(currentMonthQuest(c)).toBeNull();
   });
+
+  // Since the settle lag, TWO months can be partial at once: the one that just
+  // ended (still settling) and the one in progress. Picking "the first partial
+  // month" would have shown August's quest for the first days of September.
+  it('picks THIS month when the just-ended month is also still partial', () => {
+    const c = ctx({ now: new Date(2026, 8, 2), scorecard: scorecard([
+      month({ month: '2026-08', surplusVsBase: 4000, partial: true }),  // settling
+      month({ month: '2026-09', surplusVsBase: 900, partial: true }),   // in progress
+    ]) });
+    const q = currentMonthQuest(c)!;
+    expect(q.periodKey).toBe('2026-09');
+    expect(q.buffer).toBe(900);
+  });
+
+  it('is not fooled by an early month left partial by missing income', () => {
+    const c = ctx({ now: new Date(2026, 6, 20), scorecard: scorecard([
+      month({ month: '2025-09', surplusVsBase: 50, partial: true }),    // data-edge month
+      month({ month: '2026-07', surplusVsBase: 1200, partial: true }),
+    ]) });
+    expect(currentMonthQuest(c)!.periodKey).toBe('2026-07');
+  });
+
+  it('carries the target and spend so the card can state the goal', () => {
+    const c = ctx({ now: new Date(2026, 6, 20), scorecard: scorecard([
+      month({ month: '2026-07', totalSpend: 10959, surplusVsBase: 4841, partial: true }),
+    ]) });
+    const q = currentMonthQuest(c)!;
+    expect(q.target).toBe(15800);
+    expect(q.spent).toBe(10959);
+    // The three numbers must reconcile, or the card contradicts itself.
+    expect(q.spent + q.buffer).toBe(q.target);
+  });
 });
 
 describe('celebration nudges', () => {
