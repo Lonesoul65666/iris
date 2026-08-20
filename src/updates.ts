@@ -37,6 +37,23 @@ export interface UpdateEntry {
 
 export const UPDATES: UpdateEntry[] = [
   {
+    version: '2026.08.20.v1',
+    date: '2026-08-20',
+    title: 'Iris corrects herself, and disputes come find you',
+    notes: [
+      'Iris will now tell you when a number she already gave you turns out to be wrong. A month is graded a few days after it ends, but charges can still land after that — when one does, she updates the figure and says so out loud instead of leaving the old number on the wall. She caught a real one straight away: July’s win was recorded as −$2,854 banked when the true figure is $8,770.',
+      'The three-day wait now explains itself. Instead of a finished month sitting there looking broken, it says “Holding July until the charges settle — final in 2 days.”',
+      'Your disputes come find you. When the matching credit lands, a card on the dashboard says so and takes you to the one tap that closes it — the $35 Links Car Wash refund has been sitting matched-but-unconfirmed. If a dispute goes quiet for two weeks with nothing back, Iris says that too, since card companies have filing deadlines.',
+      'Disputed money is visible again. A charge you’re fighting steps out of your spending, but the amount was showing up nowhere at all — the month now says “+ $35 disputed — held out of this total”.',
+      'If a refund ever gets stuck being held back — the disputed charge was deleted, or a save didn’t land — it now appears in “Needs your call” with a button to count it. That money used to be invisible with no way back.',
+      'Temu is out of your Amazon budget. Eight purchases, $111 all-in and rising, were filed as Amazon — so they ate the Amazon budget while Temu itself was invisible. It has its own line now: “Online Shopping (other)”.',
+      'The Have-To / Want-To cards on the dashboard and on the budget page can no longer disagree. The dashboard was running its own version of the pacing maths (and losing a whole month on any goal dated the 1st); both now read the same source, and the dashboard card shows what to move this month.',
+      'A pot whose deadline has passed asks for your normal monthly amount instead of demanding the whole shortfall in one button, and it names the two ways out: catch up at your rate, or give it a new date.',
+      'A pot no longer flips to “past due” the afternoon before it is actually due.',
+      'Paging back to an earlier month no longer shows money that hadn’t moved yet — July was being drawn with August’s pot commit included.',
+    ],
+  },
+  {
     version: '2026.08.19.v2',
     date: '2026-08-19',
     title: 'The dashboard stops nagging and starts making sense',

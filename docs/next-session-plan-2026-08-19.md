@@ -10,6 +10,50 @@ the must do as I want to start wrapping up some final features."*
 
 ---
 
+## ✅ STATUS 2026-08-20 — §1 (MUST DO) IS CLEARED
+
+Worked in the §5 order, one commit per item, tests + `tsc -b` green at every
+step. **503 tests** (was 443). Everything below is pushed; see the handoff note
+for whether the HOST has been updated.
+
+| Block | Item | Commit |
+|---|---|---|
+| 1 | Amend policy for late data (`reconcileMoments`) | `84f208f` |
+| 1 | Copy for the 3-day settle window (`settleNotice`) | `fb52ec5` |
+| 2 | `GoalTracker` stops doing its own pacing math | `c28f577` |
+| 2 | Pulse paging showed future money (as-of cap) | `18f59f1` |
+| 2 | `requiredMonthlyForGoal` delegates to the forecast | `0582892` |
+| 2 | `monthlyFill` deleted; one field for the planned move | `8d594c0` |
+| 3 | `isCashOut` substring vs card payments | `31215ee` |
+| 3 | `typeOverride` latch + `recategorize.ts` respects it | `03c1bd8` |
+| 3 | The `$NaN` path | `17035c9` |
+| 3 | `past_due` early trigger + giant commit button | `062000c` |
+| 4 | Orphaned dispute credit gets a UI exit | `50110d5` |
+| 4 | `totalDisputed` surfaced + real `disputeNudges()` | `a111ae7` |
+| 5 | Temu out of the `amazon` bucket (`shopping_other`) | `7f03f76` |
+| 5 | The four dead items (incl. the live `surcharge` bug) | `10e00ef` |
+| 5 | `stashAllocationsByCategory` + the frozen reserve line | `c67f6e9` |
+
+Two live corrections fell out of it, both verified against the real ledger:
+
+- **The amend policy caught a real one immediately.** July's Beat the Clock was
+  recorded on Aug 1 (before the settle lag existed) with `banked = −$2,854`; the
+  true figure is **$8,770**, an $11,624 error the idempotency key had frozen. It
+  amended itself and said so. A follow-up (`914c6fd`) fixes `money()` rendering a
+  negative as "$-2,854".
+- **Temu:** 8 rows / $111.43 re-filed out of `amazon` (`scripts/fix-temu-category.mjs`,
+  dry-run first, prior values in `scripts/backups/`).
+
+**Still Scott's:** link pot categories (below). Item 17 makes that safe — the
+per-category reserve line now reads the live registry instead of the frozen
+$1,000/$1,000 constants.
+
+**Not done, deliberately:** §3a's `reconciliation.test.ts`. Every §2 item applied
+the principle at the site where it bit, but the structural test that would stop a
+NEW surface computing its own total is still worth its own sitting.
+
+---
+
 ## 1. MUST DO — money or stored data is wrong, or at risk
 
 Ordered by damage.
