@@ -343,6 +343,15 @@ describe('pendingMomentAmendments', () => {
     expect(n[0].body).toContain('$260');
   });
 
+  it('renders a negative prior figure as money, not "$-2,854"', () => {
+    // Real case (2026-08-20): July's record was written on Aug 1 off incomplete
+    // data, storing banked = -$2,854. The live figure is +$8,770.
+    const n = pendingMomentAmendments([rec({
+      amendedAt: '2026-08-20T23:08:17.545Z', amendKind: 'amended', originalMagnitude: -2854, magnitude: 8770,
+    })]);
+    expect(n[0].body).toContain('−$2,854 → $8,770');
+  });
+
   it('goes quiet once acknowledged', () => {
     expect(pendingMomentAmendments([rec({
       amendedAt: '2026-08-06T00:00:00Z', amendKind: 'amended', amendAcknowledged: true,

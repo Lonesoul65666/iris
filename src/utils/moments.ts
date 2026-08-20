@@ -369,7 +369,14 @@ export function evaluateMoments(
 
 // ─── Celebration copy (phase 2) ───
 
-const money = (n?: number) => (n == null ? '' : `$${Math.round(n).toLocaleString()}`);
+/** Signed money. A magnitude CAN be negative — an amended "banked" figure that
+ *  was written from incomplete data reads as a loss — and "$-2,854" is not a
+ *  number anyone renders on purpose. */
+const money = (n?: number) => {
+  if (n == null) return '';
+  const r = Math.round(n);
+  return `${r < 0 ? '−' : ''}$${Math.abs(r).toLocaleString()}`;
+};
 
 /** The fields celebration copy needs — shared by fresh occurrences and persisted
  *  records so both render identically. */
