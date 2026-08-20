@@ -90,9 +90,9 @@ interface AppDataContextValue {
   dismissMilestone: (achievementId: string) => void;
   /** Re-open an already-earned trophy's celebration to relive it (the couples
    *  "you saw it, I didn't" case). null when nothing's being replayed. */
-  replayCelebration: { achievement: Achievement; unlockedAt: string | null } | null;
+  replayCelebration: { achievement: Achievement; unlockedAt: string | null; mode?: 'live' | 'replay' } | null;
   /** Open the replay overlay for an earned achievement. */
-  openReplay: (achievement: Achievement, unlockedAt: string | null) => void;
+  openReplay: (achievement: Achievement, unlockedAt: string | null, mode?: 'live' | 'replay') => void;
   /** Close the replay overlay (no persistence — replay never changes state). */
   closeReplay: () => void;
   /** Whether celebration sound effects play. Persisted; the app's first sound. */
@@ -215,7 +215,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
   const [achievementStates, setAchievementStates] = useState<AchievementState[]>([]);
   const [celebrationNudges, setCelebrationNudges] = useState<Nudge[]>([]);
   const [milestoneCelebrations, setMilestoneCelebrations] = useState<PendingMilestone[]>([]);
-  const [replayCelebration, setReplayCelebration] = useState<{ achievement: Achievement; unlockedAt: string | null } | null>(null);
+  const [replayCelebration, setReplayCelebration] = useState<{ achievement: Achievement; unlockedAt: string | null; mode?: 'live' | 'replay' } | null>(null);
   const [soundEnabled, setSoundEnabledState] = useState(true);
   const [momentCelebrations, setMomentCelebrations] = useState<Nudge[]>([]);
   const [momentTallies, setMomentTallies] = useState<MomentTally[]>([]);
@@ -914,8 +914,11 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     void acknowledgeUnlock(achievementId);
   }, [acknowledgeUnlock]);
 
-  const openReplay = useCallback((achievement: Achievement, unlockedAt: string | null) => {
-    setReplayCelebration({ achievement, unlockedAt });
+  /** `mode` lets the caller say whether this is a first look or a genuine replay.
+   *  A fresh unlock opened from its dashboard card is a first look ('live' —
+   *  "Milestone Unlocked", confetti); the trophy wall is a real replay. */
+  const openReplay = useCallback((achievement: Achievement, unlockedAt: string | null, mode: 'live' | 'replay' = 'replay') => {
+    setReplayCelebration({ achievement, unlockedAt, mode });
   }, []);
   const closeReplay = useCallback(() => setReplayCelebration(null), []);
 

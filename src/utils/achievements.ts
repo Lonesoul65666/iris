@@ -633,6 +633,12 @@ export function achievementToNudge(a: Achievement): Nudge {
     title: `Achievement unlocked — ${a.name}`,
     body: a.hypeCopy,
     oneShot: true,
+    // No `view` — the dashboard handles this one itself, opening the full-screen
+    // celebration (medallion, hype copy, sound) instead of navigating anywhere.
+    // A card you can only silently dismiss isn't a reward; earning something
+    // should be worth clicking. (Scott, 2026-08-19: "I click into it and… tell me
+    // why it's badass.")
+    primary: { label: 'Show me' },
   };
 }
 

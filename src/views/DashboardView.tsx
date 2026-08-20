@@ -68,7 +68,7 @@ export default function DashboardView() {
     dashBuckets, dashSinkingFunds, dashDeployConfirms, dashPotDraws, monthlyInv,
     rawExpenses,
     dashFunMoney,
-    celebrationNudges, dismissCelebration, achievementStates,
+    celebrationNudges, dismissCelebration, achievementStates, openReplay,
     momentCelebrations, dismissMomentCelebration, liveQuest,
     weeklyBriefing, dismissBriefingItem, whatsNew, dismissWhatsNew, setBudgetSection,
     monthToDate, safeToSpend,
@@ -394,9 +394,19 @@ export default function DashboardView() {
           bury the dashboard). Dismissing is cosmetic — the unlock is permanent. */}
       {celebrationNudges.slice(0, 3).map((n, i) => {
         const ach = achievementById(n.id.replace(/^achievement:/, ''));
+        const unlockedAtOf = (id: string) =>
+          achievementStates.find(s => s.achievement.id === id)?.unlockedAt ?? null;
         return (
           <NudgeCard key={n.id} nudge={n} index={i}
             iconOverride={ach ? <Medallion achievement={ach} size={44} /> : undefined}
+            // "Show me" opens the full-screen celebration — the medallion and the
+            // hype copy — and clears the card, so acknowledging a win is one
+            // gesture that actually gives you something. Dismissing without
+            // looking still works via "Got it".
+            onPrimary={ach ? () => {
+              openReplay(ach, unlockedAtOf(ach.id), 'live');
+              dismissCelebration(n.id);
+            } : undefined}
             onSnooze={() => dismissCelebration(n.id)}
             onDismissForever={() => dismissCelebration(n.id)} />
         );

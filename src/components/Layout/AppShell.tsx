@@ -36,11 +36,19 @@ export default function AppShell({
   const celebrationView: CelebrationView | undefined = live
     ? { achievement: live.achievement, unlockedAt: live.unlockedAt, mode: 'live' }
     : replayCelebration
-      ? { achievement: replayCelebration.achievement, unlockedAt: replayCelebration.unlockedAt, mode: 'replay' }
+      // `mode` comes from the OPENER, not from the source. A card-driven "Show
+      // me" is a first look at a fresh win and should read "Milestone Unlocked"
+      // with confetti, not "Trophy Replay" — the trophy wall is what genuinely
+      // replays. Defaults to 'replay' so the wall is unaffected.
+      ? { achievement: replayCelebration.achievement, unlockedAt: replayCelebration.unlockedAt, mode: replayCelebration.mode ?? 'replay' }
       : undefined;
+  // Routed by SOURCE, not by mode: a milestone from the queue is acknowledged
+  // permanently, anything opened via openReplay just closes. Keying this off
+  // `mode` broke the moment a replay could be opened in 'live' mode — it would
+  // have called dismissMilestone and left the overlay stuck open.
   const onCelebrationDismiss = useCallback(
-    (v: CelebrationView) => (v.mode === 'live' ? dismissMilestone(v.achievement.id) : closeReplay()),
-    [dismissMilestone, closeReplay],
+    (v: CelebrationView) => (live ? dismissMilestone(v.achievement.id) : closeReplay()),
+    [live, dismissMilestone, closeReplay],
   );
   const modules = useEnabledModules();
   const allowed = visibleViews(modules);
