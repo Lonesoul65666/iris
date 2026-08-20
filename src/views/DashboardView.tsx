@@ -69,7 +69,7 @@ export default function DashboardView() {
     rawExpenses,
     dashFunMoney,
     celebrationNudges, dismissCelebration, achievementStates, openReplay,
-    momentCelebrations, dismissMomentCelebration, liveQuest,
+    momentCelebrations, dismissMomentCelebration, momentAmendments, dismissMomentAmendment, liveQuest,
     weeklyBriefing, dismissBriefingItem, whatsNew, dismissWhatsNew, setBudgetSection,
     monthToDate, safeToSpend,
     setView,
@@ -411,6 +411,15 @@ export default function DashboardView() {
             onDismissForever={() => dismissCelebration(n.id)} />
         );
       })}
+
+      {/* Corrections first. A Moment we already stated whose month moved after
+          late data landed (see reconcileMoments) — shown ABOVE the wins, because a
+          number that stopped being true outranks a new one. */}
+      {momentAmendments.slice(0, 3).map((n, i) => (
+        <NudgeCard key={n.id} nudge={n} index={i}
+          onSnooze={() => dismissMomentAmendment(n.id)}
+          onDismissForever={() => dismissMomentAmendment(n.id)} />
+      ))}
 
       {/* Moments — the repeatable heartbeat. Fresh monthly wins surface as quiet
           celebration cards (NOT the full-screen takeover; that stays reserved for

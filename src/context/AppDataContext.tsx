@@ -35,6 +35,7 @@ import {
 } from '../utils/achievements';
 import {
   evaluateMoments, captureMomentsBaseline, currentMonthQuest, pendingMomentCelebrations,
+  pendingMomentAmendments,
   type MomentsContext, type MomentsBaseline, type MomentRecord, type MomentTally, type LiveQuest,
 } from '../utils/moments';
 import type { Nudge } from '../utils/nudgeEngine';
@@ -101,6 +102,10 @@ interface AppDataContextValue {
   /** Repeatable "Moments" — fresh ones surface as quiet celebration nudges. */
   momentCelebrations: Nudge[];
   dismissMomentCelebration: (id: string) => void;
+  /** Corrections: a judged Moment whose month moved after late data landed.
+   *  Ranked ABOVE celebrations in the UI — a wrong number outranks a win. */
+  momentAmendments: Nudge[];
+  dismissMomentAmendment: (id: string) => void;
   /** Lifetime Moment tallies (count + streaks) for the collection/summary. */
   momentTallies: MomentTally[];
   /** The current month's live "Beat the Clock" quest — the daily hook. */
@@ -218,6 +223,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
   const [replayCelebration, setReplayCelebration] = useState<{ achievement: Achievement; unlockedAt: string | null; mode?: 'live' | 'replay' } | null>(null);
   const [soundEnabled, setSoundEnabledState] = useState(true);
   const [momentCelebrations, setMomentCelebrations] = useState<Nudge[]>([]);
+  const [momentAmendments, setMomentAmendments] = useState<Nudge[]>([]);
   const [momentTallies, setMomentTallies] = useState<MomentTally[]>([]);
   const [liveQuest, setLiveQuest] = useState<LiveQuest | null>(null);
   const [weeklyBriefing, setWeeklyBriefing] = useState<Nudge[]>([]);
@@ -893,6 +899,7 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       setCelebrationNudges(pendingCelebrationNudges(merged));
       setMilestoneCelebrations(pendingMilestoneUnlocks(merged));
       setMomentCelebrations(pendingMomentCelebrations(mres.log));
+      setMomentAmendments(pendingMomentAmendments(mres.log));
       setMomentTallies(mres.tallies);
       setLiveQuest(quest);
     })(), 500);
@@ -927,6 +934,16 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     const key = nudgeId.replace(/^moment:/, '');
     const log = (await getSetting<MomentRecord[]>('moments_log')) ?? [];
     await saveSetting('moments_log', log.map((r) => (r.key === key ? { ...r, celebrated: true } : r)));
+  }, []);
+
+  /** Acknowledge a correction. Separate flag from `celebrated` so a record that
+   *  was amended before its win was ever acknowledged doesn't lose the celebration
+   *  (or, if it was revoked, silently regain one). */
+  const dismissMomentAmendment = useCallback(async (nudgeId: string) => {
+    setMomentAmendments((prev) => prev.filter((n) => n.id !== nudgeId));
+    const key = nudgeId.replace(/^moment-amend:/, '');
+    const log = (await getSetting<MomentRecord[]>('moments_log')) ?? [];
+    await saveSetting('moments_log', log.map((r) => (r.key === key ? { ...r, amendAcknowledged: true } : r)));
   }, []);
 
   // Sound preference — persisted; defaults on (opt-out). Iris's first sound.
@@ -994,7 +1011,8 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
     actionItems, dashBuckets, dashPaycheck, dashSinkingFunds, dashDeployConfirms, dashPotDraws, dashFunMoney,
     achievementStates, celebrationNudges, dismissCelebration, milestoneCelebrations, dismissMilestone,
     replayCelebration, openReplay, closeReplay, soundEnabled, setSoundEnabled,
-    momentCelebrations, dismissMomentCelebration, momentTallies, liveQuest,
+    momentCelebrations, dismissMomentCelebration, momentAmendments, dismissMomentAmendment,
+    momentTallies, liveQuest,
     weeklyBriefing, dismissBriefingItem, whatsNew, dismissWhatsNew,
     spendingSummary, monthComparison, rawExpenses,
     insights, insightsExpanded, setInsightsExpanded,
