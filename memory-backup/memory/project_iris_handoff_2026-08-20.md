@@ -128,9 +128,18 @@ means online shopping. The audit called it a defect; it was a naming problem.
 
 ## 2. Coinbase + Robinhood → net worth, and the pool chart
 
-**The blocker was the front door, not the balance code.** `createLinkToken` asked
-for `products: ['transactions']`, and Plaid filters Link's institution list to
-institutions supporting every product requested — Coinbase and Robinhood expose
+⚠️ **CORRECTED LATER THE SAME DAY — Scott asked "i dont think plaid supports
+robinhood or coinbase do they?" and he was half right.** Verified by search:
+**Robinhood IS on Plaid** (Investments; named in Plaid's own crypto-exchange
+announcement). **Coinbase is NOT** — the Plaid↔Coinbase link runs the other way
+(Coinbase uses Plaid to verify YOUR BANK); Plaid's exchange coverage is
+Binance.US / Kraken / Gemini, and Coinbase bought Zabo instead of joining. So
+Coinbase got its own key-based connector (see the bottom of this note). Lesson:
+**I asserted institution coverage from memory instead of checking it.**
+
+**The Plaid blocker was the front door, not the balance code.** `createLinkToken`
+asked for `products: ['transactions']`, and Plaid filters Link's institution list
+to institutions supporting every product requested — brokerages expose
 `investments`. So:
 
 - `createLinkToken(userId, products)`, `/api/plaid/link-token?products=investments`,
@@ -176,3 +185,33 @@ money already held. Two mechanisms, both tested:
   since it hasn't been shown yet).
 - Still open on the like-to-do list: §3a reconciliation test, mobile/visuals, the
   dispute credit auto-matcher, Moments phase 5, the small display fixes.
+
+
+## 3. The Coinbase connector (after Scott's push-back)
+
+Plaid can't reach Coinbase, so it has its own door — which the 2026-05-01 scope
+reset had already planned ("Coinbase API").
+
+- `server/coinbase-client.ts` — **ES256 JWT per request**, 2-min life, `uri` claim
+  binds method+host+path so a token can't be replayed elsewhere. ⚠️ Signed with
+  `dsaEncoding: 'ieee-p1363'`: JWS needs raw r||s, and Node's DER default gets an
+  unhelpful 401. Balances from `/api/v3/brokerage/accounts` (paged; a Coinbase
+  account has a wallet per asset, nearly all empty), priced off the PUBLIC
+  `/v2/prices/{PAIR}/spot` endpoint — no extra JWTs.
+- `/api/coinbase/{status,connect,balances}`; the key is verified by a live
+  read-only call BEFORE storage, kept in the same `connectors` table
+  (provider='coinbase', id `coinbase-api`).
+- Writes REAL per-coin holdings (not the Plaid single-lump), USD-in-Coinbase typed
+  `cash`, an unpriceable asset left OUT of the total and NAMED, gain/loss $0
+  because no cost basis is available.
+- ⚠️ **Scott's part:** portal.cdp.coinbase.com → API keys → Create, permission
+  **View**, algorithm **ECDSA** (Ed25519 is rejected), then paste key name + PEM
+  into Settings → Connectors → Coinbase. Untestable here without his key.
+
+## Fidelity re-link — asked and answered
+Scott: *"Did you say I needed to reconnect my fidelity account as well?"* **No, not
+yet.** The Fidelity BALANCE already flows into net worth ($454k, visible on the
+new pool chart). A re-link through the `investments` product only buys real
+POSITIONS — and nothing changes until the app actually calls
+`/investments/holdings/get`, which is NOT built. So re-linking today is a no-op.
+Build the holdings fetch first, then ask him to re-link.
