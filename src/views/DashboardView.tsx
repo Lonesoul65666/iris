@@ -30,6 +30,7 @@ import { buildSubscriptionRadar, subKey, type SubscriptionStatusMap, type SubSta
 import { buildSubscriptionNudges } from '../utils/subscriptionNudges';
 import { disputeNudges } from '../utils/disputes';
 import { buildNetWorthSeries } from '../utils/netWorthSeries';
+import { syncCoinbaseBalances } from '../lib/syncCoinbaseBalances';
 import { sectionFromBriefingId } from '../utils/weeklyBriefing';
 import { syncHealthNudges } from '../utils/syncHealth';
 import { getLastSyncSummary, hoursSinceLastSync, syncTellerTransactions } from '../lib/syncTellerTransactions';
@@ -161,7 +162,13 @@ export default function DashboardView() {
     void (async () => {
       void syncTellerTransactions();
       const hrs = await hoursSinceLastSync();
-      if (hrs === null || hrs >= 4) void syncTellerBalances().catch(() => { /* best effort */ });
+      if (hrs === null || hrs >= 4) {
+        void syncTellerBalances().catch(() => { /* best effort */ });
+        // Coinbase rides the same 4-hour gate. It resolves to "not connected"
+        // without an error when no key is stored, so it stays silent for anyone
+        // who hasn't set one up.
+        void syncCoinbaseBalances().catch(() => { /* best effort */ });
+      }
     })();
   }, []);
 

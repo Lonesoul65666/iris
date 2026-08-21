@@ -103,9 +103,15 @@ export async function plaidRequest<T>(path: string, body: Record<string, unknown
 /** The Plaid products a Link session asks for. This is not cosmetic: Plaid
  *  filters the institution list in Link to institutions that support every
  *  product requested. Asking for `transactions` is right for banks and cards and
- *  WRONG for a brokerage or a crypto exchange — Coinbase and Robinhood expose
- *  `investments`, not transactions, so they either don't appear or fail at the
- *  end of the flow. Hence one product set per kind of thing being connected. */
+ *  WRONG for a brokerage — Robinhood and Fidelity expose `investments`, not
+ *  transactions, so they either don't appear or fail at the end of the flow.
+ *  Hence one product set per kind of thing being connected.
+ *
+ *  ⚠️ COINBASE IS NOT ON PLAID (checked 2026-08-20, after Scott doubted it). The
+ *  Plaid↔Coinbase relationship runs the other way — Coinbase uses Plaid to verify
+ *  YOUR BANK for funding. Plaid's crypto-exchange coverage is Binance.US, Kraken
+ *  and Gemini; Coinbase bought its own aggregator (Zabo) instead. Coinbase has a
+ *  separate key-based connector (server/coinbase-client.ts). */
 export type PlaidProductSet = 'transactions' | 'investments'
 
 const PRODUCTS: Record<PlaidProductSet, string[]> = {

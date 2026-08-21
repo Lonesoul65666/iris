@@ -26,6 +26,7 @@ import { handleConnectorsList, handleConnectorsSave, handleConnectorsDelete } fr
 import { handleTellerStatus, handleTellerAccounts, handleTellerBalances, handleTellerProbe, handleTellerTransactions, handleTellerImport, handleTellerImportIncome } from './api-handlers/teller.ts'
 import { handleAuthStatus, handleAuthSetup, handleAuthLogin, handleAuthLogout, handleAuthMe, handleAuthChangePassword } from './api-handlers/auth.ts'
 import { handlePlaidStatus, handlePlaidLinkToken, handlePlaidExchange, handlePlaidAccounts, handlePlaidBalances, handlePlaidImport, handlePlaidImportIncome } from './api-handlers/plaid.ts'
+import { handleCoinbaseStatus, handleCoinbaseConnect, handleCoinbaseBalances } from './api-handlers/coinbase.ts'
 import { handleUpdate } from './api-handlers/update.ts'
 
 type Req = IncomingMessage
@@ -159,6 +160,13 @@ export function registerIrisRoutes(use: UseFn): void {
   use('/api/plaid/balances', handlePlaidBalances)
   use('/api/plaid/import-income', handlePlaidImportIncome)
   use('/api/plaid/import', handlePlaidImport)
+
+  // Coinbase — its own connector because Plaid does not cover Coinbase at all
+  // (see server/coinbase-client.ts). Order: 'connect' before 'balances' is
+  // irrelevant here (no shared stem), but keep them grouped.
+  use('/api/coinbase/status', handleCoinbaseStatus)
+  use('/api/coinbase/connect', handleCoinbaseConnect)
+  use('/api/coinbase/balances', handleCoinbaseBalances)
 
   // /api/collections/:name/{list,save,delete} — req.url after the prefix is
   // e.g. '/buckets/list' or '/sinkingFunds/save?...'.

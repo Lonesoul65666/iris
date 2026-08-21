@@ -10,6 +10,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { syncTellerBalances } from '../../lib/syncTellerBalances'
+import { syncCoinbaseBalances } from '../../lib/syncCoinbaseBalances'
 import { formatCurrency } from '../../utils/format'
 
 // Public Teller Application ID — fine to live in source per Teller docs.
@@ -234,6 +235,72 @@ export default function ConnectorsPanel() {
    *  `investments` token won't show a normal chequing account. Two buttons, one
    *  function; the choice is recorded on the connector so the transaction
    *  importer knows to skip an investments-only item. */
+  // ── Coinbase: its own key-based connector, because Plaid does not cover
+  //    Coinbase at all (checked 2026-08-20). Read-only ECDSA key from the CDP
+  //    portal; the key is validated by a live call before it is stored.
+  const [cbConnected, setCbConnected] = useState<boolean | null>(null)
+  const [cbKeyName, setCbKeyName] = useState('')
+  const [cbPrivateKey, setCbPrivateKey] = useState('')
+  const [cbOpen, setCbOpen] = useState(false)
+
+  const refreshCoinbase = useCallback(async () => {
+    try {
+      const r = await api<{ ok: true; connected: boolean }>('/api/coinbase/status')
+      setCbConnected(r.connected)
+    } catch { setCbConnected(false) }
+  }, [])
+
+  useEffect(() => { void refreshCoinbase() }, [refreshCoinbase])
+
+  const saveCoinbaseKey = useCallback(async () => {
+    setStatus(null)
+    setBusy(true)
+    try {
+      const r = await api<{ ok: true; wallets: number }>('/api/coinbase/connect', {
+        method: 'POST',
+        body: JSON.stringify({ keyName: cbKeyName.trim(), privateKey: cbPrivateKey }),
+      })
+      // Never keep the secret in component state after it's stored.
+      setCbPrivateKey('')
+      setCbOpen(false)
+      setStatus(`Coinbase connected — ${r.wallets} wallet(s) with a balance. Hit "Sync Coinbase" to pull them in.`)
+      await refreshCoinbase()
+    } catch (e) {
+      setStatus(`Coinbase rejected that key: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [cbKeyName, cbPrivateKey, refreshCoinbase])
+
+  const syncCoinbase = useCallback(async () => {
+    setStatus(null)
+    setBusy(true)
+    try {
+      const r = await syncCoinbaseBalances()
+      if (!r.connected) { setStatus('No Coinbase key stored yet.'); return }
+      const top = r.holdings.slice(0, 4).map(h => `${h.ticker} ${formatCurrency(h.valueUsd)}`).join(' · ')
+      setStatus(`Coinbase: ${formatCurrency(r.total)} across ${r.holdings.length} holding(s). ${top}`
+        + (r.unpriced.length > 0 ? ` — no USD price for ${r.unpriced.join(', ')}, left out of the total.` : ''))
+    } catch (e) {
+      setStatus(`Coinbase sync failed: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
+  const forgetCoinbaseKey = useCallback(async () => {
+    setBusy(true)
+    try {
+      await api<{ ok: true }>('/api/coinbase/connect', { method: 'DELETE' })
+      setStatus('Coinbase key forgotten.')
+      await refreshCoinbase()
+    } catch (e) {
+      setStatus(`Delete failed: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [refreshCoinbase])
+
   const openPlaidConnect = useCallback(async (products: 'transactions' | 'investments' = 'transactions') => {
     setStatus(null)
     setBusy(true)
@@ -260,6 +327,7 @@ export default function ConnectorsPanel() {
               setStatus(products === 'investments'
                 ? `Connected: ${metadata.institution?.name ?? 'brokerage'}. Hit "Sync bank balances" to pull it into net worth.`
                 : `Connected: ${metadata.institution?.name ?? 'bank'}`)
+
               await refresh()
             } catch (e) {
               setStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -329,13 +397,70 @@ export default function ConnectorsPanel() {
     <div className="glass-card p-6">
       <h3 className="font-semibold text-text-primary mb-2">Connectors</h3>
       <p className="text-xs text-text-muted mb-4">
-        Connect a bank or card to auto-sync transactions. Connect a brokerage or crypto
-        exchange (Coinbase, Robinhood, Fidelity) to feed its balance into net worth —
-        those have no transactions to import, so Iris won't ask them for any.
+        Connect a bank or card to auto-sync transactions. Connect a brokerage
+        (Fidelity, Robinhood, and the exchanges Plaid covers — Kraken, Gemini,
+        Binance.US) to feed its balance into net worth; those have no transactions
+        to import, so Iris won't ask them for any. Coinbase is NOT on Plaid — it
+        has its own key-based connector below.
         Access tokens are stored only in your own Postgres — never in Iris source or logs.
         <br />
         Environment: <span className="font-mono">{TELLER_ENVIRONMENT}</span> · App ID: <span className="font-mono">{TELLER_APPLICATION_ID}</span>
       </p>
+
+      {/* Coinbase — separate on purpose. Plaid's Coinbase integration is the
+          OTHER direction (Coinbase verifying your bank), so the only read path
+          for the crypto itself is Coinbase's own API. */}
+      <div className="mb-4 rounded-xl border border-glass-border bg-white/[0.03] p-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-text-primary">
+              Coinbase {cbConnected === true && <span className="text-positive text-xs font-normal">· connected</span>}
+            </div>
+            <p className="text-xs text-text-muted mt-0.5">
+              Not available through Plaid — that connection only lets Coinbase check your bank.
+              This uses a <strong>read-only</strong> key from Coinbase instead: portal.cdp.coinbase.com → API keys →
+              Create (permission <span className="font-mono">View</span>, signature algorithm <span className="font-mono">ECDSA</span> — Ed25519 will not work).
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={() => setCbOpen(v => !v)} disabled={busy}
+              className="px-3 py-2 rounded-lg text-xs font-semibold bg-surface-3 hover:bg-surface-4 text-text-secondary transition-colors disabled:opacity-50">
+              {cbConnected ? 'Replace key' : 'Add key'}
+            </button>
+            <button onClick={() => void syncCoinbase()} disabled={busy || !cbConnected}
+              className="px-3 py-2 rounded-lg text-xs font-semibold bg-accent/20 border border-accent/50 text-accent-light hover:bg-accent/30 transition-colors disabled:opacity-40"
+              title="Read balances and write them into net worth">
+              {busy ? '…' : 'Sync Coinbase'}
+            </button>
+            {cbConnected && (
+              <button onClick={() => void forgetCoinbaseKey()} disabled={busy}
+                className="px-2 py-2 rounded-lg text-xs text-text-muted hover:text-negative transition-colors disabled:opacity-50">
+                Forget
+              </button>
+            )}
+          </div>
+        </div>
+        {cbOpen && (
+          <div className="mt-3 space-y-2">
+            <input value={cbKeyName} onChange={e => setCbKeyName(e.target.value)}
+              placeholder="Key name — organizations/…/apiKeys/…"
+              className="w-full bg-surface-2 border border-glass-border focus:border-accent/50 rounded-lg px-2 py-1.5 text-xs font-mono text-text-secondary outline-none" />
+            <textarea value={cbPrivateKey} onChange={e => setCbPrivateKey(e.target.value)}
+              placeholder={'-----BEGIN EC PRIVATE KEY-----\n…\n-----END EC PRIVATE KEY-----'}
+              rows={4}
+              className="w-full bg-surface-2 border border-glass-border focus:border-accent/50 rounded-lg px-2 py-1.5 text-xs font-mono text-text-secondary outline-none" />
+            <div className="flex items-center gap-2">
+              <button onClick={() => void saveCoinbaseKey()} disabled={busy || !cbKeyName.trim() || !cbPrivateKey.trim()}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-accent hover:bg-accent-dim text-white transition-colors disabled:opacity-40">
+                {busy ? 'Checking…' : 'Save + verify'}
+              </button>
+              <span className="text-[10px] text-text-muted">
+                Verified against Coinbase before it's stored, and it lands in your own Postgres — same as every other token here.
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <button
@@ -348,10 +473,10 @@ export default function ConnectorsPanel() {
         <button
           onClick={() => void openPlaidConnect('investments')}
           disabled={busy}
-          title="Coinbase, Robinhood, a brokerage — balances feed net worth. These have no transactions to import, so Iris won't try."
+          title="Fidelity, Robinhood, Kraken, Gemini — balances feed net worth. These have no transactions to import, so Iris won't try. (Coinbase is not on Plaid — see its own connector.)"
           className="px-4 py-2 bg-accent/20 border border-accent/50 hover:bg-accent/30 rounded-lg text-sm font-medium text-accent-light transition-colors disabled:opacity-50"
         >
-          {busy ? 'Opening Plaid…' : 'Connect a brokerage or crypto'}
+          {busy ? 'Opening Plaid…' : 'Connect a brokerage (Plaid)'}
         </button>
         <button
           onClick={openConnect}
