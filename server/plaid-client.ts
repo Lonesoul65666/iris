@@ -100,12 +100,28 @@ export async function plaidRequest<T>(path: string, body: Record<string, unknown
 
 // ─── typed endpoint wrappers ───────────────────────────────────────────────────
 
+/** The Plaid products a Link session asks for. This is not cosmetic: Plaid
+ *  filters the institution list in Link to institutions that support every
+ *  product requested. Asking for `transactions` is right for banks and cards and
+ *  WRONG for a brokerage or a crypto exchange — Coinbase and Robinhood expose
+ *  `investments`, not transactions, so they either don't appear or fail at the
+ *  end of the flow. Hence one product set per kind of thing being connected. */
+export type PlaidProductSet = 'transactions' | 'investments'
+
+const PRODUCTS: Record<PlaidProductSet, string[]> = {
+  transactions: ['transactions'],
+  investments: ['investments'],
+}
+
 /** Create a short-lived link_token for the frontend Plaid Link flow. */
-export async function createLinkToken(clientUserId: string): Promise<{ link_token: string; expiration: string }> {
+export async function createLinkToken(
+  clientUserId: string,
+  products: PlaidProductSet = 'transactions',
+): Promise<{ link_token: string; expiration: string }> {
   return plaidRequest('/link/token/create', {
     client_name: 'Iris',
     user: { client_user_id: clientUserId },
-    products: ['transactions'],
+    products: PRODUCTS[products] ?? PRODUCTS.transactions,
     country_codes: ['US'],
     language: 'en',
   })

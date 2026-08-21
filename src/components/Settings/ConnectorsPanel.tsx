@@ -228,13 +228,20 @@ export default function ConnectorsPanel() {
     }
   }, [refresh])
 
-  const openPlaidConnect = useCallback(async () => {
+  /** `products` picks WHICH Link flow this is. Plaid filters the institution list
+   *  to institutions supporting every product asked for, so a `transactions`
+   *  token can't reach Coinbase or Robinhood (they expose `investments`) and an
+   *  `investments` token won't show a normal chequing account. Two buttons, one
+   *  function; the choice is recorded on the connector so the transaction
+   *  importer knows to skip an investments-only item. */
+  const openPlaidConnect = useCallback(async (products: 'transactions' | 'investments' = 'transactions') => {
     setStatus(null)
     setBusy(true)
     try {
       // 1) mint a link_token from our backend, 2) open Plaid Link, 3) exchange
       //    the returned public_token for a durable access_token (server-side).
-      const { link_token } = await api<{ ok: true; link_token: string }>('/api/plaid/link-token', { method: 'POST' })
+      const { link_token } = await api<{ ok: true; link_token: string }>(
+        `/api/plaid/link-token?products=${products}`, { method: 'POST' })
       const Plaid = await loadPlaidScript()
       const handler = Plaid.create({
         token: link_token,
@@ -247,9 +254,12 @@ export default function ConnectorsPanel() {
                   public_token: publicToken,
                   institution: metadata.institution?.name ?? 'Unknown bank',
                   institution_id: metadata.institution?.institution_id ?? null,
+                  products,
                 }),
               })
-              setStatus(`Connected: ${metadata.institution?.name ?? 'bank'}`)
+              setStatus(products === 'investments'
+                ? `Connected: ${metadata.institution?.name ?? 'brokerage'}. Hit "Sync bank balances" to pull it into net worth.`
+                : `Connected: ${metadata.institution?.name ?? 'bank'}`)
               await refresh()
             } catch (e) {
               setStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -319,7 +329,9 @@ export default function ConnectorsPanel() {
     <div className="glass-card p-6">
       <h3 className="font-semibold text-text-primary mb-2">Connectors</h3>
       <p className="text-xs text-text-muted mb-4">
-        Connect a bank, card, or brokerage to auto-sync transactions into Iris.
+        Connect a bank or card to auto-sync transactions. Connect a brokerage or crypto
+        exchange (Coinbase, Robinhood, Fidelity) to feed its balance into net worth —
+        those have no transactions to import, so Iris won't ask them for any.
         Access tokens are stored only in your own Postgres — never in Iris source or logs.
         <br />
         Environment: <span className="font-mono">{TELLER_ENVIRONMENT}</span> · App ID: <span className="font-mono">{TELLER_APPLICATION_ID}</span>
@@ -327,11 +339,19 @@ export default function ConnectorsPanel() {
 
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <button
-          onClick={() => void openPlaidConnect()}
+          onClick={() => void openPlaidConnect('transactions')}
           disabled={busy}
           className="px-4 py-2 bg-accent hover:bg-accent-dim rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50"
         >
           {busy ? 'Opening Plaid…' : 'Connect a bank (Plaid)'}
+        </button>
+        <button
+          onClick={() => void openPlaidConnect('investments')}
+          disabled={busy}
+          title="Coinbase, Robinhood, a brokerage — balances feed net worth. These have no transactions to import, so Iris won't try."
+          className="px-4 py-2 bg-accent/20 border border-accent/50 hover:bg-accent/30 rounded-lg text-sm font-medium text-accent-light transition-colors disabled:opacity-50"
+        >
+          {busy ? 'Opening Plaid…' : 'Connect a brokerage or crypto'}
         </button>
         <button
           onClick={openConnect}

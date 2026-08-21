@@ -13,7 +13,7 @@ import { sendJson, requireContext, methodNotAllowed, errorMessage, type Req, typ
 import { readJsonBody } from './http-utils.ts'
 import {
   plaidConfigStatus, createLinkToken, exchangePublicToken, getAccounts, getTransactions,
-  PlaidApiError, type PlaidAccount,
+  PlaidApiError, type PlaidAccount, type PlaidProductSet,
 } from '../plaid-client.ts'
 import { plaidTxnToExpense, plaidTxnToIncome, classifyPlaidTxn, plaidToTellerAccount } from '../plaid-map.ts'
 import { mapAccountSource, type MappedExpense, type MappedIncome } from '../teller-map.ts'
@@ -39,8 +39,14 @@ export async function handlePlaidLinkToken(req: Req, res: Res): Promise<void> {
   const cfg = plaidConfigStatus()
   if (!cfg.configured) { sendJson(res, 503, { ok: false, error: 'plaid_not_configured', status: cfg }); return }
   try {
-    const { link_token } = await createLinkToken(ctx.userId)
-    sendJson(res, 200, { ok: true, link_token })
+    // `?products=investments` for a brokerage / crypto exchange. Plaid filters
+    // Link's institution list by the products asked for, so a bank token can't
+    // reach Coinbase and vice versa.
+    const url = new URL(req.url ?? '', 'http://localhost')
+    const asked = url.searchParams.get('products')
+    const products: PlaidProductSet = asked === 'investments' ? 'investments' : 'transactions'
+    const { link_token } = await createLinkToken(ctx.userId, products)
+    sendJson(res, 200, { ok: true, link_token, products })
   } catch (err) {
     const status = err instanceof PlaidApiError ? err.status : 500
     sendJson(res, status, { ok: false, error: 'link_token_failed', message: errorMessage(err) })
@@ -51,6 +57,9 @@ interface ExchangeBody {
   public_token?: unknown
   institution?: unknown
   institution_id?: unknown
+  /** Which Link flow this came from — recorded so the transaction importer can
+   *  skip an item that has no transactions to import. */
+  products?: unknown
 }
 
 /** Exchange the Link public_token for an access_token and persist it. */
@@ -66,6 +75,7 @@ export async function handlePlaidExchange(req: Req, res: Res): Promise<void> {
     if (!publicToken) { sendJson(res, 400, { ok: false, error: 'missing_public_token' }); return }
     const institution = typeof body.institution === 'string' && body.institution.trim() ? body.institution.trim() : 'Unknown bank'
     const institutionId = typeof body.institution_id === 'string' ? body.institution_id : null
+    const products: PlaidProductSet = body.products === 'investments' ? 'investments' : 'transactions'
 
     const { access_token, item_id } = await exchangePublicToken(publicToken)
 
@@ -75,7 +85,7 @@ export async function handlePlaidExchange(req: Req, res: Res): Promise<void> {
     await ctx.pool.query(
       `INSERT INTO connectors (id, user_id, provider, institution, provider_enrollment_id, access_token, status, data, created_at, updated_at)
        VALUES ($1, $2, 'plaid', $3, $4, $5, 'active', $6::jsonb, now(), now())`,
-      [id, ctx.userId, institution, item_id, access_token, JSON.stringify({ item_id, institution_id: institutionId })],
+      [id, ctx.userId, institution, item_id, access_token, JSON.stringify({ item_id, institution_id: institutionId, products })],
     )
     sendJson(res, 200, { ok: true, institution })
   } catch (err) {
@@ -88,6 +98,18 @@ interface PlaidConnectorRow {
   id: string
   institution: string
   access_token: string
+  /** `{ item_id, institution_id, products }` — see handlePlaidExchange. Absent
+   *  `products` means a connector linked before the investments flow existed,
+   *  i.e. a bank: treat it as 'transactions'. */
+  data?: { products?: string } | null
+}
+
+/** Can this connector be asked for transactions? A brokerage / crypto item was
+ *  linked with the `investments` product and has none — calling /transactions/get
+ *  on it returns a hard Plaid error, which would then show up as a failed refresh
+ *  in the sync-health nudges every single sync. */
+function hasTransactions(row: PlaidConnectorRow): boolean {
+  return (row.data?.products ?? 'transactions') !== 'investments'
 }
 
 interface AccountWithConnector extends PlaidAccount {
@@ -114,7 +136,7 @@ export async function handlePlaidAccounts(req: Req, res: Res): Promise<void> {
   let rows: PlaidConnectorRow[]
   try {
     const r = await ctx.pool.query<PlaidConnectorRow>(
-      `SELECT id, institution, access_token
+      `SELECT id, institution, access_token, data
          FROM connectors
         WHERE user_id = $1 AND provider = 'plaid' AND status = 'active'
         ORDER BY created_at DESC`,
@@ -175,7 +197,7 @@ export async function handlePlaidBalances(req: Req, res: Res): Promise<void> {
   let rows: PlaidConnectorRow[]
   try {
     const r = await ctx.pool.query<PlaidConnectorRow>(
-      `SELECT id, institution, access_token FROM connectors
+      `SELECT id, institution, access_token, data FROM connectors
         WHERE user_id = $1 AND provider = 'plaid' AND status = 'active' ORDER BY created_at DESC`,
       [ctx.userId],
     )
@@ -263,14 +285,18 @@ export async function handlePlaidImport(req: Req, res: Res): Promise<void> {
   }
 }
 
-/** Active Plaid connector tokens for a user. */
-async function fetchPlaidConnectors(pool: Pool, userId: string): Promise<PlaidConnectorRow[]> {
+/** Active Plaid connector tokens for a user. `forTransactions` (the default)
+ *  drops brokerage / crypto items, which have no transactions product and would
+ *  fail on every sync — see hasTransactions. */
+async function fetchPlaidConnectors(
+  pool: Pool, userId: string, opts: { forTransactions?: boolean } = {},
+): Promise<PlaidConnectorRow[]> {
   const r = await pool.query<PlaidConnectorRow>(
-    `SELECT id, institution, access_token FROM connectors
+    `SELECT id, institution, access_token, data FROM connectors
       WHERE user_id = $1 AND provider = 'plaid' AND status = 'active'`,
     [userId],
   )
-  return r.rows
+  return opts.forTransactions === false ? r.rows : r.rows.filter(hasTransactions)
 }
 
 /** Edit-preserving upsert for mapped rows (bank-sourced fields refresh; user

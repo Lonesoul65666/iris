@@ -25,9 +25,16 @@ interface BalanceRow {
   kind: 'asset' | 'liability' | 'investment';
 }
 
-/** Map a Plaid investment subtype to an Iris account type. */
-function investmentAccountType(subtype: string): Account['type'] {
+/** Map a Plaid investment subtype to an Iris account type.
+ *
+ *  Plaid reports a Coinbase wallet as type `investment` with a crypto subtype
+ *  ("crypto exchange"), which used to fall through to 'brokerage' — so the
+ *  allocation charts and the net-worth breakdown would have called Scott's
+ *  crypto a brokerage account. `crypto` is already in AccountType; use it.
+ *  Robinhood arrives as a plain brokerage and needs nothing special. */
+export function investmentAccountType(subtype: string): Account['type'] {
   const s = (subtype || '').toLowerCase();
+  if (s.includes('crypto')) return 'crypto';
   if (s.includes('401')) return '401k';
   if (s.includes('roth')) return 'roth_ira';
   if (s.includes('ira')) return 'ira';
@@ -65,17 +72,23 @@ export async function syncTellerBalances(): Promise<SyncBalancesResult> {
       // (which all map to source 'other') don't overwrite each other.
       const bal = b.ledger ?? b.available ?? 0;
       const id = `plaid-inv-${b.accountId}`;
+      const acctType = investmentAccountType(b.subtype);
       const acct: Account = {
         id,
         name: b.lastFour ? `${b.name} (${b.lastFour})` : b.name,
         institution: b.institution,
-        type: investmentAccountType(b.subtype),
+        type: acctType,
         status: 'active',
         lastUpdated: today,
         totalValue: bal,
+        // ONE synthetic holding standing for the whole balance — Plaid's
+        // `investments` product would give real positions, which needs a re-link
+        // and is its own project. The asset class still has to be honest, or the
+        // allocation chart files a Coinbase wallet under mutual funds.
         holdings: [{
           id: `${id}-value`, accountId: id, ticker: 'HOLDINGS', name: b.name,
-          assetClass: 'mutual_fund', shares: 1, avgCostBasis: bal, currentPrice: bal,
+          assetClass: acctType === 'crypto' ? 'crypto' : 'mutual_fund',
+          shares: 1, avgCostBasis: bal, currentPrice: bal,
           currentValue: bal, totalGainLoss: 0, totalGainLossPercent: 0, status: 'active', lastUpdated: today,
         }],
       };
