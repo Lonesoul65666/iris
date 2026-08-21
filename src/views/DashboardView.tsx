@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   ResponsiveContainer,
-  AreaChart, Area, Tooltip, XAxis, YAxis,
+  ComposedChart, Area, Line, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { useAppData, formatCurrency } from '../context/AppDataContext';
 import { useHasRealData } from '../hooks/useHasRealData';
@@ -29,6 +29,7 @@ import { forecastCashflow } from '../utils/cashflowForecast';
 import { buildSubscriptionRadar, subKey, type SubscriptionStatusMap, type SubStatus } from '../utils/subscriptionRadar';
 import { buildSubscriptionNudges } from '../utils/subscriptionNudges';
 import { disputeNudges } from '../utils/disputes';
+import { buildNetWorthSeries } from '../utils/netWorthSeries';
 import { sectionFromBriefingId } from '../utils/weeklyBriefing';
 import { syncHealthNudges } from '../utils/syncHealth';
 import { getLastSyncSummary, hoursSinceLastSync, syncTellerTransactions } from '../lib/syncTellerTransactions';
@@ -257,6 +258,9 @@ export default function DashboardView() {
   // ── Net worth trend + delta vs prior period ──────────────────────────
   const [nwRange, setNwRange] = useState<'1M' | '3M' | '6M' | '1Y' | 'ALL'>('3M');
   const [nwBreakdown, setNwBreakdown] = useState(false);
+  /** Which series are drawn. 'total' alone is the default, i.e. exactly the chart
+   *  that was here before — the pools are opt-in, one click each. */
+  const [nwSeries, setNwSeries] = useState<string[]>(['total']);
 
   // Drop the one-time data-entry ARTIFACT: the huge early jump (e.g. ~$388k →
   // ~$546k the day the house/car/investments were first entered) isn't real
@@ -282,20 +286,47 @@ export default function DashboardView() {
     return snaps;
   }, [netWorthSnapshots]);
 
-  // Time-range window (1M/3M/6M/1Y/All) — the zoom control on the chart.
-  const netWorthTrend = useMemo(() => {
+  // Time-range window (1M/3M/6M/1Y/All) — the zoom control on the chart. The
+  // window is resolved ONCE and both the headline total and the per-pool lines
+  // are built from it, so they can never be drawn off different rows.
+  const rangedSnaps = useMemo(() => {
     if (realSnaps.length === 0) return [];
-    let rows = realSnaps;
-    if (nwRange !== 'ALL') {
-      const days = { '1M': 30, '3M': 91, '6M': 183, '1Y': 365 }[nwRange];
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - days);
-      const cutoffStr = cutoff.toISOString().split('T')[0];
-      const filtered = realSnaps.filter(s => s.date >= cutoffStr);
-      if (filtered.length >= 2) rows = filtered; // never blank the chart on a tight window
-    }
-    return rows.map(s => ({ date: s.date, value: s.totalNetWorth }));
+    if (nwRange === 'ALL') return realSnaps;
+    const days = { '1M': 30, '3M': 91, '6M': 183, '1Y': 365 }[nwRange];
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const filtered = realSnaps.filter(s => s.date >= cutoffStr);
+    return filtered.length >= 2 ? filtered : realSnaps; // never blank the chart on a tight window
   }, [realSnaps, nwRange]);
+
+  const netWorthTrend = useMemo(
+    () => rangedSnaps.map(s => ({ date: s.date, value: s.totalNetWorth })),
+    [rangedSnaps],
+  );
+
+  // The pools behind the headline — cash, each brokerage / exchange, and the
+  // non-account assets. Grouped from accountTotals the snapshots already carry
+  // (see netWorthSeries), so the history goes back as far as the chart does.
+  const nwPools = useMemo(() => buildNetWorthSeries(rangedSnaps, accounts), [rangedSnaps, accounts]);
+  const nwActive = useMemo(
+    () => nwPools.groups.filter(g => nwSeries.includes(g.key)),
+    [nwPools.groups, nwSeries],
+  );
+  const nwShowTotal = nwSeries.includes('total');
+  const toggleNwSeries = useCallback((key: string) => {
+    setNwSeries(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      return next.length === 0 ? ['total'] : next;   // never leave an empty chart
+    });
+  }, []);
+  const nwChartData = useMemo(() => {
+    // One row per date carrying the total AND every pool, so the crosshair
+    // tooltip can report whatever is switched on.
+    const byDate = new Map(nwPools.points.map(pt => [String(pt.date), pt]));
+    return netWorthTrend.map((t): Record<string, string | number | null> =>
+      ({ ...(byDate.get(t.date) ?? {}), date: t.date, total: t.value }));
+  }, [nwPools.points, netWorthTrend]);
 
   const trendDelta = netWorthTrend.length >= 2
     ? netWorthTrend[netWorthTrend.length - 1].value - netWorthTrend[0].value : 0;
@@ -305,11 +336,23 @@ export default function DashboardView() {
   // real range so honest day-to-day movement reads clearly (no $0 anchor).
   const nwDomain = useMemo<[number, number]>(() => {
     if (netWorthTrend.length < 2) return [0, 1];
-    const vals = netWorthTrend.map(d => d.value);
+    // Scale to what's ON SCREEN. ONE axis, always — a second y-scale for the
+    // small pools would be the classic lying chart. Turn the total off and the
+    // axis zooms to the pools; leave it on and everything shares its scale, which
+    // is the honest (if squashed) view of a $30k line beside a $1M one.
+    const vals: number[] = [];
+    if (nwShowTotal) vals.push(...netWorthTrend.map(d => d.value));
+    for (const g of nwActive) {
+      for (const pt of nwChartData) {
+        const v = pt[g.key];
+        if (typeof v === 'number') vals.push(v);
+      }
+    }
+    if (vals.length === 0) return [0, 1];
     const min = Math.min(...vals), max = Math.max(...vals);
-    const pad = Math.max((max - min) * 0.2, max * 0.003, 300);
+    const pad = Math.max((max - min) * 0.2, Math.abs(max) * 0.003, 300);
     return [min - pad, max + pad];
-  }, [netWorthTrend]);
+  }, [netWorthTrend, nwActive, nwChartData, nwShowTotal]);
 
   // ── Spending breakdown by category — TRUE month-to-date ──────────────
   // Reads this month's actual transactions (monthToDate), not the multi-month
@@ -657,9 +700,30 @@ export default function DashboardView() {
                   </button>
                 ))}
               </div>
+              {/* Series switches — the legend AND the filter, one row above the
+                  chart. Identity is never colour-alone: every series is named
+                  here with its latest value, and the dot carries the colour.
+                  Colours come from netWorthSeries (validated for the dark
+                  surface) and belong to the ENTITY, so switching one off never
+                  repaints the others. */}
+              {nwPools.groups.length > 0 && (
+                <div className="flex items-center flex-wrap gap-1.5 mt-3">
+                  <SeriesChip label="Total" value={totalNetWorth} color="#c4b5fd"
+                    on={nwShowTotal} onClick={() => toggleNwSeries('total')} />
+                  {nwPools.groups.map(g => (
+                    <SeriesChip key={g.key} label={g.label} value={g.latest} color={g.color}
+                      on={nwSeries.includes(g.key)} onClick={() => toggleNwSeries(g.key)} />
+                  ))}
+                  {nwActive.length > 0 && nwShowTotal && (
+                    <span className="text-[10px] text-text-muted ml-1">
+                      one scale — turn Total off to zoom into the pools
+                    </span>
+                  )}
+                </div>
+              )}
               <div className="h-[172px] -mx-2">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={netWorthTrend} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                <ComposedChart data={nwChartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
                   <defs>
                     <linearGradient id="nwGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.55} />
@@ -684,16 +748,33 @@ export default function DashboardView() {
                   />
                   <YAxis hide domain={nwDomain} />
                   <Tooltip
+                    cursor={{ stroke: 'rgba(255,255,255,0.25)', strokeWidth: 1 }}
                     contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
-                    formatter={(v) => [formatCurrency(typeof v === 'number' ? v : Number(v) || 0), 'Net worth']}
+                    formatter={(v, name) => [
+                      formatCurrency(typeof v === 'number' ? v : Number(v) || 0),
+                      name === 'total' ? 'Net worth' : (nwPools.groups.find(g => g.key === name)?.label ?? String(name)),
+                    ]}
                     labelFormatter={(label) => {
                       const d = new Date(String(label) + 'T00:00:00');
                       return isNaN(d.getTime()) ? String(label) : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                     }}
                     labelStyle={{ color: '#888' }}
                   />
-                  <Area type="monotone" dataKey="value" stroke="url(#nwStroke)" strokeWidth={2.5} fill="url(#nwGradient)" baseValue={nwDomain[0]} isAnimationActive={false} />
-                </AreaChart>
+                  {nwShowTotal && (
+                    <Area type="monotone" dataKey="total" stroke="url(#nwStroke)" strokeWidth={2.5}
+                      fill="url(#nwGradient)" baseValue={nwDomain[0]} isAnimationActive={false} />
+                  )}
+                  {/* Thin 2px lines, no dot on every point (a marker on each day
+                      is noise at this density); the active point still gets one
+                      so the crosshair reads. connectNulls stays OFF — a gap means
+                      "no per-account data that day", which is the truth. */}
+                  {nwActive.map(g => (
+                    <Line key={g.key} type="monotone" dataKey={g.key} name={g.key}
+                      stroke={g.color} strokeWidth={2} dot={false}
+                      activeDot={{ r: 4, strokeWidth: 0 }}
+                      connectNulls={false} isAnimationActive={false} />
+                  ))}
+                </ComposedChart>
               </ResponsiveContainer>
               </div>
             </>
@@ -980,6 +1061,26 @@ function TrendChip({ pct, delta }: { pct: number; delta: number }) {
 }
 
 // One line of the Net Worth "how it's calculated" ledger.
+/** A series switch: colour dot + name + latest value. Doubles as the legend, so
+ *  identity never rests on colour alone (and the text keeps text tokens — the
+ *  colour lives in the dot, not the label). */
+function SeriesChip({ label, value, color, on, onClick }: {
+  label: string; value: number; color: string; on: boolean; onClick: () => void;
+}) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={on}
+      title={on ? `Hide ${label}` : `Show ${label}`}
+      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] transition-colors ${
+        on ? 'border-glass-border bg-white/[0.06] text-text-secondary' : 'border-transparent text-text-muted hover:text-text-secondary'
+      }`}>
+      <span className="w-2 h-2 rounded-full flex-shrink-0"
+        style={{ background: on ? color : 'transparent', border: on ? 'none' : `1px solid ${color}` }} />
+      <span className="font-medium">{label}</span>
+      <span className="mono-num opacity-70">{formatCurrency(value)}</span>
+    </button>
+  );
+}
+
 function NwRow({ label, sub, value, negative, bold }: { label: string; sub?: string; value: number; negative?: boolean; bold?: boolean }) {
   return (
     <div className={`flex items-baseline justify-between gap-3 ${bold ? 'text-text-primary font-bold' : 'text-text-secondary'}`}>
