@@ -324,9 +324,25 @@ export default function ConnectorsPanel() {
                   products,
                 }),
               })
-              setStatus(products === 'investments'
-                ? `Connected: ${metadata.institution?.name ?? 'brokerage'}. Hit "Sync bank balances" to pull it into net worth.`
-                : `Connected: ${metadata.institution?.name ?? 'bank'}`)
+              const name = metadata.institution?.name ?? (products === 'investments' ? 'brokerage' : 'bank')
+              if (products === 'investments') {
+                // Pull it in NOW rather than telling the user to go find another
+                // button. A brokerage is linked for exactly one reason — its
+                // balance — so leaving net worth unchanged after a successful
+                // connect just reads as "nothing happened". (Found the hard way:
+                // Robinhood linked cleanly on 2026-08-20 and then sat invisible
+                // until the next balance sync.)
+                setStatus(`Connected: ${name}. Pulling the balance in…`)
+                try {
+                  const r = await syncTellerBalances()
+                  const landed = r.assetsSynced.map(a => `${a.name} ${formatCurrency(a.balance)}`).join(' · ')
+                  setStatus(`Connected: ${name}. ${landed || 'No balances came back yet — try Sync bank balances in a minute.'}`)
+                } catch (e) {
+                  setStatus(`Connected: ${name}, but the balance pull failed: ${e instanceof Error ? e.message : String(e)}. Try "Sync bank balances".`)
+                }
+              } else {
+                setStatus(`Connected: ${name}`)
+              }
 
               await refresh()
             } catch (e) {
