@@ -32,6 +32,7 @@ import {
   evaluateAchievements, captureBaseline, pendingCelebrationNudges, pendingMilestoneUnlocks,
   type AchievementState, type AchievementContext, type GamificationBaseline, type UnlockRecord, type PendingMilestone,
   type Achievement,
+  rebaselineForNewSources, crossedByNewSources, type NetWorthSource,
 } from '../utils/achievements';
 import {
   evaluateMoments, captureMomentsBaseline, currentMonthQuest, pendingMomentCelebrations,
@@ -845,9 +846,19 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
       const daysSinceLastVisit = prevVisitAt && lastVisitAt
         ? Math.round((new Date(lastVisitAt).getTime() - new Date(prevVisitAt).getTime()) / 86_400_000)
         : null;
+      // What net worth is MADE OF, for the start-line bookkeeping. A source id
+      // Iris has never seen before is money that was always Scott's — linking
+      // Coinbase is not a $30k month — so it raises the baseline instead of
+      // reading as growth. Ids must be stable across syncs.
+      const nwSources: NetWorthSource[] = [
+        ...accounts.map((a) => ({ id: `acct:${a.id}`, value: a.totalValue })),
+        ...(equityValue !== 0 ? [{ id: 'equity', value: equityValue }] : []),
+        ...(homeEquity !== 0 ? [{ id: 'profile:home', value: homeEquity }] : []),
+        ...(carValue !== 0 ? [{ id: 'profile:car', value: carValue }] : []),
+      ];
       const actx: AchievementContext = {
         scorecard, game, funMoney: dashFunMoney, stashes: dashSinkingFunds,
-        netWorth: totalNetWorth, savingsRate,
+        netWorth: totalNetWorth, savingsRate, netWorthSources: nwSources,
         engagement: {
           connectedData: rawExpenses.length > 0,
           createdStash: dashSinkingFunds.length > 0,
@@ -861,9 +872,21 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
         },
       };
       let baseline = (await getSetting<GamificationBaseline>('gamification_baseline')) ?? null;
+      // How much of today's net worth arrived by CONNECTING something rather than
+      // by saving it. Drives both halves of the guard: the baseline moves so
+      // delta-based achievements ignore the jump, and any absolute milestone the
+      // jump carried over unlocks silently instead of throwing a party.
+      let linkedCredit = 0;
       if (!baseline) {
         baseline = captureBaseline(actx, new Date().toISOString());
         await saveSetting('gamification_baseline', baseline);
+      } else {
+        const rebase = rebaselineForNewSources(baseline, nwSources);
+        if (rebase) {
+          baseline = rebase.baseline;
+          linkedCredit = rebase.addedValue;
+          await saveSetting('gamification_baseline', baseline);
+        }
       }
       const unlocked = (await getSetting<UnlockRecord[]>('achievements_unlocked')) ?? [];
       const now = new Date();
@@ -873,7 +896,13 @@ export function AppDataProvider({ view, setView, setLoading, activeUser, childre
         const seen = new Set(unlocked.map((u) => u.id));
         const additions = newlyUnlocked
           .filter((a) => !seen.has(a.id))
-          .map((a) => ({ id: a.id, unlockedAt: now.toISOString(), celebrated: false }));
+          .map((a) => ({
+            id: a.id,
+            unlockedAt: now.toISOString(),
+            // On the wall, but no confetti for plugging in an account you
+            // already owned (see crossedByNewSources).
+            celebrated: crossedByNewSources(a, totalNetWorth, linkedCredit),
+          }));
         if (additions.length > 0) {
           merged = [...unlocked, ...additions];
           await saveSetting('achievements_unlocked', merged);

@@ -5,6 +5,7 @@ import type { AchievementContext, GamificationBaseline, EngagementSignals, Unloc
 import {
   captureBaseline, evaluateAchievements, achievementSummary, ACHIEVEMENTS,
   pendingCelebrationNudges, pendingMilestoneUnlocks, nextNetWorthMilestone, formatNetWorthShort,
+  rebaselineForNewSources, crossedByNewSources,
 } from '../achievements';
 
 function scorecard(over: Partial<Scorecard> = {}): Scorecard {
@@ -373,5 +374,121 @@ describe('net-worth ladder + next-up', () => {
     expect(formatNetWorthShort(1_001_842)).toBe('$1.0M');
     expect(formatNetWorthShort(300_000)).toBe('$300k');
     expect(formatNetWorthShort(10_000_000)).toBe('$10.0M');
+  });
+});
+
+// ─── Connecting an account is not a $30k month ───────────────────────────────
+//
+// Linking Coinbase or Robinhood makes net worth jump by everything already in it.
+// Two guards, because absolute rungs and since-the-start-line growth fail
+// differently (see rebaselineForNewSources / crossedByNewSources).
+
+describe('rebaselineForNewSources', () => {
+  const base = (over: Partial<GamificationBaseline> = {}): GamificationBaseline =>
+    captureBaseline(ctx({ netWorth: 1_000_000, netWorthSources: [{ id: 'acct:bofa', value: 1_000_000 }] }), NOW.toISOString()) && {
+      ...captureBaseline(ctx({ netWorth: 1_000_000, netWorthSources: [{ id: 'acct:bofa', value: 1_000_000 }] }), NOW.toISOString()),
+      ...over,
+    };
+
+  it('records the contributing ids at capture time', () => {
+    const b = captureBaseline(ctx({
+      netWorth: 500_000,
+      netWorthSources: [{ id: 'acct:bofa', value: 400_000 }, { id: 'profile:home', value: 100_000 }],
+    }), NOW.toISOString());
+    expect(b.netWorthSourceIds).toEqual(['acct:bofa', 'profile:home']);
+    expect(b.netWorth).toBe(500_000);
+  });
+
+  it('does nothing when the source set has not changed', () => {
+    expect(rebaselineForNewSources(base(), [{ id: 'acct:bofa', value: 1_050_000 }])).toBeNull();
+  });
+
+  it('raises the start line by a newly linked balance, so it is not growth', () => {
+    const r = rebaselineForNewSources(base(), [
+      { id: 'acct:bofa', value: 1_000_000 },
+      { id: 'acct:coinbase', value: 30_000 },
+    ])!;
+    expect(r.addedIds).toEqual(['acct:coinbase']);
+    expect(r.addedValue).toBe(30_000);
+    expect(r.baseline.netWorth).toBe(1_030_000);
+    expect(r.baseline.netWorthSourceIds).toEqual(['acct:bofa', 'acct:coinbase']);
+  });
+
+  it('adopts an older baseline that has no ids, without moving the number', () => {
+    const legacy = base({ netWorthSourceIds: undefined });
+    const r = rebaselineForNewSources(legacy, [{ id: 'acct:bofa', value: 1_000_000 }, { id: 'acct:coinbase', value: 30_000 }])!;
+    expect(r.addedValue).toBe(0);                    // can't know retroactively
+    expect(r.baseline.netWorth).toBe(1_000_000);
+    expect(r.baseline.netWorthSourceIds).toEqual(['acct:bofa', 'acct:coinbase']);
+  });
+
+  it('never credits a negative source (that would make achievements easier)', () => {
+    const r = rebaselineForNewSources(base(), [
+      { id: 'acct:bofa', value: 1_000_000 },
+      { id: 'profile:home', value: -40_000 },        // underwater
+    ])!;
+    expect(r.addedValue).toBe(0);
+    expect(r.baseline.netWorth).toBe(1_000_000);
+  });
+
+  it('kills the fake growth: $100k "Compounding" ignores a linked account', () => {
+    const b = captureBaseline(ctx({ netWorth: 900_000, netWorthSources: [{ id: 'acct:bofa', value: 900_000 }] }), NOW.toISOString());
+    const sources = [{ id: 'acct:bofa', value: 900_000 }, { id: 'acct:robinhood', value: 120_000 }];
+    const rebased = rebaselineForNewSources(b, sources)!.baseline;
+    const c = ctx({ netWorth: 1_020_000, netWorthSources: sources });
+    // Against the OLD baseline the $120k link looks like $120k of growth.
+    const fake = evaluateAchievements(c, b, [], NOW).newlyUnlocked.map((a) => a.id);
+    expect(fake).toContain('nw-up-100k');
+    // Against the rebased line it is worth nothing, which is the truth.
+    const real = evaluateAchievements(c, rebased, [], NOW).newlyUnlocked;
+    expect(real.map((a) => a.id)).not.toContain('nw-up-100k');
+    // The $1M rung doesn't unlock either: raising the start line past it means it
+    // was already true when Iris started watching, which is the forward-only rule
+    // working — no trophy for money you already had.
+    expect(real.map((a) => a.milestoneTarget)).not.toContain(1_000_000);
+  });
+
+  it('a long-running install still gets the rung — quietly — when a link nudges it over', () => {
+    // The case the baseline raise CANNOT fix: years of real growth, then a link
+    // that tips you over the next rung. Start line $500k, grown to $1.45M, link
+    // $100k → $1.55M. The rung is legitimately unlocked (base $600k is still well
+    // under $1.5M), so it lands on the wall — but the jump is what carried it, so
+    // crossedByNewSources tells the caller to skip the confetti.
+    const b = captureBaseline(ctx({ netWorth: 500_000, netWorthSources: [{ id: 'acct:bofa', value: 500_000 }] }), NOW.toISOString());
+    const sources = [{ id: 'acct:bofa', value: 1_450_000 }, { id: 'acct:coinbase', value: 100_000 }];
+    const rebased = rebaselineForNewSources(b, sources)!;
+    expect(rebased.baseline.netWorth).toBe(600_000);
+    const unlocked = evaluateAchievements(ctx({ netWorth: 1_550_000, netWorthSources: sources }), rebased.baseline, [], NOW).newlyUnlocked;
+    const rung = unlocked.find((a) => a.milestoneTarget === 1_500_000)!;
+    expect(rung).toBeDefined();
+    expect(crossedByNewSources(rung, 1_550_000, rebased.addedValue)).toBe(true);
+    // …while the rung below it was earned the hard way and keeps its party.
+    const earned = unlocked.find((a) => a.milestoneTarget === 1_000_000)!;
+    expect(crossedByNewSources(earned, 1_550_000, rebased.addedValue)).toBe(false);
+  });
+});
+
+describe('crossedByNewSources', () => {
+  const rung = (target: number) => ACHIEVEMENTS.find((a) => a.milestoneTarget === target)!;
+
+  it('flags a rung the linked money carried over', () => {
+    // $1.48M organically, +$40k from a new account → over $1.5M on the link.
+    expect(crossedByNewSources(rung(1_500_000), 1_520_000, 40_000)).toBe(true);
+  });
+
+  it('leaves a rung crossed by real growth alone', () => {
+    expect(crossedByNewSources(rung(1_500_000), 1_520_000, 5_000)).toBe(false);
+    expect(crossedByNewSources(rung(1_500_000), 1_520_000, 0)).toBe(false);
+  });
+
+  it('says nothing about rungs already behind you', () => {
+    // $1M was passed long before this link; the link didn't carry it.
+    expect(crossedByNewSources(rung(1_000_000), 1_520_000, 40_000)).toBe(false);
+  });
+
+  it('ignores achievements that are not ladder rungs', () => {
+    expect(crossedByNewSources(rung(1_500_000), 1_520_000, 40_000)).toBe(true);
+    const notARung = ACHIEVEMENTS.find((a) => a.milestoneTarget === undefined)!;
+    expect(crossedByNewSources(notARung, 1_520_000, 40_000)).toBe(false);
   });
 });

@@ -48,6 +48,9 @@ export interface AchievementContext {
   netWorth: number;
   savingsRate: number;      // 0..100
   engagement: EngagementSignals;
+  /** What `netWorth` is made of. Only used for the start-line bookkeeping (see
+   *  GamificationBaseline.netWorthSourceIds); the total is still `netWorth`. */
+  netWorthSources?: NetWorthSource[];
 }
 
 /** Snapshot of the metrics that forward-only achievements measure against.
@@ -66,6 +69,20 @@ export interface GamificationBaseline {
    *  stash", etc. only unlock when the ACTION happens after Iris starts watching,
    *  not because an already-set-up install has the state. */
   engagement: EngagementSignals;
+  /** The ids of the things that MADE UP `netWorth` when the line was drawn (one
+   *  per account, plus equity / home / car). Connecting an account is not growth
+   *  — the money was always yours, Iris just couldn't see it — so a new id here
+   *  raises the start line by its balance instead of reading as progress.
+   *  Undefined on baselines captured before this existed; see
+   *  rebaselineForNewSources for how those are adopted. */
+  netWorthSourceIds?: string[];
+}
+
+/** One contributor to net worth, for the start-line bookkeeping above. */
+export interface NetWorthSource {
+  /** Stable across syncs — `acct:<id>`, `equity`, `profile:home`, `profile:car`. */
+  id: string;
+  value: number;
 }
 
 export interface AchievementEval {
@@ -111,6 +128,7 @@ export interface UnlockRecord {
 export function captureBaseline(ctx: AchievementContext, at: string): GamificationBaseline {
   return {
     capturedAt: at,
+    netWorthSourceIds: ctx.netWorthSources?.map((s) => s.id) ?? [],
     underBaseStreak: ctx.game.underBase.current,
     monthsUnderBase: ctx.scorecard.monthsUnderBase,
     cumulativeBanked: ctx.scorecard.cumulativeBanked,
@@ -645,6 +663,60 @@ export function achievementToNudge(a: Achievement): Nudge {
 const BY_ID = new Map(ACHIEVEMENTS.map((a) => [a.id, a]));
 export function achievementById(id: string): Achievement | undefined {
   return BY_ID.get(id);
+}
+
+/**
+ * Keep the start line honest when a NEW source of money joins the picture.
+ *
+ * Linking Coinbase or Robinhood makes net worth jump by everything that was
+ * already in it. Against a fixed baseline that reads as growth: "Compounding"
+ * (net worth up $100k SINCE the start line) would unlock for money Scott had all
+ * along. So a source id we have never seen before raises the baseline by its
+ * current balance — the jump nets to zero and only real growth counts after it.
+ *
+ * Returns null when there is nothing to do. A baseline with no recorded ids at
+ * all (captured before this existed) ADOPTS the current set without moving the
+ * number: we can't know retroactively which of these were present, and inventing
+ * a credit would be worse than starting the bookkeeping today.
+ *
+ * Only positive balances are credited. A source that arrives negative (an
+ * underwater mortgage) lowers net worth on its own, and crediting it would make
+ * every achievement easier — the wrong direction to be wrong in.
+ */
+export function rebaselineForNewSources(
+  baseline: GamificationBaseline,
+  sources: NetWorthSource[],
+): { baseline: GamificationBaseline; addedIds: string[]; addedValue: number } | null {
+  const currentIds = sources.map((s) => s.id);
+  if (baseline.netWorthSourceIds === undefined) {
+    return { baseline: { ...baseline, netWorthSourceIds: currentIds }, addedIds: [], addedValue: 0 };
+  }
+  const known = new Set(baseline.netWorthSourceIds);
+  const added = sources.filter((s) => !known.has(s.id));
+  if (added.length === 0) return null;
+  const addedValue = added.reduce((t, s) => t + Math.max(0, s.value), 0);
+  return {
+    baseline: { ...baseline, netWorth: baseline.netWorth + addedValue, netWorthSourceIds: currentIds },
+    addedIds: added.map((s) => s.id),
+    addedValue,
+  };
+}
+
+/**
+ * Did a NEWLY LINKED source carry this milestone over the line? Absolute rungs
+ * ($250k, $500k, $1M…) can't be fixed by moving the baseline — the money really
+ * is there, so the rung really is earned. What it must not do is throw a party:
+ * plugging in an account you already owned is bookkeeping, not an achievement.
+ *
+ * Callers unlock these SILENTLY — on the wall, no takeover, no confetti — and
+ * everything above the jump behaves normally, so no permanent distortion is
+ * carried forward (which is what deducting the credit from net worth forever
+ * would have done: never getting the $2M moment while sitting at $2.05M).
+ */
+export function crossedByNewSources(achievement: Achievement, netWorth: number, addedValue: number): boolean {
+  const target = achievement.milestoneTarget;
+  if (target === undefined || addedValue <= 0) return false;
+  return netWorth >= target && netWorth - addedValue < target;
 }
 
 /** The net-worth ladder, ordered low→high — the rungs with a milestoneTarget. */
