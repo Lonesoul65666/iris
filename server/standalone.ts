@@ -16,7 +16,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { resolve, join, extname, normalize, sep } from 'node:path'
 import { createRouter } from './router.ts'
 import { registerIrisRoutes } from './routes.ts'
-import { autoConnectFromEnv, getPool } from './db-pool.ts'
+import { autoConnectFromEnvWithRetry, envConnectionString, getPool } from './db-pool.ts'
 import { accountCount } from './api-handlers/auth-core.ts'
 import { isYahooProxy, proxyYahoo } from './yf-proxy.ts'
 import { startPlaidAutoSync } from './plaid-sync.ts'
@@ -100,15 +100,13 @@ const server = http.createServer((req, res) => {
 })
 
 async function main(): Promise<void> {
-  try {
-    const connected = await autoConnectFromEnv()
-    if (connected) {
-      console.log('[iris] connected to Postgres via DATABASE_URL')
-    } else {
-      console.warn('[iris] WARNING: DATABASE_URL not set — /api/* will 503 until configured (add it to .env.local)')
-    }
-  } catch (err) {
-    console.error(`[iris] DATABASE_URL connect failed: ${err instanceof Error ? err.message : String(err)}`)
+  // Keeps retrying in the background if the database is asleep or briefly
+  // unreachable, instead of serving a permanently pool-less app (see
+  // autoConnectFromEnvWithRetry).
+  if (envConnectionString() === null) {
+    console.warn('[iris] WARNING: DATABASE_URL not set — /api/* will 503 until configured (add it to .env.local)')
+  } else {
+    await autoConnectFromEnvWithRetry((msg) => console.log(msg))
   }
   // Bind loopback by default. IRIS_LAN=1 opts into a wide (network-reachable)
   // bind for self-hosting behind a tunnel. Auth now exists, BUT it only engages

@@ -7,7 +7,7 @@
 //   POST /api/auth/logout  -> clears session
 //   GET  /api/auth/me      -> { ok, user } | 401
 
-import { getPool } from '../db-pool.ts'
+import { dbBootStatus, getPool } from '../db-pool.ts'
 import { sendJson, readJsonBody, errorMessage, methodNotAllowed, type Req, type Res } from './http-utils.ts'
 import {
   hashPassword, verifyPassword, normalizeUsername,
@@ -26,7 +26,20 @@ function lockMinutes(lockedUntil: string): number {
 export async function handleAuthStatus(req: Req, res: Res): Promise<void> {
   if (req.method !== 'GET') return methodNotAllowed(res)
   const pool = getPool()
-  if (!pool) { sendJson(res, 200, { ok: true, configured: false, needsSetup: false, authenticated: false }); return }
+  if (!pool) {
+    // `configured: false` drives the "paste a connection string" screen. Only say
+    // that when there ISN'T one — if the connection string is set and the database
+    // is simply unreachable, say THAT, so the app stops asking for something it
+    // already has (2026-08-21: a sleeping Supabase project at host restart).
+    const boot = dbBootStatus()
+    sendJson(res, 200, {
+      ok: true, configured: false, needsSetup: false, authenticated: false,
+      dbUnreachable: boot.hasEnvUrl,
+      dbError: boot.hasEnvUrl ? boot.lastError : undefined,
+      dbAttempts: boot.hasEnvUrl ? boot.attempts : undefined,
+    })
+    return
+  }
   try {
     const count = await accountCount(pool)
     const account = count === 0 ? null : await validateSession(req, pool)

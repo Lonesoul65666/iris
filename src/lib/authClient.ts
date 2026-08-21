@@ -13,15 +13,28 @@ export interface AuthStatus {
   needsSetup: boolean   // no login accounts yet?
   authenticated: boolean
   user?: AuthUser
+  /** Configured but UNREACHABLE — a connection string exists, the database just
+   *  isn't answering (asleep, restarting, network). Different problem, different
+   *  screen: asking for a connection string that's already set is a dead end. */
+  dbUnreachable?: boolean
+  dbError?: string
+  dbAttempts?: number
 }
 
 export async function getAuthStatus(): Promise<AuthStatus> {
   try {
     const res = await fetch('/api/auth/status')
-    if (!res.ok) return { configured: false, needsSetup: false, authenticated: false }
+    if (!res.ok) {
+      // The status route itself failing is a server problem, not a missing
+      // connection string — don't send the user to the paste screen for it.
+      return { configured: false, needsSetup: false, authenticated: false, dbUnreachable: true, dbError: `status ${res.status}` }
+    }
     return (await res.json()) as AuthStatus
-  } catch {
-    return { configured: false, needsSetup: false, authenticated: false }
+  } catch (err) {
+    return {
+      configured: false, needsSetup: false, authenticated: false,
+      dbUnreachable: true, dbError: err instanceof Error ? err.message : 'the server did not respond',
+    }
   }
 }
 

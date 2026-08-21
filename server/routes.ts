@@ -13,7 +13,7 @@
 // wins, so longer composite prefixes that share a stem must precede shorter ones.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { connect, getPool, hasPool, getLastMigrationResult, persistConnectionStringToEnvLocal } from './db-pool.ts'
+import { connect, getPool, hasPool, getLastMigrationResult, persistConnectionStringToEnvLocal, dbBootStatus } from './db-pool.ts'
 import { sendJson, readJsonBody } from './api-handlers/http-utils.ts'
 import { handleSettingsList, handleSettingsGet, handleSettingsSave, handleSettingsDelete } from './api-handlers/settings.ts'
 import { handleIncomeSourcesList, handleIncomeSourcesSave, handleIncomeSourcesSaveBatch, handleIncomeSourcesDelete } from './api-handlers/income-sources.ts'
@@ -62,7 +62,17 @@ async function handleConnect(req: Req, res: Res): Promise<void> {
 }
 
 async function handleHealth(_req: Req, res: Res): Promise<void> {
-  if (!hasPool()) { sendJson(res, 503, { ok: false, db: 'not_configured' }); return }
+  if (!hasPool()) {
+    // Distinguish "nobody has configured a database" from "the database is
+    // configured and we can't reach it" — they need completely different
+    // responses from the human, and the old shared 'not_configured' sent people
+    // to paste a connection string they already had.
+    const boot = dbBootStatus()
+    sendJson(res, 503, boot.hasEnvUrl
+      ? { ok: false, db: 'unreachable', attempts: boot.attempts, retrying: boot.retrying, message: boot.lastError }
+      : { ok: false, db: 'not_configured' })
+    return
+  }
   try {
     const pool = getPool()!
     const r = await pool.query<{ one: number }>('SELECT 1 AS one')

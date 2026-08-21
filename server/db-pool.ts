@@ -93,11 +93,110 @@ export async function connect(connectionString: string): Promise<void> {
  * so config lives in `.env.local`, not the browser. No-op (returns false) when
  * the var is unset — callers then fall back to the client POST /api/connect flow.
  */
+export function envConnectionString(): string | null {
+  return process.env.DATABASE_URL ?? process.env.IRIS_DATABASE_URL ?? null
+}
+
 export async function autoConnectFromEnv(): Promise<boolean> {
-  const cs = process.env.DATABASE_URL ?? process.env.IRIS_DATABASE_URL
+  const cs = envConnectionString()
   if (!cs) return false
-  await connect(cs)
-  return true
+  try {
+    await connect(cs)
+    autoConnectError = null
+    return true
+  } catch (err) {
+    autoConnectError = err instanceof Error ? err.message : String(err)
+    throw err
+  }
+}
+
+// ── Boot resilience ──────────────────────────────────────────────────────────
+// A connect failure at startup used to be permanent: main() logged it and then
+// served forever with no pool, so every /api/* call 503'd and the client showed
+// "Point this machine at your database" — asking for a connection string that was
+// already in .env.local. Recovering meant a human noticing and restarting.
+//
+// That is exactly what a sleeping Supabase project causes (2026-08-21): the first
+// connection after idle can exceed the 10s timeout, and the host had just been
+// restarted for a server-code update. The database was fine minutes later.
+//
+// So: keep trying, in the background, with backoff — and record the reason so the
+// UI can say "can't reach your database, retrying" instead of asking for input.
+
+let autoConnectError: string | null = null
+let autoConnectAttempts = 0
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Escalating, then steady at a minute. Long enough to cover a cold start,
+ *  patient enough to survive an outage without hammering. */
+const RETRY_DELAYS_MS = [1_000, 3_000, 8_000, 20_000, 45_000]
+const RETRY_STEADY_MS = 60_000
+
+export interface DbBootStatus {
+  /** Is a connection string configured at all (env or a previous paste)? */
+  hasEnvUrl: boolean
+  connected: boolean
+  attempts: number
+  lastError: string | null
+  retrying: boolean
+}
+
+export function dbBootStatus(): DbBootStatus {
+  return {
+    hasEnvUrl: envConnectionString() !== null,
+    connected: pool !== null,
+    attempts: autoConnectAttempts,
+    lastError: autoConnectError,
+    retrying: retryTimer !== null,
+  }
+}
+
+/**
+ * Connect from the environment, and if it fails KEEP TRYING until it works.
+ * Resolves as soon as the first attempt settles (so the HTTP server can start
+ * immediately either way); retries continue in the background.
+ *
+ * Stops the moment a pool exists — including one seeded by the client's
+ * POST /api/connect, so a manual fix isn't fought by a pending retry.
+ */
+export async function autoConnectFromEnvWithRetry(
+  log: (msg: string) => void = () => {},
+): Promise<boolean> {
+  if (envConnectionString() === null) return false
+
+  const attempt = async (): Promise<boolean> => {
+    if (pool) return true
+    autoConnectAttempts++
+    try {
+      await autoConnectFromEnv()
+      log(`[iris] connected to Postgres via DATABASE_URL${autoConnectAttempts > 1 ? ` (attempt ${autoConnectAttempts})` : ''}`)
+      return true
+    } catch (err) {
+      log(`[iris] DATABASE_URL connect attempt ${autoConnectAttempts} failed: ${err instanceof Error ? err.message : String(err)}`)
+      return false
+    }
+  }
+
+  const schedule = () => {
+    if (pool) { retryTimer = null; return }
+    const delay = RETRY_DELAYS_MS[Math.min(autoConnectAttempts - 1, RETRY_DELAYS_MS.length - 1)] ?? RETRY_STEADY_MS
+    const wait = autoConnectAttempts > RETRY_DELAYS_MS.length ? RETRY_STEADY_MS : delay
+    log(`[iris] retrying the database in ${Math.round(wait / 1000)}s — the app will start serving as soon as it connects`)
+    retryTimer = setTimeout(() => {
+      void attempt().then((ok) => { if (!ok) schedule(); else retryTimer = null })
+    }, wait)
+    // Never hold the process open for a retry.
+    if (typeof retryTimer.unref === 'function') retryTimer.unref()
+  }
+
+  const ok = await attempt()
+  if (!ok) schedule()
+  return ok
+}
+
+/** Test seam + clean shutdown: stop any pending retry. */
+export function stopAutoConnectRetry(): void {
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
 }
 
 /**

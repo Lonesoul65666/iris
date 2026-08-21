@@ -51,6 +51,46 @@ export function ConnectScreen({ onConnected }: { onConnected: () => void }) {
   );
 }
 
+/**
+ * Configured, but the database isn't answering.
+ *
+ * This screen exists because the ConnectScreen was being shown for it (2026-08-21:
+ * the host restarted for a server update while the Supabase project was asleep,
+ * the boot connect timed out, and Iris then asked for a connection string that was
+ * sitting in .env.local the whole time). The server retries on its own now, so the
+ * honest thing to show is what's happening — and a button to check again.
+ */
+export function DbUnreachableScreen({ error, attempts, onRetry }: { error?: string; attempts?: number; onRetry: () => void }) {
+  const [checking, setChecking] = useState(false);
+  const check = async () => {
+    setChecking(true);
+    // Give the server's own retry a beat to land, then re-ask.
+    await new Promise((r) => setTimeout(r, 600));
+    setChecking(false);
+    onRetry();
+  };
+  return (
+    <Shell title="Can't reach the database" subtitle="Your connection string is set — the database just isn't answering yet">
+      <p className="text-sm text-text-secondary">
+        Iris is retrying in the background and will come up on its own the moment the
+        database answers. Nothing is lost — this is a connection, not your data.
+      </p>
+      {error && (
+        <p className="text-[11px] text-text-muted mt-3 font-mono break-words">
+          {error}{attempts && attempts > 1 ? ` · ${attempts} attempts` : ''}
+        </p>
+      )}
+      <ul className="text-[11px] text-text-muted mt-3 space-y-1 list-disc pl-4">
+        <li>A paused or sleeping database can take a minute to wake.</li>
+        <li>If it stays down, restart the Iris host process — it reconnects on boot.</li>
+      </ul>
+      <button className={`${btnCls} mt-4`} onClick={() => void check()} disabled={checking}>
+        {checking ? 'Checking…' : 'Check again'}
+      </button>
+    </Shell>
+  );
+}
+
 interface AccountRow { username: string; password: string; confirm: string }
 
 /** First run: create the login accounts (any names). */

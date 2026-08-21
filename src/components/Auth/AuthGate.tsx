@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getAuthStatus, logout as apiLogout, type AuthStatus, type AuthUser } from '../../lib/authClient';
-import { ConnectScreen, SetupScreen, LoginScreen, ForcedChangePasswordScreen } from './AuthScreens';
+import { ConnectScreen, SetupScreen, LoginScreen, ForcedChangePasswordScreen, DbUnreachableScreen } from './AuthScreens';
 
 /**
  * Auth state machine + gate. Resolves /api/auth/status, then shows the right
  * first-run/login surface until the user is authenticated. Once authenticated,
  * renders `children(user, logout)`.
  *
- * States: not-configured → ConnectScreen · needs-setup → SetupScreen ·
- * unauthenticated → LoginScreen · authenticated → app.
+ * States: not-configured → ConnectScreen · configured-but-UNREACHABLE →
+ * DbUnreachableScreen · needs-setup → SetupScreen · unauthenticated →
+ * LoginScreen · authenticated → app.
  *
  * Backward compatible: if the backend reports first-run-open (accounts exist =
  * false but data is reachable), status still comes back needsSetup and we show
@@ -47,6 +48,11 @@ export default function AuthGate({ children }: { children: (user: AuthUser, logo
       return <ForcedChangePasswordScreen onDone={() => setUser({ ...user, mustChangePassword: false })} />;
     }
     return <>{children(user, handleLogout)}</>;
+  }
+  // Configured-but-unreachable is NOT the same as unconfigured. Asking for a
+  // connection string that already exists is a dead end (2026-08-21).
+  if (!status.configured && status.dbUnreachable) {
+    return <DbUnreachableScreen error={status.dbError} attempts={status.dbAttempts} onRetry={() => void refresh()} />;
   }
   if (!status.configured) return <ConnectScreen onConnected={() => void refresh()} />;
   if (status.needsSetup) return <SetupScreen onDone={() => void refresh()} />;

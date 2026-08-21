@@ -11,7 +11,7 @@
 
 import type { Plugin, ViteDevServer } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { autoConnectFromEnv } from './db-pool.ts'
+import { autoConnectFromEnvWithRetry, envConnectionString } from './db-pool.ts'
 import { registerIrisRoutes, type Handler } from './routes.ts'
 
 export function irisApi(): Plugin {
@@ -23,14 +23,10 @@ export function irisApi(): Plugin {
   return {
     name: 'iris-api',
     async configureServer(server: ViteDevServer) {
-      // Seed the pool from env before the first request, if configured.
-      try {
-        const connected = await autoConnectFromEnv()
-        if (connected) server.config.logger.info('[iris-api] auto-connected to DATABASE_URL')
-      } catch (err) {
-        server.config.logger.error(
-          `[iris-api] DATABASE_URL auto-connect failed: ${err instanceof Error ? err.message : String(err)}`,
-        )
+      // Seed the pool from env before the first request, if configured — and keep
+      // retrying in the background rather than serving a pool-less dev server.
+      if (envConnectionString() !== null) {
+        await autoConnectFromEnvWithRetry((msg) => server.config.logger.info(msg))
       }
       // Each route remains its own connect middleware (native prefix-stripping).
       registerIrisRoutes((prefix, handler) => {
