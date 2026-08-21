@@ -1,6 +1,6 @@
 ---
 name: project-iris-handoff-2026-08-20
-description: "Iris handoff 2026-08-20 — READ FIRST. The whole §1 MUST-DO list from the plan doc is CLEARED in 17 commits (503 tests): amend policy, settle copy, GoalTracker derived, as-of commit cap, unified autofill, monthlyFill deleted, isCashOut guard, typeOverride latch, NaN path, past_due, dispute exit + nudges, Temu, dead items, reserve allocations. PUSHED (6c11190..d6e2043) — HOST NOT UPDATED YET, and updates.ts is at 2026.08.20.v1."
+description: "Iris handoff 2026-08-20 — READ FIRST. Two halves. (1) The whole §1 MUST-DO list is CLEARED (17 commits). (2) Coinbase/Robinhood now linkable (Plaid products fix), the link-account trophy guard, and the multi-line net-worth pool chart. Plus: the Amazon bucket is now ONE Online Shopping bucket at Scott's direction. 526 tests, pushed through 071043d — HOST NOT UPDATED; updates.ts = 2026.08.20.v1."
 metadata: 
   node_type: memory
   type: project
@@ -56,11 +56,9 @@ Block 4 (disputes) · Block 5 (small + safe). Highlights worth carrying:
    an **$11,624** error the idempotency key had frozen. The amend policy caught it
    on first run against the real ledger and wrote the correction card. **This is
    the proof the feature works; don't "fix" it.**
-2. **Temu re-filed:** 8 rows / **$111.43** moved from `amazon` to the new
-   `shopping_other` ("Online Shopping (other)"). `scripts/fix-temu-category.mjs`
-   (dry-run first; prior values in `scripts/backups/temu-category-backup.json`).
-   It has no bucket in Scott's saved budget, so it shows as **NO BUDGET** — his
-   call whether it earns a cap.
+2. **Temu re-filed** — then REVERSED the same day, see the second half below.
+   Scott had put those rows under `amazon` on purpose. They are back in it, and
+   the bucket is now called "Online Shopping".
 
 ## Still Scott's, and now safe
 
@@ -101,3 +99,80 @@ the real $2,403.
   strings (which is what `updates.ts` already does).
 - Two untracked mockups sit in `public/` (`fusion-mockup.html`,
   `redesign-mockup.html`) from an earlier session. Left alone — ask Scott.
+
+
+# ── Second half of 2026-08-20 (after the must-do list) ──
+
+Scott picked both next steps himself.
+
+## 1. ONE "Online Shopping" bucket — I had this backwards
+
+He said: *"I put them there cause they were Online Shopping… I would like to see
+us for the most part get away from online shopping but wasn't sure how to bucket
+the 'other' ones like Alibaba."* The 8 Temu rows were **not** hidden in the wrong
+place — he had filed them under `amazon` deliberately, because to him that bucket
+means online shopping. The audit called it a defect; it was a naming problem.
+
+- The `amazon` bucket now DISPLAYS as **"Online Shopping"** and the classifier
+  sends Amazon + Temu + Shein + AliExpress + Wish + Alibaba to it. `shopping_other`
+  is deleted; its rows moved back (`scripts/fix-shopping-bucket.mjs`).
+- The KEY stays `amazon` — same legacy-key/re-labelled-display trick as
+  `fun_scott`/`fun_wife`; renaming it would mean rewriting 441 rows to change a
+  word on screen.
+- ⚠️ **A stored bucket row carries its OWN label**, so a code default only reaches
+  fresh installs. His row needed `scripts/rename-amazon-bucket.mjs`. Remember this
+  for any future bucket rename.
+- Why one bucket: one habit he wants to shrink → one number, and the category
+  drill-down already shows which merchant, so a rising Temu stays visible without
+  needing its own line to police it.
+
+## 2. Coinbase + Robinhood → net worth, and the pool chart
+
+**The blocker was the front door, not the balance code.** `createLinkToken` asked
+for `products: ['transactions']`, and Plaid filters Link's institution list to
+institutions supporting every product requested — Coinbase and Robinhood expose
+`investments`. So:
+
+- `createLinkToken(userId, products)`, `/api/plaid/link-token?products=investments`,
+  a second **"Connect a brokerage or crypto"** button, and the choice recorded in
+  the connector's existing `data` jsonb (no migration).
+- The transaction importers **skip** investments-only connectors (`hasTransactions`)
+  — otherwise every sync calls /transactions/get on Coinbase, fails, and shows a
+  permanent "failed refresh" in the sync-health nudges.
+- `investmentAccountType` recognises a crypto subtype → typed `crypto`, asset class
+  `crypto` (it was falling through to brokerage / mutual_fund).
+- 🚨 **UNFLOWN:** Plaid isn't configured on the dev laptop (`/api/plaid/*` → 503),
+  so the Link flow has to be exercised on the HOST. **Scott's action: Settings →
+  Connectors → "Connect a brokerage or crypto" for Coinbase and Robinhood, then
+  "Sync bank balances".**
+
+**Trophy guard** (the ⚠️ the backlog warned about). Linking jumps net worth by
+money already held. Two mechanisms, both tested:
+- the baseline records `netWorthSourceIds` (per account + equity/home/car); an
+  unseen id raises the start line by its balance, so delta achievements ("net
+  worth up $100k since…") ignore the jump. If the raise lifts the line past a
+  rung, that rung is grandfathered — forward-only working as designed.
+- `crossedByNewSources` catches what a baseline raise cannot: long install, real
+  growth, then a link that tips it over a rung. The rung unlocks (it's true) but is
+  written `celebrated: true` — on the wall, no takeover, no confetti.
+
+**The pool chart** (`src/utils/netWorthSeries.ts` + the dashboard hero card):
+- Built from `PortfolioSnapshot.accountTotals`, recorded all along, so the history
+  goes back as far as the chart does. Non-account pool = totalNetWorth −
+  totalLiquidNetWorth.
+- Colour follows the ENTITY (cash = slot 1, assets = a reserved slot, institutions
+  by first appearance), so linking Coinbase cannot repaint Fidelity. Six-hue cap,
+  then a neutral "Other".
+- Palette **validated with the dataviz skill's checker** against surface `#12121a`
+  — all five checks PASS. Don't swap hues without re-running it.
+- The chip row is legend + filter; default is Total only. ONE y-axis: turn Total
+  off and it zooms to the pools. Live: Cash $180,342 + Fidelity $454,367 + Equity
+  & assets $385,205 = the $1.02M headline.
+
+## Where things stand
+- Pushed through **`071043d`**; **526 tests**. Host still on `2026.08.19.v2`, so
+  everything from today waits on **Update Iris**.
+- `updates.ts` = `2026.08.20.v1`, notes extended with the second batch (same card,
+  since it hasn't been shown yet).
+- Still open on the like-to-do list: §3a reconciliation test, mobile/visuals, the
+  dispute credit auto-matcher, Moments phase 5, the small display fixes.
