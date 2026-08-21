@@ -176,15 +176,18 @@ describe('resolveTypeEdit — typeOverride is a latch, not a trapdoor', () => {
   });
 });
 
-describe('online marketplaces are their own bucket', () => {
-  it('routes Temu / Shein / AliExpress to shopping_other, not Personal Care', () => {
-    for (const d of ['TEMU.COM', 'TEMU.COM 13024806118 MA', 'SHEIN.COM', 'ALIEXPRESS US', 'WISH.COM']) {
-      expect(guessCategory(d)).toBe('shopping_other');
+describe('online shopping is one bucket', () => {
+  // The `amazon` KEY is displayed as "Online Shopping" — Scott's model, and the
+  // point is one number for one habit. A marketplace that lands in Personal Care
+  // (which is where the old rule sent it) is the actual mis-file.
+  it('files every marketplace with Amazon', () => {
+    for (const d of ['AMAZON.COM*5A04174U0', 'AMAZON MKTPL*5A1WQ54S1', 'TEMU.COM',
+                     'TEMU.COM 13024806118 MA', 'SHEIN.COM', 'ALIEXPRESS US', 'WISH.COM']) {
+      expect(guessCategory(d)).toBe('amazon');
     }
   });
 
-  it('does not touch Amazon, which keeps its own bucket', () => {
-    expect(guessCategory('AMAZON.COM*5A04174U0')).toBe('amazon');
-    expect(guessCategory('AMAZON MKTPL*5A1WQ54S1')).toBe('amazon');
+  it('and none of them land in Personal Care', () => {
+    expect(guessCategory('TEMU.COM')).not.toBe('personal');
   });
 });

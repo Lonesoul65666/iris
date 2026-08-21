@@ -341,14 +341,14 @@ export function guessCategory(desc: string): ExpenseCategory {
   if (d.includes('cleansmart') || d.includes('car wash')) return 'car_maintenance';
   // Personal care / beauty
   if (d.includes('brows') || d.includes('threading') || d.includes('spoiledchild') || d.includes('lash ')) return 'personal';
-  // Online marketplaces — mixed retail, exactly the Amazon shape, so they get the
-  // Amazon treatment: tracked on their own. They used to return 'personal', which
-  // is the PERSONAL CARE bucket (haircuts, grooming) — a mis-file of its own — and
-  // the eight live TEMU rows were filed under `amazon` besides, because a
-  // sync preserves the category a row was first given. $111 lifetime and rising:
-  // small money, but it was spend hidden in someone else's number, twice over.
+  // Online marketplaces land in the SAME bucket as Amazon, which is displayed as
+  // "Online Shopping" (see CATEGORY_INFO). This is Scott's own model — he had
+  // already filed his Temu charges here by hand — and it matches the goal: one
+  // number for a habit he wants to shrink, rather than a tidy taxonomy of
+  // merchants. The old rule returned 'personal', i.e. the PERSONAL CARE bucket
+  // (haircuts, grooming), which was a genuine mis-file.
   if (d.includes('temu') || d.includes('shein') || d.includes('aliexpress')
-      || d.includes('wish.com') || d.includes('alibaba')) return 'shopping_other';
+      || d.includes('wish.com') || d.includes('alibaba')) return 'amazon';
   // Hotels (Marriott brands)
   if (d.includes('renaissance')) return 'travel_work';
   // Government service fees stay 'other'

@@ -355,8 +355,14 @@ const CATEGORY_INFO: Record<string, { label: string; icon: string }> = {
   pets: { label: 'Pets', icon: '🐾' },
   savings: { label: 'Savings', icon: '🏦' },
   debt: { label: 'Debt Payments', icon: '💳' },
-  amazon: { label: 'Amazon', icon: '📦' },
-  shopping_other: { label: 'Online Shopping (other)', icon: '🛍️' },
+  // KEY is `amazon`, DISPLAY is "Online Shopping" — deliberately (Scott,
+  // 2026-08-20: "I put them there cause they were Online Shopping… I would like
+  // to see us for the most part get away from online shopping"). One habit, one
+  // number to shrink; the category drill-down shows which merchant it was, so a
+  // rising Temu can't hide without a second bucket to police. Same
+  // legacy-key/re-labelled-display arrangement as fun_scott / fun_wife; renaming
+  // the key would mean rewriting 441 rows to change a word on screen.
+  amazon: { label: 'Online Shopping', icon: '📦' },
   taxes: { label: 'Taxes', icon: '🏛️' },
   other: { label: 'Other', icon: '📦' },
 };
