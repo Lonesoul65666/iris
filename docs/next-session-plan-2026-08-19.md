@@ -24,7 +24,7 @@ for whether the HOST has been updated.
 | 2 | Pulse paging showed future money (as-of cap) | `18f59f1` |
 | 2 | `requiredMonthlyForGoal` delegates to the forecast | `0582892` |
 | 2 | `monthlyFill` deleted; one field for the planned move | `8d594c0` |
-| 3 | `isCashOut` substring vs card payments | `31215ee` |
+| 3 | `isCashOut` substring vs card payments | `2e932d1` |
 | 3 | `typeOverride` latch + `recategorize.ts` respects it | `03c1bd8` |
 | 3 | The `$NaN` path | `17035c9` |
 | 3 | `past_due` early trigger + giant commit button | `062000c` |
